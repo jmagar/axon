@@ -9,7 +9,8 @@ pub mod health;
 pub mod payload;
 mod payload_redaction;
 pub mod point;
-pub mod qdrant;
+#[cfg(test)]
+mod qdrant;
 pub mod query;
 mod sparse;
 pub mod store;

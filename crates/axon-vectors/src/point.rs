@@ -7,7 +7,9 @@ use axon_api::source::*;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::payload::{VectorPayload, VectorPayloadValidationError};
+use crate::payload::{
+    VECTOR_PAYLOAD_CONTRACT_VERSION, VectorPayload, VectorPayloadValidationError,
+};
 
 pub const MODULE_NAME: &str = "point";
 
@@ -16,6 +18,13 @@ pub struct VectorPointBatchBuilder {
     collection: CollectionSpec,
     document: PreparedDocument,
     embeddings: EmbeddingResult,
+    context: VectorPointBatchBuildContext,
+}
+
+#[derive(Debug, Clone)]
+pub struct VectorPointBatchBuildContext {
+    pub embedding_provider: ProviderId,
+    pub embedded_at: Timestamp,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,11 +114,13 @@ impl VectorPointBatchBuilder {
         collection: CollectionSpec,
         document: PreparedDocument,
         embeddings: EmbeddingResult,
+        context: VectorPointBatchBuildContext,
     ) -> Self {
         Self {
             collection,
             document,
             embeddings,
+            context,
         }
     }
 
@@ -139,6 +150,7 @@ impl VectorPointBatchBuilder {
                 &self.document,
                 chunk,
                 &self.embeddings,
+                &self.context,
                 source_generation,
             )?;
             points.push(VectorPoint {
@@ -219,11 +231,15 @@ fn build_payload(
     document: &PreparedDocument,
     chunk: &PreparedChunk,
     embeddings: &EmbeddingResult,
+    context: &VectorPointBatchBuildContext,
     source_generation: i64,
 ) -> Result<MetadataMap, VectorPointBatchBuildError> {
     let mut metadata = document.metadata.clone();
     metadata.0.extend(chunk.metadata.0.clone());
-    metadata.insert("payload_contract_version".to_string(), json!("2026-07-01"));
+    metadata.insert(
+        "payload_contract_version".to_string(),
+        json!(VECTOR_PAYLOAD_CONTRACT_VERSION),
+    );
     metadata.insert("collection".to_string(), json!(collection.collection));
     metadata.insert("source_id".to_string(), json!(document.source_id.0));
     metadata.insert("source_generation".to_string(), json!(source_generation));
@@ -251,12 +267,18 @@ fn build_payload(
         "embedding_dimensions".to_string(),
         json!(collection.dense.dimensions),
     );
-    insert_default_string(&mut metadata, "embedding_provider", "unspecified");
+    metadata.insert(
+        "embedding_provider".to_string(),
+        json!(context.embedding_provider.0.clone()),
+    );
     metadata.insert(
         "embedding_profile".to_string(),
         json!(document.chunking_profile),
     );
-    insert_default_string(&mut metadata, "embedded_at", "1970-01-01T00:00:00Z");
+    metadata.insert(
+        "embedded_at".to_string(),
+        json!(context.embedded_at.0.clone()),
+    );
 
     VectorPayload::try_from_metadata(metadata)
         .map(|payload| payload.into_metadata())

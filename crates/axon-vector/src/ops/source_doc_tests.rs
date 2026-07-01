@@ -194,12 +194,17 @@ async fn file_source_target_payload_bridge_validates_without_legacy_unknown_fiel
 
     assert_eq!(payload["collection"], "axon");
     assert_eq!(payload["source_family"], "code");
-    assert_eq!(payload["source_id"], "legacy-vector:github");
+    assert!(
+        payload["source_id"]
+            .as_str()
+            .is_some_and(|value| value.starts_with("legacy-vector:fnv1a64:"))
+    );
     assert_eq!(payload["source_item_key"], prepared.url());
     assert_eq!(payload["source_generation"], 1);
-    assert_eq!(
-        payload["document_id"],
-        format!("legacy-vector:{}", prepared.url())
+    assert!(
+        payload["document_id"]
+            .as_str()
+            .is_some_and(|value| value.starts_with("legacy-vector:fnv1a64:"))
     );
     assert!(
         payload["chunk_id"]
@@ -279,7 +284,10 @@ async fn target_payload_bridge_scrubs_non_home_absolute_local_paths() {
     let serialized = serde_json::to_string(&payload).unwrap();
 
     assert!(!serialized.contains("/tmp/axon"));
-    assert_eq!(payload["source_item_key"], "file://local/lib.rs");
+    let source_item_key = payload["source_item_key"].as_str().unwrap();
+    assert!(source_item_key.starts_with("file://local/fnv1a64:"));
+    assert!(source_item_key.ends_with("/lib.rs"));
+    assert_ne!(source_item_key, "file://local/lib.rs");
 }
 
 #[tokio::test]
@@ -312,7 +320,9 @@ async fn target_payload_bridge_scrubs_ledger_item_key_local_paths() {
     let serialized = serde_json::to_string(&payload).unwrap();
 
     assert!(!serialized.contains("/tmp/axon"));
-    assert_eq!(payload["source_item_key"], "file://local/lib.rs");
+    let source_item_key = payload["source_item_key"].as_str().unwrap();
+    assert!(source_item_key.starts_with("file://local/fnv1a64:"));
+    assert!(source_item_key.ends_with("/lib.rs"));
 }
 
 #[tokio::test]

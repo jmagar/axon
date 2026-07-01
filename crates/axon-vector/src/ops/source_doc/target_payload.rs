@@ -1,6 +1,7 @@
 use serde_json::{Map, Value};
 
 use super::{LedgerPayload, PreparedDoc};
+use axon_vectors::payload::VECTOR_PAYLOAD_CONTRACT_VERSION;
 
 pub(in crate::ops) fn target_vector_payload_for_chunk(
     doc: &PreparedDoc,
@@ -23,7 +24,7 @@ pub(in crate::ops) fn target_vector_payload_for_chunk(
         .ledger_payload
         .as_ref()
         .map(|ledger| ledger.source_id().to_string())
-        .unwrap_or_else(|| format!("legacy-vector:{}", doc.source_type));
+        .unwrap_or_else(|| format!("legacy-vector:{}", fnv1a64(&doc.url)));
     let source_item_key = doc
         .ledger_payload
         .as_ref()
@@ -55,7 +56,10 @@ pub(in crate::ops) fn target_vector_payload_for_chunk(
         .unwrap_or_else(|| serde_json::json!({}));
 
     let mut payload = Map::new();
-    payload.insert("payload_contract_version".to_string(), "2026-07-01".into());
+    payload.insert(
+        "payload_contract_version".to_string(),
+        VECTOR_PAYLOAD_CONTRACT_VERSION.into(),
+    );
     payload.insert("collection".to_string(), collection.into());
     payload.insert("source_family".to_string(), source_family.into());
     payload.insert("source_id".to_string(), source_id.into());
@@ -64,7 +68,7 @@ pub(in crate::ops) fn target_vector_payload_for_chunk(
     payload.insert("committed_generation".to_string(), source_generation.into());
     payload.insert(
         "document_id".to_string(),
-        format!("legacy-vector:{}", target_safe_uri(&doc.url)).into(),
+        format!("legacy-vector:{}", fnv1a64(&doc.url)).into(),
     );
     payload.insert("chunk_id".to_string(), chunk_id.into());
     payload.insert("chunk_text".to_string(), chunk.clone().into());
@@ -195,7 +199,7 @@ fn target_safe_path_uri(path: &str) -> String {
         .rsplit(['/', '\\'])
         .find(|segment| !segment.is_empty())
         .unwrap_or("local-file");
-    format!("file://local/{file_name}")
+    format!("file://local/{}/{file_name}", fnv1a64(path))
 }
 
 fn looks_like_absolute_path(value: &str) -> bool {

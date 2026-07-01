@@ -1,4 +1,5 @@
 //! Qdrant target boundary shell and conversion helpers.
+#![allow(dead_code)]
 
 use std::collections::HashMap;
 
@@ -6,12 +7,14 @@ use async_trait::async_trait;
 use axon_api::source::*;
 use qdrant_client::qdrant::{
     CreateCollection, CreateFieldIndexCollection, DenseVector, FieldCondition, FieldType, Filter,
-    Match, NamedVectors, PointStruct, SparseVector as QdrantSparseVector,
+    HnswConfigDiff, Match, NamedVectors, OptimizersConfigDiff, PointStruct, QuantizationConfig,
+    QuantizationType, ScalarQuantization, SparseVector as QdrantSparseVector,
     SparseVectorConfig as QdrantSparseVectorConfig, SparseVectorParams, Value,
     Vector as QdrantVector, VectorParams, VectorParamsMap, Vectors, VectorsConfig, condition,
-    r#match, vector, vectors, vectors_config,
+    r#match, quantization_config, vector, vectors, vectors_config,
 };
 
+use crate::payload::VectorPayload;
 use crate::sparse::{batch_sparse_vectors_by_chunk, validate_sparse_vector};
 use crate::store::{Result, VectorStore};
 
@@ -131,7 +134,7 @@ pub fn qdrant_collection_request(spec: &CollectionSpec) -> CreateCollection {
             distance: qdrant_distance(spec.dense.distance) as i32,
             hnsw_config: None,
             quantization_config: None,
-            on_disk: None,
+            on_disk: Some(true),
             datatype: None,
             multivector_config: None,
         },
@@ -155,15 +158,42 @@ pub fn qdrant_collection_request(spec: &CollectionSpec) -> CreateCollection {
             );
             QdrantSparseVectorConfig { map }
         }),
-        hnsw_config: None,
+        hnsw_config: Some(HnswConfigDiff {
+            m: Some(32),
+            ef_construct: Some(256),
+            full_scan_threshold: None,
+            max_indexing_threads: None,
+            on_disk: Some(false),
+            payload_m: None,
+            inline_storage: None,
+        }),
         wal_config: None,
-        optimizers_config: None,
+        optimizers_config: Some(OptimizersConfigDiff {
+            deleted_threshold: None,
+            vacuum_min_vector_number: None,
+            default_segment_number: None,
+            max_segment_size: None,
+            memmap_threshold: None,
+            indexing_threshold: Some(20_000),
+            flush_interval_sec: None,
+            deprecated_max_optimization_threads: None,
+            max_optimization_threads: None,
+            prevent_unoptimized: None,
+        }),
         shard_number: None,
         on_disk_payload: None,
         timeout: None,
         replication_factor: None,
         write_consistency_factor: None,
-        quantization_config: None,
+        quantization_config: Some(QuantizationConfig {
+            quantization: Some(quantization_config::Quantization::Scalar(
+                ScalarQuantization {
+                    r#type: QuantizationType::Int8 as i32,
+                    quantile: Some(0.99),
+                    always_ram: Some(true),
+                },
+            )),
+        }),
         sharding_method: None,
         strict_mode_config: None,
         metadata: HashMap::new(),
@@ -266,6 +296,25 @@ pub fn qdrant_upsert_points(
                     ),
                 );
             }
+            if point.vector.len() as u32 != spec.dense.dimensions {
+                return Err(ApiError::new(
+                    "vector.dimension_mismatch",
+                    axon_error::ErrorStage::Upserting,
+                    format!(
+                        "point {} dimensions {} do not match collection dimensions {}",
+                        point.point_id.0,
+                        point.vector.len(),
+                        spec.dense.dimensions
+                    ),
+                ));
+            }
+            VectorPayload::try_from_metadata(point.payload.clone()).map_err(|err| {
+                ApiError::new(
+                    "vector.invalid_payload",
+                    axon_error::ErrorStage::Upserting,
+                    err.to_string(),
+                )
+            })?;
             Ok(PointStruct {
                 id: Some(point.point_id.0.as_str().into()),
                 payload: point

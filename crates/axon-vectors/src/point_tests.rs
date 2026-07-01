@@ -4,14 +4,27 @@ use serde_json::json;
 use crate::point::{VectorPointBatchBuildError, VectorPointBatchBuilder};
 use crate::testing::{
     test_collection_spec, test_embedding_result_for, test_embedding_result_with_vectors,
-    test_prepared_document,
+    test_prepared_document, test_vector_build_context,
 };
+
+fn builder(
+    collection: CollectionSpec,
+    document: PreparedDocument,
+    embeddings: EmbeddingResult,
+) -> VectorPointBatchBuilder {
+    VectorPointBatchBuilder::new(
+        collection,
+        document,
+        embeddings,
+        test_vector_build_context(),
+    )
+}
 
 #[test]
 fn prepared_document_and_embeddings_build_validated_points() {
     let document = test_prepared_document();
     let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
-    let batch = VectorPointBatchBuilder::new(test_collection_spec(3), document, embeddings)
+    let batch = builder(test_collection_spec(3), document, embeddings)
         .build()
         .unwrap();
 
@@ -42,7 +55,7 @@ fn embedding_chunk_mismatch_fails_without_partial_batch() {
         ],
     );
 
-    let err = VectorPointBatchBuilder::new(test_collection_spec(3), document, embeddings)
+    let err = builder(test_collection_spec(3), document, embeddings)
         .build()
         .unwrap_err();
     assert_eq!(
@@ -59,7 +72,7 @@ fn duplicate_chunk_ids_fail() {
     document.chunks[1].chunk_id = document.chunks[0].chunk_id.clone();
     let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
 
-    let err = VectorPointBatchBuilder::new(test_collection_spec(3), document, embeddings)
+    let err = builder(test_collection_spec(3), document, embeddings)
         .build()
         .unwrap_err();
     assert_eq!(
@@ -74,18 +87,17 @@ fn duplicate_chunk_ids_fail() {
 fn point_ids_are_stable_and_include_embedding_model() {
     let document = test_prepared_document();
     let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
-    let first = VectorPointBatchBuilder::new(test_collection_spec(3), document.clone(), embeddings)
+    let first = builder(test_collection_spec(3), document.clone(), embeddings)
         .build()
         .unwrap();
 
     let same_model = test_embedding_result_for(&document, "text-embedding-test", 3);
-    let second =
-        VectorPointBatchBuilder::new(test_collection_spec(3), document.clone(), same_model)
-            .build()
-            .unwrap();
+    let second = builder(test_collection_spec(3), document.clone(), same_model)
+        .build()
+        .unwrap();
 
     let other_model = test_embedding_result_for(&document, "other-embedding-model", 3);
-    let changed = VectorPointBatchBuilder::new(test_collection_spec(3), document, other_model)
+    let changed = builder(test_collection_spec(3), document, other_model)
         .build()
         .unwrap();
 
@@ -97,7 +109,7 @@ fn point_ids_are_stable_and_include_embedding_model() {
 fn point_ids_include_collection_namespace_document_chunk_model_and_generation() {
     let document = test_prepared_document();
     let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
-    let baseline = VectorPointBatchBuilder::new(
+    let baseline = builder(
         test_collection_spec(3),
         document.clone(),
         embeddings.clone(),
@@ -112,7 +124,7 @@ fn point_ids_include_collection_namespace_document_chunk_model_and_generation() 
     other_collection.collection = "other-collection".to_string();
     assert_ne!(
         baseline,
-        VectorPointBatchBuilder::new(other_collection, document.clone(), embeddings.clone())
+        builder(other_collection, document.clone(), embeddings.clone())
             .build()
             .unwrap()
             .points[0]
@@ -123,7 +135,7 @@ fn point_ids_include_collection_namespace_document_chunk_model_and_generation() 
     other_namespace.dense.name = "dense-code".to_string();
     assert_ne!(
         baseline,
-        VectorPointBatchBuilder::new(other_namespace, document.clone(), embeddings.clone())
+        builder(other_namespace, document.clone(), embeddings.clone())
             .build()
             .unwrap()
             .points[0]
@@ -134,7 +146,7 @@ fn point_ids_include_collection_namespace_document_chunk_model_and_generation() 
     other_document.document_id = DocumentId::new("doc-other");
     assert_ne!(
         baseline,
-        VectorPointBatchBuilder::new(test_collection_spec(3), other_document, embeddings.clone())
+        builder(test_collection_spec(3), other_document, embeddings.clone())
             .build()
             .unwrap()
             .points[0]
@@ -146,7 +158,7 @@ fn point_ids_include_collection_namespace_document_chunk_model_and_generation() 
     let other_chunk_embeddings = test_embedding_result_for(&other_chunk, "text-embedding-test", 3);
     assert_ne!(
         baseline,
-        VectorPointBatchBuilder::new(test_collection_spec(3), other_chunk, other_chunk_embeddings)
+        builder(test_collection_spec(3), other_chunk, other_chunk_embeddings)
             .build()
             .unwrap()
             .points[0]
@@ -159,7 +171,7 @@ fn point_ids_include_collection_namespace_document_chunk_model_and_generation() 
         test_embedding_result_for(&other_generation, "text-embedding-test", 3);
     assert_ne!(
         baseline,
-        VectorPointBatchBuilder::new(
+        builder(
             test_collection_spec(3),
             other_generation,
             other_generation_embeddings
@@ -183,7 +195,7 @@ fn dimensions_mismatch_fails() {
         ],
     );
 
-    let err = VectorPointBatchBuilder::new(test_collection_spec(3), document, embeddings)
+    let err = builder(test_collection_spec(3), document, embeddings)
         .build()
         .unwrap_err();
     assert_eq!(
@@ -202,7 +214,7 @@ fn negative_source_generation_fails_before_payload_build() {
     document.generation = SourceGenerationId::new("-1");
     let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
 
-    let err = VectorPointBatchBuilder::new(test_collection_spec(3), document, embeddings)
+    let err = builder(test_collection_spec(3), document, embeddings)
         .build()
         .unwrap_err();
 
@@ -223,7 +235,7 @@ fn payload_validation_runs_before_returning_batch() {
     );
     let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
 
-    let err = VectorPointBatchBuilder::new(test_collection_spec(3), document, embeddings)
+    let err = builder(test_collection_spec(3), document, embeddings)
         .build()
         .unwrap_err();
     assert!(matches!(

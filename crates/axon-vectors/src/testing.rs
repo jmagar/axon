@@ -3,6 +3,8 @@
 use axon_api::source::*;
 use serde_json::json;
 
+use crate::point::VectorPointBatchBuildContext;
+
 pub const MODULE_NAME: &str = "testing";
 
 pub fn test_collection_spec(dimensions: u32) -> CollectionSpec {
@@ -122,6 +124,13 @@ pub fn test_embedding_result_with_vectors(
             duration_ms: 1,
         },
         warnings: Vec::new(),
+    }
+}
+
+pub fn test_vector_build_context() -> VectorPointBatchBuildContext {
+    VectorPointBatchBuildContext {
+        embedding_provider: ProviderId::new("fake-embedding"),
+        embedded_at: Timestamp("2026-07-01T00:00:00Z".to_string()),
     }
 }
 

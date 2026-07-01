@@ -138,6 +138,18 @@
         },
         {
           "properties": {
+            "csv_row": {
+              "not": {
+                "type": "null"
+              }
+            }
+          },
+          "required": [
+            "csv_row"
+          ]
+        },
+        {
+          "properties": {
             "dom_selector": {
               "minLength": 1,
               "type": "string"
@@ -178,18 +190,6 @@
           },
           "required": [
             "xml_xpath"
-          ]
-        },
-        {
-          "properties": {
-            "csv_row": {
-              "not": {
-                "type": "null"
-              }
-            }
-          },
-          "required": [
-            "csv_row"
           ]
         },
         {
@@ -446,6 +446,18 @@
         },
         {
           "properties": {
+            "csv_row": {
+              "not": {
+                "type": "null"
+              }
+            }
+          },
+          "required": [
+            "csv_row"
+          ]
+        },
+        {
+          "properties": {
             "dom_selector": {
               "minLength": 1,
               "type": "string"
@@ -486,18 +498,6 @@
           },
           "required": [
             "xml_xpath"
-          ]
-        },
-        {
-          "properties": {
-            "csv_row": {
-              "not": {
-                "type": "null"
-              }
-            }
-          },
-          "required": [
-            "csv_row"
           ]
         },
         {
@@ -1533,7 +1533,7 @@
       "VectorSearchResult"
     ],
     "clean_break": true,
-    "contract_version": "2026-06-30",
+    "contract_version": "2026-07-01",
     "examples": [
       {
         "chunk_id": "chunk-code-0",
@@ -2037,12 +2037,12 @@
         "path": "crates/axon-api/src/source/vector.rs"
       },
       {
-        "checksum": "sha256:4fd9c62066bc1350729145433b0795cb3d20178b90580e74b4441a5100758a95",
+        "checksum": "sha256:d3080a778a80a62412605387115effebb43b29e4a7a117b224e9e351135bb399",
         "kind": "rust_module",
         "path": "crates/axon-vectors/src/payload.rs"
       },
       {
-        "checksum": "sha256:28cb0ea90f3ba62909b9da3aa8eed43e5b9d5811b1c9149a947de13fe3ed1672",
+        "checksum": "sha256:15926aec94e34e08a68788918b2b7070842cca8f13ebf3d2dfa2ef9f125c1e50",
         "kind": "rust_module",
         "path": "crates/axon-vectors/src/point.rs"
       },

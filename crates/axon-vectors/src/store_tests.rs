@@ -243,6 +243,21 @@ async fn collection_creation_is_idempotent_and_rejects_drift() {
 }
 
 #[tokio::test]
+async fn collection_drift_rejects_missing_required_payload_indexes() {
+    let store = FakeVectorStore::new("fake-vector");
+    let mut existing = collection();
+    existing
+        .payload_indexes
+        .retain(|index| index.field_name != "source_id");
+    store.ensure_collection(existing).await.unwrap();
+
+    let err = store.ensure_collection(collection()).await.unwrap_err();
+
+    assert_eq!(err.code.to_string(), "vector.collection_drift");
+    assert!(err.message.contains("source_id"));
+}
+
+#[tokio::test]
 async fn fake_vector_store_records_payload_indexes_from_collection_spec() {
     let store = FakeVectorStore::new("fake-vector");
     store.ensure_collection(collection()).await.unwrap();

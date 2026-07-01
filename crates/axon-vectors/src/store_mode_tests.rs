@@ -6,14 +6,22 @@ use serde_json::json;
 
 use crate::point::VectorPointBatchBuilder;
 use crate::store::{FakeVectorMode, FakeVectorStore, VectorStore};
-use crate::testing::{test_collection_spec, test_embedding_result_for, test_prepared_document};
+use crate::testing::{
+    test_collection_spec, test_embedding_result_for, test_prepared_document,
+    test_vector_build_context,
+};
 
 fn batch() -> VectorPointBatch {
     let document = test_prepared_document();
     let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
-    VectorPointBatchBuilder::new(test_collection_spec(3), document, embeddings)
-        .build()
-        .unwrap()
+    VectorPointBatchBuilder::new(
+        test_collection_spec(3),
+        document,
+        embeddings,
+        test_vector_build_context(),
+    )
+    .build()
+    .unwrap()
 }
 
 fn search() -> VectorSearchRequest {

@@ -28,6 +28,7 @@ impl ContextBundle {
         let mut truncated = false;
 
         for (chunk_id, text) in chunks {
+            let text = defang_chunk_text(&text);
             let separator_bytes = if text_parts.is_empty() { 0 } else { 2 };
             let next_bytes_used = bytes_used + separator_bytes + text.len() as u64;
             let next_token_estimate = estimate_tokens(next_bytes_used);
@@ -61,4 +62,34 @@ impl ContextBundle {
 
 fn estimate_tokens(bytes: u64) -> u32 {
     bytes.div_ceil(4).try_into().unwrap_or(u32::MAX)
+}
+
+fn defang_chunk_text(text: &str) -> String {
+    let text = text
+        .replace("## Sources", "## \u{200b}Sources")
+        .replace("## Source Document", "## \u{200b}Source Document")
+        .replace("## Top Chunk", "## \u{200b}Top Chunk")
+        .replace("## Supplemental Chunk", "## \u{200b}Supplemental Chunk");
+    defang_citation_patterns(&text)
+}
+
+fn defang_citation_patterns(text: &str) -> String {
+    let mut result = String::with_capacity(text.len() + 16);
+    let mut rest = text;
+    while let Some(pos) = rest.find("[S") {
+        result.push_str(&rest[..pos]);
+        let tail = &rest[pos + 2..];
+        let digit_end = tail.bytes().take_while(|b| b.is_ascii_digit()).count();
+        if digit_end > 0 && tail[digit_end..].starts_with(']') {
+            result.push_str("[\u{200b}S");
+            result.push_str(&tail[..digit_end]);
+            result.push(']');
+            rest = &tail[digit_end + 1..];
+        } else {
+            result.push_str("[S");
+            rest = tail;
+        }
+    }
+    result.push_str(rest);
+    result
 }

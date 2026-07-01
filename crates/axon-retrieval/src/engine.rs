@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use axon_api::source::{
     BatchId, ChunkId, ContentKind, EmbeddingBatch, EmbeddingInput, JobId, JobPriority, MetadataMap,
-    ProviderId, VectorSearchMatch, VectorSearchRequest,
+    ProviderId, VectorSearchMatch, VectorSearchRequest, Visibility,
 };
 use axon_embedding::provider::EmbeddingProvider;
 use axon_error::{ApiError, ErrorStage};
@@ -22,6 +22,45 @@ pub const MODULE_NAME: &str = "engine";
 pub struct RetrievalEngine<S, E> {
     store: Arc<S>,
     embedding_provider: Arc<E>,
+    config: RetrievalEngineConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RetrievalEngineConfig {
+    pub embedding_provider_id: ProviderId,
+    pub embedding_model: String,
+    pub access: RetrievalAccess,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RetrievalAccess {
+    pub allowed_visibility: Vec<Visibility>,
+}
+
+impl RetrievalAccess {
+    pub fn standard() -> Self {
+        Self {
+            allowed_visibility: vec![
+                Visibility::Public,
+                Visibility::Internal,
+                Visibility::Derived,
+            ],
+        }
+    }
+}
+
+impl RetrievalEngineConfig {
+    pub fn new(
+        embedding_provider_id: ProviderId,
+        embedding_model: impl Into<String>,
+        access: RetrievalAccess,
+    ) -> Self {
+        Self {
+            embedding_provider_id,
+            embedding_model: embedding_model.into(),
+            access,
+        }
+    }
 }
 
 impl<S, E> RetrievalEngine<S, E>
@@ -29,15 +68,17 @@ where
     S: VectorStore + 'static,
     E: EmbeddingProvider + 'static,
 {
-    pub fn new(store: Arc<S>, embedding_provider: Arc<E>) -> Self {
+    pub fn new(store: Arc<S>, embedding_provider: Arc<E>, config: RetrievalEngineConfig) -> Self {
         Self {
             store,
             embedding_provider,
+            config,
         }
     }
 
     pub async fn retrieve(&self, request: RetrievalRequest) -> Result<RetrievalResult, ApiError> {
-        let plan = request.plan();
+        let plan =
+            RetrievalPlan::from_request(&request, self.config.access.allowed_visibility.clone());
         let dense_vector = self.embed_query(&request.query).await?;
         let search = self
             .store
@@ -85,8 +126,8 @@ where
             .embed(EmbeddingBatch {
                 batch_id: BatchId::new(Uuid::from_u128(1)),
                 job_id: JobId::new(Uuid::from_u128(2)),
-                provider_id: ProviderId::new("retrieval-fake"),
-                model: "retrieval-fake".to_string(),
+                provider_id: self.config.embedding_provider_id.clone(),
+                model: self.config.embedding_model.clone(),
                 items: vec![EmbeddingInput {
                     chunk_id: ChunkId::new("query"),
                     text: query.to_string(),
@@ -117,13 +158,12 @@ fn search_filters(plan: &RetrievalPlan) -> MetadataMap {
     let mut filters = MetadataMap::new();
     filters.insert(
         "visibility".to_string(),
-        serde_json::json!(match plan.visibility {
-            axon_api::source::Visibility::Public => "public",
-            axon_api::source::Visibility::Internal => "internal",
-            axon_api::source::Visibility::Sensitive => "sensitive",
-            axon_api::source::Visibility::Redacted => "redacted",
-            axon_api::source::Visibility::Derived => "derived",
-        }),
+        serde_json::json!(
+            plan.allowed_visibility
+                .iter()
+                .map(visibility_value)
+                .collect::<Vec<_>>()
+        ),
     );
     if let Some(source_id) = &plan.source_id {
         filters.insert("source_id".to_string(), serde_json::json!(source_id.0));
@@ -135,6 +175,16 @@ fn search_filters(plan: &RetrievalPlan) -> MetadataMap {
         );
     }
     filters
+}
+
+fn visibility_value(visibility: &Visibility) -> &'static str {
+    match visibility {
+        Visibility::Public => "public",
+        Visibility::Internal => "internal",
+        Visibility::Sensitive => "sensitive",
+        Visibility::Redacted => "redacted",
+        Visibility::Derived => "derived",
+    }
 }
 
 fn match_from_vector(item: &VectorSearchMatch) -> Result<RetrievalMatch, ApiError> {

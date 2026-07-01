@@ -15,7 +15,6 @@ pub struct RetrievalRequest {
     pub limit: u32,
     pub source_id: Option<SourceId>,
     pub generation: Option<SourceGenerationId>,
-    pub visibility: Visibility,
     pub namespace_filters: Vec<String>,
     pub byte_budget: u64,
     pub token_budget: u32,
@@ -23,7 +22,14 @@ pub struct RetrievalRequest {
 
 impl RetrievalRequest {
     pub fn plan(&self) -> RetrievalPlan {
-        RetrievalPlan::from_request(self)
+        RetrievalPlan::from_request(
+            self,
+            vec![
+                Visibility::Public,
+                Visibility::Internal,
+                Visibility::Derived,
+            ],
+        )
     }
 }
 

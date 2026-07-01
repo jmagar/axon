@@ -9,6 +9,25 @@ use axon_api::source::{ChunkLocator, MetadataMap, SourceRange};
 use crate::payload_redaction::{forbidden_field_name, validate_forbidden_value};
 
 pub const MODULE_NAME: &str = "payload";
+pub const VECTOR_PAYLOAD_CONTRACT_VERSION: &str = "2026-07-01";
+pub const SOURCE_RANGE_ANCHOR_FIELDS: &[&str] = &[
+    "line_start",
+    "line_end",
+    "byte_start",
+    "byte_end",
+    "char_start",
+    "char_end",
+    "time_start_ms",
+    "time_end_ms",
+    "csv_row",
+    "dom_selector",
+    "json_pointer",
+    "yaml_path",
+    "xml_xpath",
+    "session_turn_id",
+    "turn_start",
+    "turn_end",
+];
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct VectorPayload {
@@ -238,7 +257,18 @@ fn validate_source_range_shape(
     range: &SourceRange,
     field: &str,
 ) -> Result<(), VectorPayloadValidationError> {
-    if range.line_start.is_some()
+    if source_range_has_anchor(range) {
+        validate_source_range_order(range, field)?;
+        Ok(())
+    } else {
+        Err(VectorPayloadValidationError::InvalidFieldShape {
+            field: field.to_string(),
+        })
+    }
+}
+
+fn source_range_has_anchor(range: &SourceRange) -> bool {
+    range.line_start.is_some()
         || range.line_end.is_some()
         || range.byte_start.is_some()
         || range.byte_end.is_some()
@@ -254,14 +284,6 @@ fn validate_source_range_shape(
         || non_empty(range.session_turn_id.as_deref())
         || non_empty(range.turn_start.as_deref())
         || non_empty(range.turn_end.as_deref())
-    {
-        validate_source_range_order(range, field)?;
-        Ok(())
-    } else {
-        Err(VectorPayloadValidationError::InvalidFieldShape {
-            field: field.to_string(),
-        })
-    }
 }
 
 fn validate_source_range_order(

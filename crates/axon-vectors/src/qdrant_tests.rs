@@ -1,6 +1,6 @@
 use axon_api::source::*;
 use qdrant_client::qdrant::{
-    FieldType, condition, r#match, point_id, vector, vectors, vectors_config,
+    FieldType, condition, r#match, point_id, quantization_config, vector, vectors, vectors_config,
 };
 use serde_json::json;
 
@@ -10,7 +10,10 @@ use crate::qdrant::{
     qdrant_upsert_points,
 };
 use crate::store::VectorStore;
-use crate::testing::{test_collection_spec, test_embedding_result_for, test_prepared_document};
+use crate::testing::{
+    test_collection_spec, test_embedding_result_for, test_prepared_document,
+    test_vector_build_context,
+};
 
 #[test]
 fn collection_spec_converts_to_named_dense_and_optional_sparse_config() {
@@ -33,6 +36,21 @@ fn collection_spec_converts_to_named_dense_and_optional_sparse_config() {
         map.map["dense_docs"].distance,
         qdrant_client::qdrant::Distance::Cosine as i32
     );
+    assert_eq!(map.map["dense_docs"].on_disk, Some(true));
+    let hnsw = request.hnsw_config.unwrap();
+    assert_eq!(hnsw.m, Some(32));
+    assert_eq!(hnsw.ef_construct, Some(256));
+    assert_eq!(hnsw.on_disk, Some(false));
+    let quantization = request.quantization_config.unwrap().quantization.unwrap();
+    let quantization_config::Quantization::Scalar(scalar) = quantization else {
+        panic!("expected scalar quantization");
+    };
+    assert_eq!(
+        scalar.r#type,
+        qdrant_client::qdrant::QuantizationType::Int8 as i32
+    );
+    assert_eq!(scalar.quantile, Some(0.99));
+    assert_eq!(scalar.always_ram, Some(true));
 
     let sparse = request.sparse_vectors_config.unwrap();
     assert_eq!(
@@ -255,9 +273,14 @@ fn vector_point_batch_converts_to_qdrant_points_without_dropping_payload_fields(
     spec.dense.name = "dense_docs".to_string();
     let document = test_prepared_document();
     let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
-    let batch = VectorPointBatchBuilder::new(spec.clone(), document, embeddings)
-        .build()
-        .unwrap();
+    let batch = VectorPointBatchBuilder::new(
+        spec.clone(),
+        document,
+        embeddings,
+        test_vector_build_context(),
+    )
+    .build()
+    .unwrap();
 
     let points = qdrant_upsert_points(&spec, &batch).unwrap();
 
@@ -305,9 +328,14 @@ fn vector_point_batch_converts_sparse_vectors_to_qdrant_named_sparse_arm() {
     });
     let document = test_prepared_document();
     let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
-    let mut batch = VectorPointBatchBuilder::new(spec.clone(), document, embeddings)
-        .build()
-        .unwrap();
+    let mut batch = VectorPointBatchBuilder::new(
+        spec.clone(),
+        document,
+        embeddings,
+        test_vector_build_context(),
+    )
+    .build()
+    .unwrap();
     batch.points[0].sparse_vector = Some(SparseVector {
         chunk_id: batch.points[0].chunk_id.clone(),
         indices: vec![1, 3, 8],
@@ -344,9 +372,14 @@ fn vector_point_batch_merges_batch_level_sparse_vectors_by_chunk_id() {
     });
     let document = test_prepared_document();
     let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
-    let mut batch = VectorPointBatchBuilder::new(spec.clone(), document, embeddings)
-        .build()
-        .unwrap();
+    let mut batch = VectorPointBatchBuilder::new(
+        spec.clone(),
+        document,
+        embeddings,
+        test_vector_build_context(),
+    )
+    .build()
+    .unwrap();
     batch.sparse_vectors = Some(vec![SparseVector {
         chunk_id: batch.points[0].chunk_id.clone(),
         indices: vec![2],
@@ -381,9 +414,14 @@ fn malformed_sparse_vectors_are_rejected_before_qdrant_conversion() {
     });
     let document = test_prepared_document();
     let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
-    let mut batch = VectorPointBatchBuilder::new(spec.clone(), document, embeddings)
-        .build()
-        .unwrap();
+    let mut batch = VectorPointBatchBuilder::new(
+        spec.clone(),
+        document,
+        embeddings,
+        test_vector_build_context(),
+    )
+    .build()
+    .unwrap();
     batch.points[0].sparse_vector = Some(SparseVector {
         chunk_id: batch.points[0].chunk_id.clone(),
         indices: vec![1, 1],
@@ -393,6 +431,26 @@ fn malformed_sparse_vectors_are_rejected_before_qdrant_conversion() {
     let err = qdrant_upsert_points(&spec, &batch).unwrap_err();
 
     assert_eq!(err.code.to_string(), "vector.invalid_sparse_vector");
+}
+
+#[test]
+fn invalid_payloads_are_rejected_before_qdrant_conversion() {
+    let spec = test_collection_spec(3);
+    let document = test_prepared_document();
+    let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
+    let mut batch = VectorPointBatchBuilder::new(
+        spec.clone(),
+        document,
+        embeddings,
+        test_vector_build_context(),
+    )
+    .build()
+    .unwrap();
+    batch.points[0].payload.remove("chunk_locator");
+
+    let err = qdrant_upsert_points(&spec, &batch).unwrap_err();
+
+    assert_eq!(err.code.to_string(), "vector.invalid_payload");
 }
 
 #[tokio::test]

@@ -85,7 +85,7 @@ fn schema_bundle(inputs: &[SourceInput], registry: &VectorPayloadRegistry) -> Va
             ],
         ),
         "x-axon": {
-            "contract_version": "2026-06-30",
+            "contract_version": axon_vectors::payload::VECTOR_PAYLOAD_CONTRACT_VERSION,
             "generated_by": "cargo xtask schemas vector-payload",
             "owner_crates": ["axon-vectors", "axon-api"],
             "source_inputs": inputs,
@@ -154,25 +154,17 @@ fn require_source_range_anchor(defs: &mut Value, name: &str) {
 }
 
 fn source_range_anchor_fields() -> impl Iterator<Item = (&'static str, Value)> {
-    [
-        ("line_start", non_null_schema()),
-        ("line_end", non_null_schema()),
-        ("byte_start", non_null_schema()),
-        ("byte_end", non_null_schema()),
-        ("char_start", non_null_schema()),
-        ("char_end", non_null_schema()),
-        ("time_start_ms", non_null_schema()),
-        ("time_end_ms", non_null_schema()),
-        ("dom_selector", non_empty_string_schema()),
-        ("json_pointer", non_empty_string_schema()),
-        ("yaml_path", non_empty_string_schema()),
-        ("xml_xpath", non_empty_string_schema()),
-        ("csv_row", non_null_schema()),
-        ("session_turn_id", non_empty_string_schema()),
-        ("turn_start", non_empty_string_schema()),
-        ("turn_end", non_empty_string_schema()),
-    ]
-    .into_iter()
+    axon_vectors::payload::SOURCE_RANGE_ANCHOR_FIELDS
+        .iter()
+        .copied()
+        .map(|field| {
+            let schema = match field {
+                "dom_selector" | "json_pointer" | "yaml_path" | "xml_xpath" | "session_turn_id"
+                | "turn_start" | "turn_end" => non_empty_string_schema(),
+                _ => non_null_schema(),
+            };
+            (field, schema)
+        })
 }
 
 fn non_null_schema() -> Value {
