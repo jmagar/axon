@@ -1,10 +1,15 @@
-use axon_api::source::{HealthStatus, JobPriority, ProviderId, ProviderKind, ReservationState};
+use axon_api::source::{
+    HealthStatus, JobId, JobPriority, LifecycleStatus, PipelinePhase, ProviderId, ProviderKind,
+    ReservationState, StageId,
+};
 use axon_error::ErrorStage;
 use chrono::DateTime;
 
 use crate::reservation::{
-    ProviderReservationConfig, ProviderReservationManager, ProviderReservationOutcome,
+    ProviderReservationConfig, ProviderReservationContext, ProviderReservationManager,
+    ProviderReservationOutcome,
 };
+use crate::heartbeat::JobHeartbeatExt;
 
 fn manager() -> ProviderReservationManager {
     ProviderReservationManager::new(ProviderReservationConfig {
@@ -197,4 +202,100 @@ async fn fatal_provider_failure_blocks_reservations_until_success_probe() {
 
     manager.record_success().await;
     manager.reserve(JobPriority::Interactive, 1).await.unwrap();
+}
+
+#[tokio::test]
+async fn job_aware_reservation_snapshot_carries_observable_context() {
+    let manager = manager();
+    let job_id = JobId(uuid::Uuid::new_v4());
+    let stage_id = StageId(uuid::Uuid::new_v4());
+
+    let reservation = manager
+        .reserve_with_context(ProviderReservationContext {
+            job_id,
+            stage_id: Some(stage_id),
+            provider_id: None,
+            priority: JobPriority::Background,
+            units: 1,
+            ttl_seconds: Some(30),
+        })
+        .await
+        .unwrap();
+    let snapshot = reservation.snapshot();
+
+    assert!(snapshot.reservation_id.0.starts_with("res_"));
+    assert_eq!(snapshot.provider_kind, ProviderKind::Embedding);
+    assert_eq!(snapshot.provider_id, Some(ProviderId::new("tei")));
+    assert_eq!(snapshot.priority, JobPriority::Background);
+    assert_eq!(snapshot.requested_units, 1);
+    assert_eq!(snapshot.granted_units, 1);
+    assert!(snapshot.acquired_at.is_some());
+    assert!(snapshot.expires_at.is_some());
+    assert_eq!(snapshot.status, LifecycleStatus::Running);
+    assert_eq!(reservation.job_id(), Some(job_id));
+    assert_eq!(reservation.stage_id(), Some(stage_id));
+}
+
+#[tokio::test]
+async fn dropping_job_aware_reservation_releases_capacity() {
+    let manager = ProviderReservationManager::new(ProviderReservationConfig {
+        provider_id: ProviderId::new("tei"),
+        provider_kind: ProviderKind::Embedding,
+        capacity: 1,
+        interactive_reserve: 0,
+        cooldown_after_failures: 1,
+        cooldown_secs: 60,
+    });
+    let job_id = JobId(uuid::Uuid::new_v4());
+    let reservation = manager
+        .reserve_with_context(ProviderReservationContext {
+            job_id,
+            stage_id: None,
+            provider_id: None,
+            priority: JobPriority::Background,
+            units: 1,
+            ttl_seconds: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(manager.snapshot().await.active, 1);
+
+    drop(reservation);
+
+    assert_eq!(manager.snapshot().await.active, 0);
+}
+
+#[tokio::test]
+async fn cooldown_snapshot_is_heartbeat_ready() {
+    let manager = manager();
+    manager.record_failure("provider.timeout", true).await;
+    manager.record_failure("provider.timeout", true).await;
+
+    let snapshot = manager.cooling_snapshot().await.expect("cooling snapshot");
+    assert_eq!(snapshot.reason, "provider.timeout");
+    assert!(snapshot.retry_after.is_some());
+    assert!(snapshot.degraded);
+
+    let heartbeat = crate::heartbeat::heartbeat(
+        JobId(uuid::Uuid::new_v4()),
+        1,
+        PipelinePhase::Embedding,
+        LifecycleStatus::Waiting,
+    )
+    .with_provider_reservations(vec![axon_api::source::ProviderReservationSnapshot {
+        reservation_id: axon_api::source::ReservationId::from("res_pending"),
+        provider_kind: ProviderKind::Embedding,
+        provider_id: Some(ProviderId::new("tei")),
+        priority: JobPriority::Background,
+        requested_units: 1,
+        granted_units: 0,
+        acquired_at: None,
+        expires_at: None,
+        status: LifecycleStatus::Waiting,
+        queue_depth: Some(1),
+        cooling: Some(snapshot),
+    }]);
+
+    assert_eq!(heartbeat.provider_reservations.len(), 1);
+    assert!(heartbeat.provider_reservations[0].cooling.is_some());
 }

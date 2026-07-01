@@ -2,7 +2,10 @@
 
 pub const MODULE_NAME: &str = "heartbeat";
 
-use axon_api::source::{JobHeartbeat, JobId, LifecycleStatus, PipelinePhase, StageCounts, Timestamp};
+use axon_api::source::{
+    JobHeartbeat, JobId, LifecycleStatus, PipelinePhase, ProviderReservationSnapshot, StageCounts,
+    Timestamp,
+};
 use chrono::Utc;
 
 pub fn foreground_interval_secs() -> u64 {
@@ -37,6 +40,7 @@ pub trait JobHeartbeatExt {
     fn with_worker(self, worker_id: impl Into<String>) -> Self;
     fn with_last_event_sequence(self, sequence: u64) -> Self;
     fn with_counts(self, counts: StageCounts) -> Self;
+    fn with_provider_reservations(self, reservations: Vec<ProviderReservationSnapshot>) -> Self;
 }
 
 impl JobHeartbeatExt for JobHeartbeat {
@@ -52,6 +56,11 @@ impl JobHeartbeatExt for JobHeartbeat {
 
     fn with_counts(mut self, counts: StageCounts) -> Self {
         self.counts = Some(counts);
+        self
+    }
+
+    fn with_provider_reservations(mut self, reservations: Vec<ProviderReservationSnapshot>) -> Self {
+        self.provider_reservations = reservations;
         self
     }
 }
