@@ -81,6 +81,30 @@ async fn reservation_denials_use_leasing_stage_for_non_embedding_providers() {
         .unwrap_err();
 
     assert_eq!(denied.stage, ErrorStage::Leasing);
+    assert_eq!(denied.provider_id, Some("qdrant".to_string()));
+}
+
+#[tokio::test]
+async fn overridden_reservation_provider_id_is_used_in_denial_errors() {
+    let manager = ProviderReservationManager::new(ProviderReservationConfig {
+        provider_id: ProviderId::new("embedding-provider-pool"),
+        provider_kind: ProviderKind::Embedding,
+        capacity: 1,
+        interactive_reserve: 0,
+        cooldown_after_failures: 1,
+        cooldown_secs: 30,
+    });
+
+    let _held = manager
+        .reserve_for_provider(ProviderId::new("fake-a"), JobPriority::Interactive, 1)
+        .await
+        .unwrap();
+    let denied = manager
+        .reserve_for_provider(ProviderId::new("fake-b"), JobPriority::Interactive, 1)
+        .await
+        .unwrap_err();
+
+    assert_eq!(denied.provider_id, Some("fake-b".to_string()));
 }
 
 #[tokio::test]

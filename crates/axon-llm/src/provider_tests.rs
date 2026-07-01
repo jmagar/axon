@@ -84,6 +84,21 @@ async fn fake_llm_capabilities_reflect_failure_mode() {
 }
 
 #[tokio::test]
+async fn fake_llm_health_override_cannot_hide_failure_mode() {
+    let provider = FakeLlmProvider::new("fake-llm")
+        .with_health(HealthStatus::Healthy)
+        .with_mode(FakeLlmMode::Fatal);
+
+    let capability = provider.capabilities().await.unwrap();
+
+    assert_eq!(capability.health, HealthStatus::Unavailable);
+    assert_eq!(
+        capability.last_error.unwrap().code.to_string(),
+        "provider.fatal"
+    );
+}
+
+#[tokio::test]
 async fn fake_llm_returns_structured_payload_for_schema_requests() {
     let provider = FakeLlmProvider::new("fake-llm");
     let mut request = LlmCompletionRequest::prompt("Return a JSON summary");

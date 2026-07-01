@@ -81,7 +81,9 @@ impl FakeLlmProvider {
             axon_error::ErrorStage::Synthesizing,
             "llm provider",
         );
-        if let Some(health) = self.health_override {
+        if let Some(health) = self.health_override.filter(|health| {
+            self.mode_state() == FakeProviderModeState::Success || *health != HealthStatus::Healthy
+        }) {
             state.health = health;
         }
         state

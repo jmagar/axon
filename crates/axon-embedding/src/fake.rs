@@ -78,7 +78,9 @@ impl FakeEmbeddingProvider {
             axon_error::ErrorStage::Embedding,
             "embedding provider",
         );
-        if let Some(health) = self.health_override {
+        if let Some(health) = self.health_override.filter(|health| {
+            self.mode == FakeEmbeddingMode::Success || *health != HealthStatus::Healthy
+        }) {
             state.health = health;
         }
         state

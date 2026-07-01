@@ -96,6 +96,21 @@ async fn fake_embedding_provider_capabilities_reflect_failure_mode() {
 }
 
 #[tokio::test]
+async fn fake_embedding_health_override_cannot_hide_failure_mode() {
+    let provider = FakeEmbeddingProvider::new("fake-embedding", 8)
+        .with_health(HealthStatus::Healthy)
+        .with_mode(FakeEmbeddingMode::Fatal);
+
+    let capability = provider.capabilities().await.unwrap();
+
+    assert_eq!(capability.health, HealthStatus::Unavailable);
+    assert_eq!(
+        capability.last_error.unwrap().code.to_string(),
+        "provider.fatal"
+    );
+}
+
+#[tokio::test]
 async fn reservations_preserve_interactive_capacity_under_background_load() {
     let reservations = ProviderReservationManager::new(ProviderReservationConfig {
         provider_id: ProviderId::new("fake-embedding"),
@@ -206,5 +221,6 @@ async fn compatibility_provider_reservations_share_capacity_across_provider_ids(
         .unwrap_err();
 
     assert_eq!(denied.code.to_string(), "provider.capacity_exhausted");
+    assert_eq!(denied.provider_id, Some("fake-c".to_string()));
     assert_eq!(reservations.snapshot().await.available_units, 0);
 }

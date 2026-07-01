@@ -92,21 +92,28 @@ impl ProviderReservationManager {
         units: u32,
     ) -> Result<ProviderReservation> {
         let mut state = self.state.lock().expect("reservation state mutex poisoned");
+        let effective_provider_id = provider_id.unwrap_or_else(|| state.config.provider_id.clone());
         state.refresh_cooldown();
         if state.health == HealthStatus::Unavailable {
             let code = state
                 .last_error_code
                 .as_deref()
                 .unwrap_or("provider.unavailable");
-            let mut error = state.error(code, "provider is unavailable");
+            let mut error =
+                state.error_for(&effective_provider_id, code, "provider is unavailable");
             error.retryable = false;
             return Err(error);
         }
         if state.cooldown_until.is_some() {
-            return Err(state.error("provider.cooling", "provider is cooling down"));
+            return Err(state.error_for(
+                &effective_provider_id,
+                "provider.cooling",
+                "provider is cooling down",
+            ));
         }
         if units == 0 {
-            return Err(state.error(
+            return Err(state.error_for(
+                &effective_provider_id,
                 "provider.invalid_reservation",
                 "reservation units must be > 0",
             ));
@@ -114,7 +121,8 @@ impl ProviderReservationManager {
 
         let available = state.config.capacity.saturating_sub(state.active);
         if available < units || !state.preserves_interactive_capacity(priority, units) {
-            return Err(state.error(
+            return Err(state.error_for(
+                &effective_provider_id,
                 "provider.capacity_exhausted",
                 "provider reservation capacity exhausted",
             ));
@@ -127,7 +135,7 @@ impl ProviderReservationManager {
             .or_default() += units;
 
         Ok(ProviderReservation {
-            provider_id: provider_id.unwrap_or_else(|| state.config.provider_id.clone()),
+            provider_id: effective_provider_id,
             provider_kind: state.config.provider_kind,
             priority,
             units,
@@ -263,9 +271,8 @@ impl ReservationStateInner {
         available_after >= self.config.interactive_reserve
     }
 
-    fn error(&self, code: &str, message: &str) -> ApiError {
-        ApiError::new(code, ErrorStage::Leasing, message)
-            .with_provider_id(self.config.provider_id.0.clone())
+    fn error_for(&self, provider_id: &ProviderId, code: &str, message: &str) -> ApiError {
+        ApiError::new(code, ErrorStage::Leasing, message).with_provider_id(provider_id.0.clone())
     }
 }
 
