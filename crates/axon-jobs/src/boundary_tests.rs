@@ -109,10 +109,7 @@ async fn fake_job_store_allows_declared_state_machine_edges() {
         (LifecycleStatus::Running, LifecycleStatus::Canceling),
         (LifecycleStatus::Canceling, LifecycleStatus::Canceled),
         (LifecycleStatus::Running, LifecycleStatus::Completed),
-        (
-            LifecycleStatus::Running,
-            LifecycleStatus::CompletedDegraded,
-        ),
+        (LifecycleStatus::Running, LifecycleStatus::CompletedDegraded),
         (LifecycleStatus::Running, LifecycleStatus::Failed),
         (LifecycleStatus::Pending, LifecycleStatus::Expired),
         (LifecycleStatus::Queued, LifecycleStatus::Skipped),
@@ -401,10 +398,9 @@ async fn drive_job_to(store: &FakeJobWatchStore, job_id: JobId, status: Lifecycl
             LifecycleStatus::Canceled,
         ],
         LifecycleStatus::Completed => &[LifecycleStatus::Running, LifecycleStatus::Completed],
-        LifecycleStatus::CompletedDegraded => &[
-            LifecycleStatus::Running,
-            LifecycleStatus::CompletedDegraded,
-        ],
+        LifecycleStatus::CompletedDegraded => {
+            &[LifecycleStatus::Running, LifecycleStatus::CompletedDegraded]
+        }
         LifecycleStatus::Failed => &[LifecycleStatus::Running, LifecycleStatus::Failed],
         LifecycleStatus::Expired => &[LifecycleStatus::Pending, LifecycleStatus::Expired],
         LifecycleStatus::Skipped => &[LifecycleStatus::Skipped],

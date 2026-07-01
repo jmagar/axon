@@ -58,8 +58,12 @@ fn degraded_and_failed_events_carry_warning_or_error_payloads() {
     assert_eq!(degraded.warning, Some(warning));
     assert_eq!(degraded.severity, Severity::Degraded);
 
-    let error = ApiError::new("vector.upsert_failed", ErrorStage::Upserting, "upsert failed")
-        .with_severity(ErrorSeverity::Failed);
+    let error = ApiError::new(
+        "vector.upsert_failed",
+        ErrorStage::Upserting,
+        "upsert failed",
+    )
+    .with_severity(ErrorSeverity::Failed);
     let failed = crate::event::stage_failed(
         job_id,
         None,

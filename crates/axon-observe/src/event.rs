@@ -15,7 +15,14 @@ pub fn stage_started(
     phase: PipelinePhase,
     message: String,
 ) -> axon_api::source::SourceProgressEvent {
-    base_event(job_id, phase, LifecycleStatus::Running, Severity::Info, message).with_stage(stage_id)
+    base_event(
+        job_id,
+        phase,
+        LifecycleStatus::Running,
+        Severity::Info,
+        message,
+    )
+    .with_stage(stage_id)
 }
 
 pub fn stage_completed(
@@ -63,9 +70,14 @@ pub fn stage_failed(
     error: ApiError,
     message: String,
 ) -> axon_api::source::SourceProgressEvent {
-    let mut event =
-        base_event(job_id, phase, LifecycleStatus::Failed, Severity::Failed, message)
-            .with_stage(stage_id);
+    let mut event = base_event(
+        job_id,
+        phase,
+        LifecycleStatus::Failed,
+        Severity::Failed,
+        message,
+    )
+    .with_stage(stage_id);
     event.error = Some(error);
     event
 }

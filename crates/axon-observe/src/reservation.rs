@@ -92,7 +92,8 @@ impl ProviderReservationManager {
     }
 
     pub async fn reserve(&self, priority: JobPriority, units: u32) -> Result<ProviderReservation> {
-        self.reserve_inner(None, None, None, priority, units, None).await
+        self.reserve_inner(None, None, None, priority, units, None)
+            .await
     }
 
     pub async fn reserve_for_provider(
@@ -173,13 +174,11 @@ impl ProviderReservationManager {
             .or_default() += units;
         state.next_reservation_sequence += 1;
         let acquired_at = Utc::now();
-        let expires_at = ttl_seconds.map(|ttl| Timestamp::from(acquired_at + Duration::seconds(ttl as i64)));
+        let expires_at =
+            ttl_seconds.map(|ttl| Timestamp::from(acquired_at + Duration::seconds(ttl as i64)));
 
         Ok(ProviderReservation {
-            reservation_id: ReservationId::from(format!(
-                "res_{}",
-                state.next_reservation_sequence
-            )),
+            reservation_id: ReservationId::from(format!("res_{}", state.next_reservation_sequence)),
             job_id,
             stage_id,
             provider_id: effective_provider_id,

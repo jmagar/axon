@@ -5,11 +5,11 @@ use axon_api::source::{
 use axon_error::ErrorStage;
 use chrono::DateTime;
 
+use crate::heartbeat::JobHeartbeatExt;
 use crate::reservation::{
     ProviderReservationConfig, ProviderReservationContext, ProviderReservationManager,
     ProviderReservationOutcome,
 };
-use crate::heartbeat::JobHeartbeatExt;
 
 fn manager() -> ProviderReservationManager {
     ProviderReservationManager::new(ProviderReservationConfig {

@@ -11,14 +11,14 @@ use crate::testing::InMemoryObservabilitySink;
 async fn in_memory_sink_records_emit_heartbeat_metric_flush_in_order() {
     let sink = InMemoryObservabilitySink::default();
     let job_id = JobId(uuid::Uuid::new_v4());
-    let event =
-        crate::event::stage_started(job_id, None, PipelinePhase::Fetching, "fetching".to_string());
-    let heartbeat = crate::heartbeat::heartbeat(
+    let event = crate::event::stage_started(
         job_id,
-        1,
+        None,
         PipelinePhase::Fetching,
-        LifecycleStatus::Running,
+        "fetching".to_string(),
     );
+    let heartbeat =
+        crate::heartbeat::heartbeat(job_id, 1, PipelinePhase::Fetching, LifecycleStatus::Running);
     let metric = MetricSample {
         name: "axon_job_events_total".to_string(),
         value: 1.0,

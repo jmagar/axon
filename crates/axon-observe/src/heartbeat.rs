@@ -59,7 +59,10 @@ impl JobHeartbeatExt for JobHeartbeat {
         self
     }
 
-    fn with_provider_reservations(mut self, reservations: Vec<ProviderReservationSnapshot>) -> Self {
+    fn with_provider_reservations(
+        mut self,
+        reservations: Vec<ProviderReservationSnapshot>,
+    ) -> Self {
         self.provider_reservations = reservations;
         self
     }

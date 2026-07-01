@@ -12,10 +12,11 @@ pub mod ops;
 pub mod query;
 pub mod runtime;
 mod service_job_conv;
-pub mod status;
 pub mod state_machine;
+pub mod status;
 pub mod store;
 pub(crate) mod tx;
+pub mod unified;
 pub mod watch;
 pub mod workers;
 
