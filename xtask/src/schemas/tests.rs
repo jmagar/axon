@@ -99,7 +99,7 @@ fn generate_writes_all_required_family_artifacts() {
         "docs/reference/rest/schemas.md",
         "docs/reference/mcp/tool-schema.json",
         "crates/axon-mcp/tests/golden/tool-schema.json",
-        "docs/reference/mcp/tool-schema.md",
+        "docs/reference/mcp/pipeline-tool-schema.md",
         "docs/reference/config/config.schema.json",
         "docs/reference/config/env.schema.json",
         "docs/reference/config/config-toml.md",

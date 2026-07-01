@@ -331,7 +331,7 @@ fn mcp_spec() -> FamilySpec {
         ],
         json_path: "docs/reference/mcp/tool-schema.json",
         extra_json_path: Some("crates/axon-mcp/tests/golden/tool-schema.json"),
-        markdown_path: "docs/reference/mcp/tool-schema.md",
+        markdown_path: "docs/reference/mcp/pipeline-tool-schema.md",
         extra_markdown_path: None,
     }
 }
