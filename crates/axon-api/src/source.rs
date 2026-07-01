@@ -49,6 +49,10 @@ mod capability_tests;
 mod status_tests;
 
 #[cfg(test)]
+#[path = "source_job_tests.rs"]
+mod job_tests;
+
+#[cfg(test)]
 #[path = "source_vector_tests.rs"]
 mod vector_tests;
 
