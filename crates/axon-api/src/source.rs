@@ -37,3 +37,11 @@ mod tests;
 #[cfg(test)]
 #[path = "source_status_tests.rs"]
 mod status_tests;
+
+#[cfg(test)]
+#[path = "source_vector_tests.rs"]
+mod vector_tests;
+
+#[cfg(test)]
+#[path = "source_graph_tests.rs"]
+mod graph_tests;

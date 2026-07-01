@@ -39,6 +39,32 @@ pub struct SourceSummary {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
+pub struct SourceListRequest {
+    pub source_kind: Option<SourceKind>,
+    pub adapter: Option<String>,
+    pub status: Option<LifecycleStatus>,
+    pub authority: Option<AuthorityLevel>,
+    pub watch_enabled: Option<bool>,
+    pub tag: Option<String>,
+    pub query: Option<String>,
+    pub limit: Option<u32>,
+    pub cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SourceDetail {
+    pub summary: SourceSummary,
+    pub active_generation: Option<SourceGenerationId>,
+    pub latest_generation: Option<SourceGenerationId>,
+    pub items: Page<SourceItem>,
+    pub documents: Page<DocumentSummary>,
+    pub graph_refs: Vec<GraphRef>,
+    pub metadata: MetadataMap,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct SourceItem {
     pub source_id: SourceId,
     pub source_item_key: SourceItemKey,
@@ -139,11 +165,67 @@ pub struct JobSummary {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
+pub struct JobDetail {
+    pub summary: JobSummary,
+    pub request: Option<super::lifecycle::SourceRequest>,
+    pub progress: Option<super::status::SourceStatus>,
+    pub events: Page<JobEvent>,
+    pub artifacts: Vec<ArtifactRef>,
+    pub metadata: MetadataMap,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct JobEvent {
+    pub event_id: String,
+    pub sequence: u64,
+    pub job_id: JobId,
+    pub phase: PipelinePhase,
+    pub status: LifecycleStatus,
+    pub severity: Severity,
+    pub message: String,
+    pub timestamp: Timestamp,
+    pub details: MetadataMap,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct JobListRequest {
     pub status: Option<LifecycleStatus>,
     pub kind: Option<JobKind>,
     pub source_id: Option<SourceId>,
     pub watch_id: Option<WatchId>,
+    pub limit: Option<u32>,
+    pub cursor: Option<String>,
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum JobControlAction {
+    Cancel,
+    Retry,
+    Recover,
+    ClearCompleted,
+    ClearFailed,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct JobControlRequest {
+    pub action: JobControlAction,
+    pub reason: Option<String>,
+    pub force: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct JobEventListRequest {
+    pub job_id: JobId,
+    pub phase: Option<PipelinePhase>,
+    pub severity: Option<Severity>,
+    pub since_sequence: Option<u64>,
     pub limit: Option<u32>,
     pub cursor: Option<String>,
 }
@@ -174,6 +256,16 @@ pub struct WatchSummary {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
+pub struct WatchDetail {
+    pub summary: WatchSummary,
+    pub request: WatchRequest,
+    pub recent_jobs: Vec<JobSummary>,
+    pub history: Page<WatchHistoryEntry>,
+    pub artifacts: Vec<WatchArtifactSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct WatchListRequest {
     pub enabled: Option<bool>,
     pub source_id: Option<SourceId>,
@@ -184,8 +276,73 @@ pub struct WatchListRequest {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
+pub struct WatchUpdateRequest {
+    pub schedule: Option<WatchSchedule>,
+    pub enabled: Option<bool>,
+    pub embed: Option<bool>,
+    pub scope: Option<SourceScope>,
+    pub options: Option<AdapterOptions>,
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum WatchControlAction {
+    Pause,
+    Resume,
+    Delete,
+    RunNow,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WatchControlRequest {
+    pub action: WatchControlAction,
+    pub reason: Option<String>,
+    pub force: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct WatchExecRequest {
     pub reason: Option<String>,
     pub refresh: Option<SourceRefreshPolicy>,
     pub wait: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WatchHistoryEntry {
+    pub job_id: JobId,
+    pub watch_id: WatchId,
+    pub started_at: Timestamp,
+    pub finished_at: Option<Timestamp>,
+    pub status: LifecycleStatus,
+    pub counts: StageCounts,
+    pub artifacts: Vec<ArtifactRef>,
+    pub error: Option<SourceError>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WatchArtifactSummary {
+    pub artifact_id: ArtifactId,
+    pub watch_id: WatchId,
+    pub job_id: Option<JobId>,
+    pub kind: ArtifactKind,
+    pub uri: String,
+    pub created_at: Timestamp,
+    pub content_type: Option<String>,
+    pub bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WatchArtifactListRequest {
+    pub watch_id: WatchId,
+    pub kind: Option<ArtifactKind>,
+    pub since: Option<Timestamp>,
+    pub limit: Option<u32>,
+    pub cursor: Option<String>,
 }

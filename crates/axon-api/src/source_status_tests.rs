@@ -113,3 +113,143 @@ fn watch_and_listing_dtos_are_contract_shaped() {
         page
     );
 }
+
+#[test]
+fn source_job_and_watch_management_dtos_round_trip() {
+    let now = Timestamp::from(Utc::now());
+    let source_id = SourceId::from("src_local");
+    let job_id = JobId(uuid::Uuid::new_v4());
+    let counts = StageCounts {
+        items_total: Some(2),
+        items_done: 1,
+        documents_total: Some(2),
+        documents_done: 1,
+        chunks_total: Some(8),
+        chunks_done: 4,
+        bytes_total: Some(100),
+        bytes_done: 50,
+    };
+    let summary = SourceSummary {
+        source_id: source_id.clone(),
+        canonical_uri: "file:///workspace/axon".to_string(),
+        display_name: "axon".to_string(),
+        source_kind: SourceKind::Local,
+        adapter: AdapterRef {
+            name: "local".to_string(),
+            version: "0.1.0".to_string(),
+        },
+        authority: AuthorityLevel::UserPinned,
+        status: LifecycleStatus::Running,
+        counts: SourceCounts {
+            items_total: 2,
+            items_changed: 1,
+            documents_total: 1,
+            chunks_total: 4,
+            vector_points_total: 4,
+            bytes_total: 50,
+        },
+        created_at: now.clone(),
+        updated_at: now.clone(),
+        tags: vec!["code".to_string()],
+        watch_id: Some(WatchId::from("watch_1")),
+        last_job_id: Some(job_id),
+    };
+    let detail = SourceDetail {
+        summary,
+        active_generation: Some(SourceGenerationId::from("gen_1")),
+        latest_generation: Some(SourceGenerationId::from("gen_2")),
+        items: Page {
+            items: Vec::new(),
+            next_cursor: None,
+        },
+        documents: Page {
+            items: Vec::new(),
+            next_cursor: None,
+        },
+        graph_refs: Vec::new(),
+        metadata: MetadataMap::default(),
+    };
+    let job_event = JobEvent {
+        event_id: "evt_1".to_string(),
+        sequence: 1,
+        job_id,
+        phase: PipelinePhase::Fetching,
+        status: LifecycleStatus::Running,
+        severity: Severity::Info,
+        message: "fetching".to_string(),
+        timestamp: now.clone(),
+        details: MetadataMap::default(),
+    };
+    let job_detail = JobDetail {
+        summary: JobSummary {
+            job_id,
+            kind: JobKind::Source,
+            status: LifecycleStatus::Running,
+            phase: PipelinePhase::Fetching,
+            created_at: now.clone(),
+            updated_at: now.clone(),
+            source_id: Some(source_id),
+            watch_id: None,
+            counts: Some(counts.clone()),
+            last_error: None,
+        },
+        request: None,
+        progress: None,
+        events: Page {
+            items: vec![job_event],
+            next_cursor: None,
+        },
+        artifacts: Vec::new(),
+        metadata: MetadataMap::default(),
+    };
+    let watch_control = WatchControlRequest {
+        action: WatchControlAction::RunNow,
+        reason: Some("manual refresh".to_string()),
+        force: Some(false),
+    };
+    let history = WatchHistoryEntry {
+        job_id,
+        watch_id: WatchId::from("watch_1"),
+        started_at: now.clone(),
+        finished_at: None,
+        status: LifecycleStatus::Running,
+        counts,
+        artifacts: Vec::new(),
+        error: None,
+    };
+
+    assert_eq!(
+        serde_json::from_value::<SourceDetail>(serde_json::to_value(&detail).unwrap()).unwrap(),
+        detail
+    );
+    assert_eq!(
+        serde_json::from_value::<JobDetail>(serde_json::to_value(&job_detail).unwrap()).unwrap(),
+        job_detail
+    );
+    assert_eq!(
+        serde_json::to_value(&watch_control).unwrap()["action"],
+        "run_now"
+    );
+    assert_eq!(
+        serde_json::from_value::<WatchHistoryEntry>(serde_json::to_value(&history).unwrap())
+            .unwrap(),
+        history
+    );
+}
+
+#[test]
+fn management_dtos_reject_unknown_fields() {
+    let bad_job = serde_json::json!({
+        "action": "cancel",
+        "reason": "mistake",
+        "force": false,
+        "legacy": true
+    });
+    assert!(serde_json::from_value::<JobControlRequest>(bad_job).is_err());
+
+    let bad_watch = serde_json::json!({
+        "enabled": true,
+        "interval_seconds": 60
+    });
+    assert!(serde_json::from_value::<WatchUpdateRequest>(bad_watch).is_err());
+}
