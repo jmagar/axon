@@ -90,3 +90,16 @@ CREATE TABLE job_heartbeats (
 );
 
 CREATE INDEX job_heartbeats_job_id_idx ON job_heartbeats(job_id);
+
+CREATE TABLE job_artifacts (
+    artifact_id TEXT PRIMARY KEY NOT NULL,
+    job_id TEXT NOT NULL REFERENCES jobs(job_id) ON DELETE CASCADE,
+    artifact_kind TEXT NOT NULL,
+    uri TEXT NOT NULL,
+    size_bytes INTEGER,
+    content_hash TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX job_artifacts_job_id_idx ON job_artifacts(job_id);
+CREATE INDEX job_artifacts_job_kind_idx ON job_artifacts(job_id, artifact_kind);

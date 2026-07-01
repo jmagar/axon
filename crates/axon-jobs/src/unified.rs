@@ -318,6 +318,171 @@ impl JobStore for SqliteUnifiedJobStore {
         })
     }
 
+    async fn cancel(&self, job_id: JobId, request: JobCancelRequest) -> Result<JobCancelResult> {
+        let mut tx = self.pool.begin().await.map_err(sql_error)?;
+        let row = sqlx::query("SELECT status FROM jobs WHERE job_id = ?")
+            .bind(job_id.0.to_string())
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(sql_error)?
+            .ok_or_else(|| missing_job(job_id))?;
+        let current = parse_enum::<LifecycleStatus>(row.get::<String, _>("status"))?;
+        validate_transition(job_id, current, LifecycleStatus::Canceling)?;
+        let now = now_timestamp();
+        sqlx::query("UPDATE jobs SET status = ?, phase = ?, updated_at = ? WHERE job_id = ?")
+            .bind(enum_name(LifecycleStatus::Canceling)?)
+            .bind(enum_name(PipelinePhase::Canceled)?)
+            .bind(now.0.as_str())
+            .bind(job_id.0.to_string())
+            .execute(&mut *tx)
+            .await
+            .map_err(sql_error)?;
+        tx.commit().await.map_err(sql_error)?;
+        Ok(JobCancelResult {
+            job_id,
+            status: LifecycleStatus::Canceling,
+            canceled_at: None,
+            reason: request.reason,
+        })
+    }
+
+    async fn retry(&self, job_id: JobId, _request: JobRetryRequest) -> Result<JobRetryResult> {
+        let original = self.get(job_id).await?.ok_or_else(|| missing_job(job_id))?;
+        let attempt = original.attempt + 1;
+        let retry_job = self
+            .create(JobCreateRequest {
+                job_kind: original.kind,
+                job_intent: JobIntent::Retry,
+                source_id: original.source_id,
+                watch_id: original.watch_id,
+                parent_job_id: Some(job_id),
+                root_job_id: Some(original.root_job_id.unwrap_or(job_id)),
+                priority: original.priority,
+                idempotency_key: None,
+                stage_plan: Vec::new(),
+                request: None,
+                metadata: MetadataMap::new(),
+            })
+            .await?;
+        Ok(JobRetryResult {
+            original_job_id: job_id,
+            retry_job,
+            attempt,
+        })
+    }
+
+    async fn recover(&self, request: JobRecoveryRequest) -> Result<JobRecoveryResult> {
+        let kind_filter = request.kind.map(enum_name).transpose()?;
+        let mut sql = "SELECT job_id FROM jobs WHERE status IN ('running', 'waiting')".to_string();
+        if let Some(kind) = kind_filter.as_deref() {
+            sql.push_str(" AND kind = '");
+            sql.push_str(&escape_sql(kind));
+            sql.push('\'');
+        }
+        let rows = sqlx::query(&sql)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(sql_error)?;
+        let scanned = rows.len() as u64;
+        if !request.dry_run && scanned > 0 {
+            let now = now_timestamp();
+            let mut update_sql =
+                "UPDATE jobs SET status = 'failed', phase = 'complete', updated_at = ? \
+                 WHERE status IN ('running', 'waiting')"
+                    .to_string();
+            if let Some(kind) = kind_filter.as_deref() {
+                update_sql.push_str(" AND kind = '");
+                update_sql.push_str(&escape_sql(kind));
+                update_sql.push('\'');
+            }
+            sqlx::query(&update_sql)
+                .bind(now.0.as_str())
+                .execute(&self.pool)
+                .await
+                .map_err(sql_error)?;
+        }
+        Ok(JobRecoveryResult {
+            jobs_scanned: scanned,
+            jobs_requeued: 0,
+            jobs_failed: if request.dry_run { 0 } else { scanned },
+            warnings: Vec::new(),
+        })
+    }
+
+    async fn cleanup(&self, request: JobCleanupRequest) -> Result<JobCleanupResult> {
+        let cutoff = request.older_than_seconds.map(|seconds| {
+            Timestamp::from(chrono::Utc::now() - chrono::Duration::seconds(seconds as i64))
+        });
+        let mut predicate =
+            "status IN ('completed', 'completed_degraded', 'failed', 'canceled', 'expired', 'skipped')"
+                .to_string();
+        if cutoff.is_some() {
+            predicate.push_str(" AND updated_at < ?");
+        }
+
+        let job_count_sql = format!("SELECT COUNT(*) FROM jobs WHERE {predicate}");
+        let event_count_sql = format!(
+            "SELECT COUNT(*) FROM job_events WHERE job_id IN (SELECT job_id FROM jobs WHERE {predicate})"
+        );
+        let heartbeat_count_sql = format!(
+            "SELECT COUNT(*) FROM job_heartbeats WHERE job_id IN (SELECT job_id FROM jobs WHERE {predicate})"
+        );
+        let artifact_count_sql = format!(
+            "SELECT COUNT(*) FROM job_artifacts WHERE job_id IN (SELECT job_id FROM jobs WHERE {predicate})"
+        );
+
+        let jobs_pruned =
+            count_with_optional_cutoff(&self.pool, &job_count_sql, cutoff.as_ref()).await?;
+        let events_pruned =
+            count_with_optional_cutoff(&self.pool, &event_count_sql, cutoff.as_ref()).await?;
+        let heartbeats_pruned =
+            count_with_optional_cutoff(&self.pool, &heartbeat_count_sql, cutoff.as_ref()).await?;
+        let artifacts_pruned =
+            count_with_optional_cutoff(&self.pool, &artifact_count_sql, cutoff.as_ref()).await?;
+
+        if !request.dry_run && jobs_pruned > 0 {
+            let delete_sql = format!("DELETE FROM jobs WHERE {predicate}");
+            execute_with_optional_cutoff(&self.pool, &delete_sql, cutoff.as_ref()).await?;
+        }
+        Ok(JobCleanupResult {
+            jobs_pruned,
+            events_pruned,
+            heartbeats_pruned,
+            artifacts_pruned,
+        })
+    }
+
+    async fn artifacts(&self, request: JobArtifactListRequest) -> Result<JobArtifactListResult> {
+        ensure_job_pool(&self.pool, request.job_id).await?;
+        if request.cursor.is_some() {
+            return Err(ApiError::new(
+                "job_artifact.cursor_unsupported",
+                ErrorStage::Retrieving,
+                "sqlite unified job store does not implement artifact cursor pagination yet",
+            ));
+        }
+        let mut sql = "SELECT * FROM job_artifacts WHERE job_id = ?".to_string();
+        if let Some(kind) = request.kind {
+            sql.push_str(&format!(" AND artifact_kind = '{}'", enum_name(kind)?));
+        }
+        sql.push_str(" ORDER BY created_at DESC LIMIT ");
+        sql.push_str(&request.limit.unwrap_or(100).to_string());
+        let rows = sqlx::query(&sql)
+            .bind(request.job_id.0.to_string())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(sql_error)?;
+        let artifacts = rows
+            .into_iter()
+            .map(row_to_artifact)
+            .collect::<Result<Vec<_>>>()?;
+        Ok(JobArtifactListResult {
+            artifacts,
+            limit: request.limit.unwrap_or(100),
+            next_cursor: None,
+        })
+    }
+
     async fn reset(&self) -> Result<()> {
         sqlx::query("DELETE FROM jobs")
             .execute(&self.pool)

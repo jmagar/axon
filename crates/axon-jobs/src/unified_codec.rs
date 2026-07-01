@@ -116,6 +116,51 @@ pub(crate) fn row_to_event(row: sqlx::sqlite::SqliteRow) -> Result<JobEvent> {
     })
 }
 
+pub(crate) fn row_to_artifact(row: sqlx::sqlite::SqliteRow) -> Result<ArtifactRef> {
+    Ok(ArtifactRef {
+        artifact_id: ArtifactId::new(row.get::<String, _>("artifact_id")),
+        artifact_kind: parse_enum(row.get::<String, _>("artifact_kind"))?,
+        uri: row.get("uri"),
+        size_bytes: row
+            .get::<Option<i64>, _>("size_bytes")
+            .map(|value| value as u64),
+        content_hash: row.get("content_hash"),
+        created_at: Timestamp(row.get("created_at")),
+    })
+}
+
+pub(crate) async fn count_with_optional_cutoff(
+    pool: &SqlitePool,
+    sql: &str,
+    cutoff: Option<&Timestamp>,
+) -> Result<u64> {
+    let mut query = sqlx::query_scalar::<_, i64>(sql);
+    if let Some(cutoff) = cutoff {
+        query = query.bind(cutoff.0.as_str());
+    }
+    query
+        .fetch_one(pool)
+        .await
+        .map(|value| value as u64)
+        .map_err(sql_error)
+}
+
+pub(crate) async fn execute_with_optional_cutoff(
+    pool: &SqlitePool,
+    sql: &str,
+    cutoff: Option<&Timestamp>,
+) -> Result<u64> {
+    let mut query = sqlx::query(sql);
+    if let Some(cutoff) = cutoff {
+        query = query.bind(cutoff.0.as_str());
+    }
+    query
+        .execute(pool)
+        .await
+        .map(|result| result.rows_affected())
+        .map_err(sql_error)
+}
+
 pub(crate) fn enum_name<T: serde::Serialize>(value: T) -> Result<String> {
     serde_json::to_value(value)
         .ok()

@@ -19,6 +19,11 @@ pub trait JobStore: Send + Sync {
     async fn heartbeat(&self, heartbeat: JobHeartbeat) -> Result<()>;
     async fn list(&self, request: JobListRequest) -> Result<Page<JobSummary>>;
     async fn events(&self, request: JobEventListRequest) -> Result<JobEventPage>;
+    async fn cancel(&self, job_id: JobId, request: JobCancelRequest) -> Result<JobCancelResult>;
+    async fn retry(&self, job_id: JobId, request: JobRetryRequest) -> Result<JobRetryResult>;
+    async fn recover(&self, request: JobRecoveryRequest) -> Result<JobRecoveryResult>;
+    async fn cleanup(&self, request: JobCleanupRequest) -> Result<JobCleanupResult>;
+    async fn artifacts(&self, request: JobArtifactListRequest) -> Result<JobArtifactListResult>;
     async fn reset(&self) -> Result<()>;
     async fn capabilities(&self) -> Result<JobStoreCapability>;
 }
@@ -255,6 +260,120 @@ impl JobStore for FakeJobWatchStore {
         })
     }
 
+    async fn cancel(&self, job_id: JobId, request: JobCancelRequest) -> Result<JobCancelResult> {
+        let mut state = self.state.lock().await;
+        let updated_at = state.timestamp();
+        let job = state
+            .jobs
+            .get_mut(&job_id)
+            .ok_or_else(|| missing_job(job_id))?;
+        validate_transition(job_id, job.status, LifecycleStatus::Canceling)?;
+        job.status = LifecycleStatus::Canceling;
+        job.phase = PipelinePhase::Canceled;
+        job.updated_at = updated_at;
+        Ok(JobCancelResult {
+            job_id,
+            status: LifecycleStatus::Canceling,
+            canceled_at: None,
+            reason: request.reason,
+        })
+    }
+
+    async fn retry(&self, job_id: JobId, _request: JobRetryRequest) -> Result<JobRetryResult> {
+        let original = JobStore::get(self, job_id)
+            .await?
+            .ok_or_else(|| missing_job(job_id))?;
+        let attempt = original.attempt + 1;
+        let retry = JobStore::create(
+            self,
+            JobCreateRequest {
+                job_kind: original.kind,
+                job_intent: JobIntent::Retry,
+                source_id: original.source_id,
+                watch_id: original.watch_id,
+                parent_job_id: Some(job_id),
+                root_job_id: Some(original.root_job_id.unwrap_or(job_id)),
+                priority: original.priority,
+                idempotency_key: None,
+                stage_plan: Vec::new(),
+                request: None,
+                metadata: MetadataMap::new(),
+            },
+        )
+        .await?;
+        Ok(JobRetryResult {
+            original_job_id: job_id,
+            retry_job: retry,
+            attempt,
+        })
+    }
+
+    async fn recover(&self, request: JobRecoveryRequest) -> Result<JobRecoveryResult> {
+        let mut state = self.state.lock().await;
+        let mut scanned = 0;
+        let mut failed = 0;
+        let updated_at = state.timestamp();
+        for job in state.jobs.values_mut() {
+            if request.kind.is_some_and(|kind| kind != job.kind) {
+                continue;
+            }
+            if matches!(
+                job.status,
+                LifecycleStatus::Running | LifecycleStatus::Waiting
+            ) {
+                scanned += 1;
+                if !request.dry_run {
+                    job.status = LifecycleStatus::Failed;
+                    job.phase = PipelinePhase::Complete;
+                    job.updated_at = updated_at.clone();
+                    failed += 1;
+                }
+            }
+        }
+        Ok(JobRecoveryResult {
+            jobs_scanned: scanned,
+            jobs_requeued: 0,
+            jobs_failed: failed,
+            warnings: Vec::new(),
+        })
+    }
+
+    async fn cleanup(&self, request: JobCleanupRequest) -> Result<JobCleanupResult> {
+        let mut state = self.state.lock().await;
+        let terminal_ids = state
+            .jobs
+            .iter()
+            .filter_map(|(job_id, job)| is_terminal_status(job.status).then_some(*job_id))
+            .collect::<Vec<_>>();
+        let events_pruned = terminal_ids
+            .iter()
+            .filter_map(|job_id| state.events.get(job_id).map(Vec::len))
+            .sum::<usize>() as u64;
+        if !request.dry_run {
+            for job_id in &terminal_ids {
+                state.jobs.remove(job_id);
+                state.events.remove(job_id);
+            }
+        }
+        Ok(JobCleanupResult {
+            jobs_pruned: terminal_ids.len() as u64,
+            events_pruned,
+            heartbeats_pruned: 0,
+            artifacts_pruned: 0,
+        })
+    }
+
+    async fn artifacts(&self, request: JobArtifactListRequest) -> Result<JobArtifactListResult> {
+        if !self.state.lock().await.jobs.contains_key(&request.job_id) {
+            return Err(missing_job(request.job_id));
+        }
+        Ok(JobArtifactListResult {
+            artifacts: Vec::new(),
+            limit: request.limit.unwrap_or(100),
+            next_cursor: None,
+        })
+    }
+
     async fn reset(&self) -> Result<()> {
         let mut state = self.state.lock().await;
         state.jobs.clear();
@@ -477,6 +596,18 @@ fn missing_watch(watch_id: &WatchId) -> ApiError {
         "watch.not_found",
         ErrorStage::Retrieving,
         format!("watch {} not found", watch_id.0),
+    )
+}
+
+fn is_terminal_status(status: LifecycleStatus) -> bool {
+    matches!(
+        status,
+        LifecycleStatus::Completed
+            | LifecycleStatus::CompletedDegraded
+            | LifecycleStatus::Failed
+            | LifecycleStatus::Canceled
+            | LifecycleStatus::Expired
+            | LifecycleStatus::Skipped
     )
 }
 

@@ -349,6 +349,84 @@ async fn fake_job_store_filters_events_by_visibility() {
     assert_eq!(events.events[0].visibility, Visibility::Redacted);
 }
 
+#[tokio::test]
+async fn fake_job_store_controls_cancel_retry_recover_cleanup_and_artifacts() {
+    let store = FakeJobWatchStore::new();
+    let job = JobStore::create(&store, job_create()).await.unwrap();
+    drive_job_to(&store, job.job_id, LifecycleStatus::Running).await;
+
+    let cancel = JobStore::cancel(
+        &store,
+        job.job_id,
+        JobCancelRequest {
+            reason: Some("user requested".to_string()),
+            force_after_ms: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(cancel.status, LifecycleStatus::Canceling);
+    assert_eq!(cancel.reason.as_deref(), Some("user requested"));
+
+    JobStore::update_status(&store, status_update(job.job_id, LifecycleStatus::Canceled))
+        .await
+        .unwrap();
+    let retry = JobStore::retry(
+        &store,
+        job.job_id,
+        JobRetryRequest {
+            mode: JobRetryMode::SameConfig,
+            from_phase: None,
+            idempotency_key: None,
+            overrides: MetadataMap::new(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(retry.original_job_id, job.job_id);
+    assert_eq!(retry.retry_job.status, LifecycleStatus::Queued);
+
+    let running = JobStore::create(&store, job_create()).await.unwrap();
+    drive_job_to(&store, running.job_id, LifecycleStatus::Running).await;
+    let recovery = JobStore::recover(
+        &store,
+        JobRecoveryRequest {
+            kind: Some(JobKind::Source),
+            older_than_seconds: None,
+            dry_run: false,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(recovery.jobs_scanned, 1);
+    assert_eq!(recovery.jobs_failed, 1);
+
+    let artifacts = JobStore::artifacts(
+        &store,
+        JobArtifactListRequest {
+            job_id: retry.retry_job.job_id,
+            kind: None,
+            limit: Some(5),
+            cursor: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(artifacts.artifacts.is_empty());
+    assert_eq!(artifacts.limit, 5);
+
+    let cleanup = JobStore::cleanup(
+        &store,
+        JobCleanupRequest {
+            older_than_seconds: None,
+            dry_run: false,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(cleanup.jobs_pruned, 2);
+}
+
 fn empty_counts() -> StageCounts {
     StageCounts {
         items_total: None,

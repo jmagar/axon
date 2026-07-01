@@ -38,6 +38,7 @@ async fn migration_creates_canonical_job_tables() {
         "job_stages",
         "job_events",
         "job_heartbeats",
+        "job_artifacts",
     ];
     for table in tables {
         let count: i64 = sqlx::query_scalar(
@@ -198,6 +199,118 @@ async fn heartbeat_updates_latest_job_summary_and_history() {
     assert_eq!(summary.status, LifecycleStatus::Running);
     assert_eq!(summary.attempt, 1);
     assert_eq!(summary.heartbeat, Some(heartbeat));
+}
+
+#[tokio::test]
+async fn control_operations_cancel_retry_recover_cleanup_and_list_artifacts() {
+    let store = store().await;
+    let job = store.create(create_request()).await.expect("create job");
+    store
+        .update_status(JobStatusUpdate {
+            job_id: job.job_id,
+            status: LifecycleStatus::Running,
+            phase: PipelinePhase::Embedding,
+            stage_id: None,
+            counts: None,
+            current: None,
+            message: None,
+            error: None,
+        })
+        .await
+        .expect("running");
+
+    let cancel = store
+        .cancel(
+            job.job_id,
+            JobCancelRequest {
+                reason: Some("user requested".to_string()),
+                force_after_ms: None,
+            },
+        )
+        .await
+        .expect("cancel");
+    assert_eq!(cancel.status, LifecycleStatus::Canceling);
+    assert_eq!(cancel.reason.as_deref(), Some("user requested"));
+
+    store
+        .update_status(JobStatusUpdate {
+            job_id: job.job_id,
+            status: LifecycleStatus::Canceled,
+            phase: PipelinePhase::Canceled,
+            stage_id: None,
+            counts: None,
+            current: None,
+            message: None,
+            error: None,
+        })
+        .await
+        .expect("canceled");
+    let retry = store
+        .retry(
+            job.job_id,
+            JobRetryRequest {
+                mode: JobRetryMode::SameConfig,
+                from_phase: None,
+                idempotency_key: None,
+                overrides: MetadataMap::new(),
+            },
+        )
+        .await
+        .expect("retry");
+    assert_eq!(retry.original_job_id, job.job_id);
+    assert_eq!(retry.retry_job.status, LifecycleStatus::Queued);
+
+    let running = store
+        .create(JobCreateRequest {
+            idempotency_key: Some("recover-running".to_string()),
+            ..create_request()
+        })
+        .await
+        .expect("create running job");
+    store
+        .update_status(JobStatusUpdate {
+            job_id: running.job_id,
+            status: LifecycleStatus::Running,
+            phase: PipelinePhase::Embedding,
+            stage_id: None,
+            counts: None,
+            current: None,
+            message: None,
+            error: None,
+        })
+        .await
+        .expect("running");
+    let recovery = store
+        .recover(JobRecoveryRequest {
+            kind: Some(JobKind::Source),
+            older_than_seconds: None,
+            dry_run: false,
+        })
+        .await
+        .expect("recover");
+    assert_eq!(recovery.jobs_scanned, 1);
+    assert_eq!(recovery.jobs_failed, 1);
+
+    let artifacts = store
+        .artifacts(JobArtifactListRequest {
+            job_id: retry.retry_job.job_id,
+            kind: None,
+            limit: Some(7),
+            cursor: None,
+        })
+        .await
+        .expect("artifacts");
+    assert!(artifacts.artifacts.is_empty());
+    assert_eq!(artifacts.limit, 7);
+
+    let cleanup = store
+        .cleanup(JobCleanupRequest {
+            older_than_seconds: None,
+            dry_run: false,
+        })
+        .await
+        .expect("cleanup");
+    assert_eq!(cleanup.jobs_pruned, 2);
 }
 
 fn progress_event(job_id: JobId, sequence: u64, visibility: Visibility) -> SourceProgressEvent {
