@@ -103,18 +103,18 @@ async fn url_delete_selector_matches_canonical_payload_fields() {
     store.upsert(batch).await.unwrap();
 
     let exact = store
-        .delete(VectorDeleteSelector::Url {
+        .delete(VectorDeleteSelector::CanonicalUri {
             collection: "axon-test".to_string(),
-            url: "https://example.com/docs/a".to_string(),
-            prefix: false,
+            canonical_uri: "https://example.com/docs/a".to_string(),
+            match_prefix: false,
         })
         .await
         .unwrap();
     let prefix = store
-        .delete(VectorDeleteSelector::Url {
+        .delete(VectorDeleteSelector::CanonicalUri {
             collection: "axon-test".to_string(),
-            url: "https://example.com/docs/".to_string(),
-            prefix: true,
+            canonical_uri: "https://example.com/docs/".to_string(),
+            match_prefix: true,
         })
         .await
         .unwrap();

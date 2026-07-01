@@ -4,13 +4,15 @@ use crate::citation::Citation;
 use crate::context::ContextBundle;
 use crate::engine::{RetrievalAccess, RetrievalEngine, RetrievalEngineConfig};
 use crate::query::RetrievalRequest;
+use async_trait::async_trait;
 use axon_api::source::{
-    BatchId, ChunkId, ContentKind, DocumentId, EmbeddingInput, JobId, JobPriority, MetadataMap,
-    ProviderId, SourceGenerationId, SourceId, SourceRange, VectorPoint, VectorPointBatch,
+    BatchId, ChunkId, ContentKind, DocumentId, EmbeddingInput, EmbeddingResult, EmbeddingVector,
+    JobId, JobPriority, MetadataMap, ProviderCapability, ProviderId, ProviderUsage,
+    SourceGenerationId, SourceId, SourceRange, SourceWarning, VectorPoint, VectorPointBatch,
     VectorPointId, Visibility,
 };
 use axon_embedding::fake::FakeEmbeddingProvider;
-use axon_embedding::provider::EmbeddingProvider;
+use axon_embedding::provider::{EmbeddingProvider, Result as EmbeddingProviderResult};
 use axon_vectors::store::{FakeVectorStore, VectorStore};
 use axon_vectors::testing::test_collection_spec;
 use serde_json::json;
@@ -33,7 +35,7 @@ fn request() -> RetrievalRequest {
 fn retrieval_plan_preserves_source_id_generation_visibility_and_namespace_filters() {
     let request = request();
 
-    let plan = request.plan();
+    let plan = request.plan(RetrievalAccess::standard().allowed_visibility);
 
     assert_eq!(plan.collection, "axon-test");
     assert_eq!(plan.source_id, Some(SourceId::new("src-docs")));
@@ -108,7 +110,7 @@ async fn ranking_is_deterministic_with_fixed_fake_vector_search_results() {
         .await
         .unwrap();
 
-    let engine = RetrievalEngine::new(store, provider, retrieval_config());
+    let engine = RetrievalEngine::new(store.clone(), provider, retrieval_config());
     let result = engine.retrieve(request()).await.unwrap();
     let chunk_ids: Vec<_> = result
         .matches
@@ -165,7 +167,7 @@ async fn retrieval_applies_all_namespace_filters() {
                     "Other source chunk body",
                     PointFilters {
                         source_id: "src-other",
-                        generation: 7,
+                        generation: "7",
                         visibility: "internal",
                         namespace: "docs",
                     },
@@ -177,7 +179,7 @@ async fn retrieval_applies_all_namespace_filters() {
                     "Other generation chunk body",
                     PointFilters {
                         source_id: "src-docs",
-                        generation: 8,
+                        generation: "8",
                         visibility: "internal",
                         namespace: "docs",
                     },
@@ -189,7 +191,7 @@ async fn retrieval_applies_all_namespace_filters() {
                     "Other visibility chunk body",
                     PointFilters {
                         source_id: "src-docs",
-                        generation: 7,
+                        generation: "7",
                         visibility: "sensitive",
                         namespace: "docs",
                     },
@@ -199,7 +201,7 @@ async fn retrieval_applies_all_namespace_filters() {
         .await
         .unwrap();
 
-    let engine = RetrievalEngine::new(store, provider, retrieval_config());
+    let engine = RetrievalEngine::new(store.clone(), provider, retrieval_config());
     let result = engine.retrieve(request()).await.unwrap();
     let chunk_ids = result
         .matches
@@ -237,7 +239,7 @@ async fn standard_retrieval_access_excludes_sensitive_and_redacted_chunks() {
                     "Internal chunk body",
                     PointFilters {
                         source_id: "src-docs",
-                        generation: 7,
+                        generation: "7",
                         visibility: "internal",
                         namespace: "docs",
                     },
@@ -249,7 +251,7 @@ async fn standard_retrieval_access_excludes_sensitive_and_redacted_chunks() {
                     "Sensitive chunk body",
                     PointFilters {
                         source_id: "src-docs",
-                        generation: 7,
+                        generation: "7",
                         visibility: "sensitive",
                         namespace: "docs",
                     },
@@ -261,7 +263,7 @@ async fn standard_retrieval_access_excludes_sensitive_and_redacted_chunks() {
                     "Redacted chunk body",
                     PointFilters {
                         source_id: "src-docs",
-                        generation: 7,
+                        generation: "7",
                         visibility: "redacted",
                         namespace: "docs",
                     },
@@ -277,6 +279,69 @@ async fn standard_retrieval_access_excludes_sensitive_and_redacted_chunks() {
     assert!(result.context.text.contains("Internal chunk body"));
     assert!(!result.context.text.contains("Sensitive chunk body"));
     assert!(!result.context.text.contains("Redacted chunk body"));
+}
+
+#[tokio::test]
+async fn retrieval_rejects_missing_query_vector_from_embedding_provider() {
+    let store = Arc::new(FakeVectorStore::new("fake-vectors"));
+    store
+        .ensure_collection(test_collection_spec(4))
+        .await
+        .unwrap();
+    let provider = Arc::new(MalformedEmbeddingProvider::empty_vectors());
+    let engine = RetrievalEngine::new(store, provider, retrieval_config());
+
+    let err = engine.retrieve(request()).await.unwrap_err();
+
+    assert_eq!(err.code.to_string(), "retrieval.missing_query_vector");
+}
+
+#[tokio::test]
+async fn retrieval_rejects_embedding_dimension_mismatch_before_search() {
+    let store = Arc::new(FakeVectorStore::new("fake-vectors"));
+    store
+        .ensure_collection(test_collection_spec(4))
+        .await
+        .unwrap();
+    let provider = Arc::new(MalformedEmbeddingProvider::dimension_mismatch());
+    let engine = RetrievalEngine::new(store.clone(), provider, retrieval_config());
+
+    let err = engine.retrieve(request()).await.unwrap_err();
+
+    assert_eq!(
+        err.code.to_string(),
+        "retrieval.embedding_dimension_mismatch"
+    );
+    assert_eq!(store.calls().await, vec!["ensure_collection"]);
+}
+
+#[test]
+fn vector_match_without_text_fails_loudly() {
+    let mut payload = MetadataMap::new();
+    payload.insert(
+        "chunk_locator".to_string(),
+        json!({
+            "canonical_uri": "https://example.com/docs",
+            "range": { "line_start": 1, "line_end": 2 }
+        }),
+    );
+    payload.insert(
+        "source_range".to_string(),
+        json!({ "line_start": 1, "line_end": 2 }),
+    );
+    let err = super::engine::match_from_vector(&axon_api::source::VectorSearchMatch {
+        point_id: VectorPointId::new("point-empty"),
+        score: 0.99,
+        chunk_id: Some(ChunkId::new("chunk-1")),
+        document_id: Some(DocumentId::new("doc-1")),
+        source_id: Some(SourceId::new("src-docs")),
+        source_item_key: None,
+        text: None,
+        payload,
+    })
+    .unwrap_err();
+
+    assert_eq!(err.code.to_string(), "retrieval.missing_chunk_text");
 }
 
 #[test]
@@ -479,6 +544,7 @@ fn retrieval_config() -> RetrievalEngineConfig {
     RetrievalEngineConfig::new(
         ProviderId::new("fake-embedding"),
         "fake-embedding",
+        4,
         RetrievalAccess::standard(),
     )
 }
@@ -497,7 +563,7 @@ fn point_in_namespace(
         text,
         PointFilters {
             source_id: "src-docs",
-            generation: 7,
+            generation: "7",
             visibility: "internal",
             namespace,
         },
@@ -506,7 +572,7 @@ fn point_in_namespace(
 
 struct PointFilters<'a> {
     source_id: &'a str,
-    generation: i64,
+    generation: &'a str,
     visibility: &'a str,
     namespace: &'a str,
 }
@@ -572,5 +638,59 @@ fn point_with_filters(
         vector: vector.to_vec(),
         sparse_vector: None,
         payload,
+    }
+}
+
+#[derive(Debug, Clone)]
+struct MalformedEmbeddingProvider {
+    vectors: Vec<EmbeddingVector>,
+    dimensions: u32,
+}
+
+impl MalformedEmbeddingProvider {
+    fn empty_vectors() -> Self {
+        Self {
+            vectors: Vec::new(),
+            dimensions: 4,
+        }
+    }
+
+    fn dimension_mismatch() -> Self {
+        Self {
+            vectors: vec![EmbeddingVector {
+                chunk_id: ChunkId::new("query"),
+                values: vec![1.0, 2.0, 3.0],
+            }],
+            dimensions: 3,
+        }
+    }
+}
+
+#[async_trait]
+impl EmbeddingProvider for MalformedEmbeddingProvider {
+    async fn embed(
+        &self,
+        batch: axon_api::source::EmbeddingBatch,
+    ) -> EmbeddingProviderResult<EmbeddingResult> {
+        Ok(EmbeddingResult {
+            batch_id: batch.batch_id,
+            provider_id: batch.provider_id,
+            model: batch.model,
+            dimensions: self.dimensions,
+            vectors: self.vectors.clone(),
+            usage: ProviderUsage {
+                input_tokens: Some(1),
+                output_tokens: None,
+                requests: 1,
+                duration_ms: 0,
+            },
+            warnings: Vec::<SourceWarning>::new(),
+        })
+    }
+
+    async fn capabilities(&self) -> EmbeddingProviderResult<ProviderCapability> {
+        FakeEmbeddingProvider::new("fake-embedding", self.dimensions)
+            .capabilities()
+            .await
     }
 }

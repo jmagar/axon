@@ -67,7 +67,7 @@ fn payload_index_specs_convert_to_qdrant_index_requests() {
     assert!(indexes.iter().any(|index| {
         index.collection_name == "axon-test"
             && index.field_name == "source_generation"
-            && index.field_type == Some(FieldType::Integer as i32)
+            && index.field_type == Some(FieldType::Keyword as i32)
             && index.wait == Some(true)
     }));
     assert!(indexes.iter().any(|index| {
@@ -130,7 +130,7 @@ fn source_generation_and_document_filters_convert_to_qdrant_filters() {
             .r#match
             .as_ref()
             .and_then(|value| value.match_value.as_ref()),
-        Some(r#match::MatchValue::Integer(7))
+        Some(r#match::MatchValue::Keyword(value)) if value == "7"
     ));
 
     request.filters.clear();
@@ -139,7 +139,7 @@ fn source_generation_and_document_filters_convert_to_qdrant_filters() {
 }
 
 #[test]
-fn non_numeric_generation_filter_is_rejected_before_qdrant_conversion() {
+fn opaque_generation_filter_is_converted_as_keyword() {
     let request = VectorSearchRequest {
         collection: "axon-test".to_string(),
         query: "docs".to_string(),
@@ -153,29 +153,43 @@ fn non_numeric_generation_filter_is_rejected_before_qdrant_conversion() {
         metadata: MetadataMap::new(),
     };
 
-    let err = qdrant_filter(&request).unwrap_err();
+    let filter = qdrant_filter(&request).unwrap().unwrap();
+    let condition::ConditionOneOf::Field(field) = filter.must[0].condition_one_of.as_ref().unwrap()
+    else {
+        panic!("expected source_generation field condition");
+    };
 
-    assert_eq!(err.code.to_string(), "vector.invalid_generation");
+    assert!(matches!(
+        field
+            .r#match
+            .as_ref()
+            .and_then(|value| value.match_value.as_ref()),
+        Some(r#match::MatchValue::Keyword(value)) if value == "gen-7"
+    ));
 }
 
 #[test]
-fn negative_generation_filter_is_rejected_before_qdrant_conversion() {
+fn unsupported_filter_value_shapes_are_rejected_before_qdrant_conversion() {
     let request = VectorSearchRequest {
         collection: "axon-test".to_string(),
         query: "docs".to_string(),
         limit: 10,
         dense_vector: None,
         sparse_vector: None,
-        filters: MetadataMap::new(),
+        filters: MetadataMap(
+            [("source_id".to_string(), json!({"eq": "src-web"}))]
+                .into_iter()
+                .collect(),
+        ),
         hybrid: None,
-        generation: Some(SourceGenerationId::new("-1")),
+        generation: None,
         graph_refs: Vec::new(),
         metadata: MetadataMap::new(),
     };
 
     let err = qdrant_filter(&request).unwrap_err();
 
-    assert_eq!(err.code.to_string(), "vector.invalid_generation");
+    assert_eq!(err.code.to_string(), "vector.invalid_filter_value");
 }
 
 #[test]
@@ -360,6 +374,31 @@ fn vector_point_batch_converts_sparse_vectors_to_qdrant_named_sparse_arm() {
     };
     assert_eq!(sparse.indices, vec![1, 3, 8]);
     assert_eq!(sparse.values, vec![0.2, 0.4, 0.9]);
+}
+
+#[test]
+fn sparse_vectors_for_dense_only_collections_are_rejected_before_qdrant_conversion() {
+    let mut spec = test_collection_spec(3);
+    spec.dense.name = "dense_docs".to_string();
+    let document = test_prepared_document();
+    let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
+    let mut batch = VectorPointBatchBuilder::new(
+        spec.clone(),
+        document,
+        embeddings,
+        test_vector_build_context(),
+    )
+    .build()
+    .unwrap();
+    batch.points[0].sparse_vector = Some(SparseVector {
+        chunk_id: batch.points[0].chunk_id.clone(),
+        indices: vec![1],
+        values: vec![0.2],
+    });
+
+    let err = qdrant_upsert_points(&spec, &batch).unwrap_err();
+
+    assert_eq!(err.code.to_string(), "vector.sparse_not_configured");
 }
 
 #[test]

@@ -15,6 +15,9 @@ pub(crate) fn validate_forbidden_value(
     path: &str,
     value: &Value,
 ) -> Result<(), VectorPayloadValidationError> {
+    if BODY_TEXT_FIELDS.contains(&path) {
+        return Ok(());
+    }
     match value {
         Value::String(value) if forbidden_string_value(value) => {
             Err(VectorPayloadValidationError::ForbiddenValue {
@@ -146,7 +149,7 @@ fn adapter_response_blob(object: &serde_json::Map<String, Value>) -> bool {
     has_status && has_headers && has_body
 }
 
-const FORBIDDEN_FIELD_FRAGMENTS: &[&str] = &[
+pub const FORBIDDEN_FIELD_FRAGMENTS: &[&str] = &[
     "raw_auth",
     "auth_header",
     "authorization",
@@ -164,7 +167,7 @@ const FORBIDDEN_FIELD_FRAGMENTS: &[&str] = &[
     "response_blob",
 ];
 
-const FORBIDDEN_VALUE_FRAGMENTS: &[&str] = &[
+pub const FORBIDDEN_VALUE_FRAGMENTS: &[&str] = &[
     "authorization:",
     "proxy-authorization:",
     "bearer ",
@@ -180,7 +183,7 @@ const FORBIDDEN_VALUE_FRAGMENTS: &[&str] = &[
     "token=",
 ];
 
-const BARE_SECRET_TOKEN_PREFIXES: &[&str] = &[
+pub const BARE_SECRET_TOKEN_PREFIXES: &[&str] = &[
     "sk-proj-",
     "github_pat_",
     "sk-",
@@ -190,3 +193,5 @@ const BARE_SECRET_TOKEN_PREFIXES: &[&str] = &[
     "xoxp-",
     "glpat-",
 ];
+
+const BODY_TEXT_FIELDS: &[&str] = &["chunk_text"];

@@ -23,7 +23,7 @@ pub fn test_collection_spec(dimensions: u32) -> CollectionSpec {
             },
             PayloadIndexSpec {
                 field_name: "source_generation".to_string(),
-                field_schema: PayloadFieldSchema::Integer,
+                field_schema: PayloadFieldSchema::Keyword,
                 required_for_filters: true,
             },
             PayloadIndexSpec {
@@ -55,6 +55,12 @@ pub fn test_prepared_document() -> PreparedDocument {
         ],
         metadata: MetadataMap(
             [
+                (
+                    "embedding_batch_id".to_string(),
+                    json!(uuid::Uuid::from_u128(42).to_string()),
+                ),
+                ("embedding_provider_id".to_string(), json!("fake-embedding")),
+                ("embedding_model".to_string(), json!("text-embedding-test")),
                 ("source_family".to_string(), json!("web")),
                 ("web_title".to_string(), json!("Example Docs")),
                 ("web_domain".to_string(), json!("example.com")),
@@ -80,6 +86,7 @@ pub fn test_embedding_result_for(
 ) -> EmbeddingResult {
     EmbeddingResult {
         batch_id: BatchId::new(uuid::Uuid::from_u128(42)),
+        provider_id: ProviderId::new("fake-embedding"),
         model: model.into(),
         dimensions,
         vectors: document
@@ -107,7 +114,8 @@ pub fn test_embedding_result_with_vectors(
     vectors: Vec<(&str, Vec<f32>)>,
 ) -> EmbeddingResult {
     EmbeddingResult {
-        batch_id: BatchId::new(uuid::Uuid::from_u128(43)),
+        batch_id: BatchId::new(uuid::Uuid::from_u128(42)),
+        provider_id: ProviderId::new("fake-embedding"),
         model: model.into(),
         dimensions,
         vectors: vectors
@@ -129,7 +137,6 @@ pub fn test_embedding_result_with_vectors(
 
 pub fn test_vector_build_context() -> VectorPointBatchBuildContext {
     VectorPointBatchBuildContext {
-        embedding_provider: ProviderId::new("fake-embedding"),
         embedded_at: Timestamp("2026-07-01T00:00:00Z".to_string()),
     }
 }

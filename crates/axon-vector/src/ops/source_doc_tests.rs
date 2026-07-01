@@ -1,6 +1,6 @@
 use super::{
     LedgerPayload, SourceDocument, SourceOrigin, prepare_source_document,
-    structured_payload_from_vertical_summary, target_vector_payload_for_chunk,
+    structured_payload_from_vertical_summary, target_vector_payload_fixture_for_chunk,
 };
 use crate::ops::input::chunk_markdown_with_offsets;
 use crate::ops::tei::StructuredPayload;
@@ -168,7 +168,7 @@ async fn file_source_attaches_existing_code_keys_and_new_locator_keys() {
 }
 
 #[tokio::test]
-async fn file_source_target_payload_bridge_validates_without_legacy_unknown_fields() {
+async fn file_source_target_payload_fixture_validates_without_legacy_unknown_fields() {
     let source = SourceDocument::try_new_file(
         SourceOrigin::GitFile,
         "https://github.com/owner/repo/blob/main/src/lib.rs".to_string(),
@@ -190,7 +190,8 @@ async fn file_source_target_payload_bridge_validates_without_legacy_unknown_fiel
     .expect("source doc");
 
     let prepared = prepare_source_document(source).await.expect("prepared doc");
-    let payload = target_vector_payload_for_chunk(&prepared, 0, "axon").expect("target payload");
+    let payload =
+        target_vector_payload_fixture_for_chunk(&prepared, 0, "axon").expect("target payload");
 
     assert_eq!(payload["collection"], "axon");
     assert_eq!(payload["source_family"], "code");
@@ -200,7 +201,7 @@ async fn file_source_target_payload_bridge_validates_without_legacy_unknown_fiel
             .is_some_and(|value| value.starts_with("legacy-vector:fnv1a64:"))
     );
     assert_eq!(payload["source_item_key"], prepared.url());
-    assert_eq!(payload["source_generation"], 1);
+    assert_eq!(payload["source_generation"], "legacy-vector:gen-1");
     assert!(
         payload["document_id"]
             .as_str()
@@ -228,7 +229,34 @@ async fn file_source_target_payload_bridge_validates_without_legacy_unknown_fiel
 }
 
 #[tokio::test]
-async fn target_payload_bridge_does_not_copy_absolute_local_paths() {
+async fn web_source_target_payload_fixture_uses_web_family_fields() {
+    let source = SourceDocument::try_new_web_markdown(
+        "https://example.com/docs/install".to_string(),
+        "# Install\n\nRun the installer.".to_string(),
+        "scrape",
+        Some("Example Docs".to_string()),
+        Some(serde_json::json!({
+            "web_title": "Example Docs",
+            "web_domain": "example.com",
+            "web_status_code": 200,
+            "web_depth": 1
+        })),
+        None,
+        None,
+    )
+    .expect("source doc");
+
+    let prepared = prepare_source_document(source).await.expect("prepared doc");
+    let payload =
+        target_vector_payload_fixture_for_chunk(&prepared, 0, "axon").expect("target payload");
+
+    assert_eq!(payload["source_family"], "web");
+    assert_eq!(payload["web_title"], "Example Docs");
+    assert_eq!(payload["web_domain"], "example.com");
+}
+
+#[tokio::test]
+async fn target_payload_fixture_does_not_copy_absolute_local_paths() {
     let source = SourceDocument::try_new_file(
         SourceOrigin::LocalFile,
         "file:///home/jmagar/workspace/axon/src/lib.rs".to_string(),
@@ -244,7 +272,8 @@ async fn target_payload_bridge_does_not_copy_absolute_local_paths() {
     .expect("source doc");
 
     let prepared = prepare_source_document(source).await.expect("prepared doc");
-    let payload = target_vector_payload_for_chunk(&prepared, 0, "axon").expect("target payload");
+    let payload =
+        target_vector_payload_fixture_for_chunk(&prepared, 0, "axon").expect("target payload");
     let serialized = serde_json::to_string(&payload).unwrap();
 
     assert!(!serialized.contains("/home/jmagar"));
@@ -264,7 +293,7 @@ async fn target_payload_bridge_does_not_copy_absolute_local_paths() {
 }
 
 #[tokio::test]
-async fn target_payload_bridge_scrubs_non_home_absolute_local_paths() {
+async fn target_payload_fixture_scrubs_non_home_absolute_local_paths() {
     let source = SourceDocument::try_new_file(
         SourceOrigin::LocalFile,
         "file:///tmp/axon/src/lib.rs".to_string(),
@@ -280,7 +309,8 @@ async fn target_payload_bridge_scrubs_non_home_absolute_local_paths() {
     .expect("source doc");
 
     let prepared = prepare_source_document(source).await.expect("prepared doc");
-    let payload = target_vector_payload_for_chunk(&prepared, 0, "axon").expect("target payload");
+    let payload =
+        target_vector_payload_fixture_for_chunk(&prepared, 0, "axon").expect("target payload");
     let serialized = serde_json::to_string(&payload).unwrap();
 
     assert!(!serialized.contains("/tmp/axon"));
@@ -291,7 +321,7 @@ async fn target_payload_bridge_scrubs_non_home_absolute_local_paths() {
 }
 
 #[tokio::test]
-async fn target_payload_bridge_scrubs_ledger_item_key_local_paths() {
+async fn target_payload_fixture_scrubs_ledger_item_key_local_paths() {
     let ledger = LedgerPayload::try_new(
         "src_local".to_string(),
         "local_code",
@@ -316,7 +346,8 @@ async fn target_payload_bridge_scrubs_ledger_item_key_local_paths() {
     .with_ledger_payload(ledger);
 
     let prepared = prepare_source_document(source).await.expect("prepared doc");
-    let payload = target_vector_payload_for_chunk(&prepared, 0, "axon").expect("target payload");
+    let payload =
+        target_vector_payload_fixture_for_chunk(&prepared, 0, "axon").expect("target payload");
     let serialized = serde_json::to_string(&payload).unwrap();
 
     assert!(!serialized.contains("/tmp/axon"));
@@ -403,7 +434,8 @@ async fn memory_source_is_atomic_and_preserves_point_id() {
     assert_eq!(prepared.content_type, "text");
     assert_eq!(prepared.chunks, vec!["Important memory text".to_string()]);
     assert_eq!(prepared.chunk_point_ids, vec![point_id]);
-    let payload = target_vector_payload_for_chunk(&prepared, 0, "axon").expect("target payload");
+    let payload =
+        target_vector_payload_fixture_for_chunk(&prepared, 0, "axon").expect("target payload");
     assert_eq!(payload["source_family"], "memory");
     assert_eq!(payload["source_item_key"], url);
     assert_eq!(

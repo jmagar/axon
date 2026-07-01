@@ -8,6 +8,10 @@ use axon_api::source::{ChunkLocator, MetadataMap, SourceRange};
 
 use crate::payload_redaction::{forbidden_field_name, validate_forbidden_value};
 
+pub use crate::payload_redaction::{
+    BARE_SECRET_TOKEN_PREFIXES, FORBIDDEN_FIELD_FRAGMENTS, FORBIDDEN_VALUE_FRAGMENTS,
+};
+
 pub const MODULE_NAME: &str = "payload";
 pub const VECTOR_PAYLOAD_CONTRACT_VERSION: &str = "2026-07-01";
 pub const SOURCE_RANGE_ANCHOR_FIELDS: &[&str] = &[
@@ -41,6 +45,7 @@ pub enum VectorPayloadValidationError {
     ForbiddenValue { field: String },
     UnknownSourceSpecificField { field: String },
     InvalidGeneration { field: String },
+    InvalidContractVersion,
     InvalidSourceFamily,
     InvalidVisibility,
     InvalidFieldShape { field: String },
@@ -67,8 +72,11 @@ impl fmt::Display for VectorPayloadValidationError {
             Self::InvalidGeneration { field } => {
                 write!(
                     f,
-                    "vector payload field `{field}` must be a non-negative integer"
+                    "vector payload field `{field}` must be a non-empty string"
                 )
+            }
+            Self::InvalidContractVersion => {
+                write!(f, "invalid vector payload contract version")
             }
             Self::InvalidSourceFamily => write!(f, "invalid vector payload source_family"),
             Self::InvalidVisibility => write!(f, "invalid vector payload visibility"),
@@ -125,6 +133,7 @@ impl VectorPayload {
         validate_required_fields(&metadata)?;
         validate_forbidden_fields(&metadata)?;
         validate_generations(&metadata)?;
+        validate_contract_version(&metadata)?;
         validate_source_family(&metadata)?;
         validate_visibility(&metadata)?;
         validate_shapes(&metadata)?;
@@ -168,8 +177,8 @@ fn validate_generations(metadata: &MetadataMap) -> Result<(), VectorPayloadValid
     for field in ["source_generation", "committed_generation"] {
         if !metadata
             .get(field)
-            .and_then(|value| value.as_i64())
-            .is_some_and(|value| value >= 0)
+            .and_then(|value| value.as_str())
+            .is_some_and(|value| !value.trim().is_empty())
         {
             return Err(VectorPayloadValidationError::InvalidGeneration {
                 field: field.to_string(),
@@ -177,6 +186,18 @@ fn validate_generations(metadata: &MetadataMap) -> Result<(), VectorPayloadValid
         }
     }
     Ok(())
+}
+
+fn validate_contract_version(metadata: &MetadataMap) -> Result<(), VectorPayloadValidationError> {
+    if metadata
+        .get("payload_contract_version")
+        .and_then(|value| value.as_str())
+        == Some(VECTOR_PAYLOAD_CONTRACT_VERSION)
+    {
+        Ok(())
+    } else {
+        Err(VectorPayloadValidationError::InvalidContractVersion)
+    }
 }
 
 fn validate_source_family(metadata: &MetadataMap) -> Result<(), VectorPayloadValidationError> {

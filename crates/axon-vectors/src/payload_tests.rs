@@ -39,8 +39,8 @@ fn valid_payload_fixtures_pass_required_field_and_registry_validation() {
                 "{name} missing {field}"
             );
         }
-        assert!(payload.metadata()["source_generation"].is_i64());
-        assert!(payload.metadata()["committed_generation"].is_i64());
+        assert!(payload.metadata()["source_generation"].is_string());
+        assert!(payload.metadata()["committed_generation"].is_string());
     }
 }
 
@@ -261,9 +261,9 @@ fn invalid_discriminators_are_not_echoed_in_error_messages() {
 }
 
 #[test]
-fn source_generation_fields_must_be_non_negative_integers() {
+fn source_generation_fields_must_be_non_empty_strings() {
     let mut metadata = fixture("web.valid.json");
-    metadata.insert("source_generation".to_string(), serde_json::json!(-1));
+    metadata.insert("source_generation".to_string(), serde_json::json!(""));
 
     let err = VectorPayload::try_from_metadata(metadata).unwrap_err();
 
@@ -273,6 +273,19 @@ fn source_generation_fields_must_be_non_negative_integers() {
             field: "source_generation".to_string()
         }
     );
+}
+
+#[test]
+fn payload_contract_version_must_match_current_contract() {
+    let mut metadata = fixture("web.valid.json");
+    metadata.insert(
+        "payload_contract_version".to_string(),
+        serde_json::json!("2026-06-01"),
+    );
+
+    let err = VectorPayload::try_from_metadata(metadata).unwrap_err();
+
+    assert_eq!(err, VectorPayloadValidationError::InvalidContractVersion);
 }
 
 #[test]

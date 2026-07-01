@@ -29,6 +29,7 @@ pub struct RetrievalEngine<S, E> {
 pub struct RetrievalEngineConfig {
     pub embedding_provider_id: ProviderId,
     pub embedding_model: String,
+    pub embedding_dimensions: u32,
     pub access: RetrievalAccess,
 }
 
@@ -53,11 +54,13 @@ impl RetrievalEngineConfig {
     pub fn new(
         embedding_provider_id: ProviderId,
         embedding_model: impl Into<String>,
+        embedding_dimensions: u32,
         access: RetrievalAccess,
     ) -> Self {
         Self {
             embedding_provider_id,
             embedding_model: embedding_model.into(),
+            embedding_dimensions,
             access,
         }
     }
@@ -139,18 +142,54 @@ where
                 metadata: MetadataMap::new(),
             })
             .await?;
-        result
+        if result.provider_id != self.config.embedding_provider_id {
+            return Err(ApiError::new(
+                "retrieval.embedding_provider_mismatch",
+                ErrorStage::Embedding,
+                "embedding provider returned a vector for a different provider id",
+            )
+            .with_provider_id(&result.provider_id.0));
+        }
+        if result.model != self.config.embedding_model {
+            return Err(ApiError::new(
+                "retrieval.embedding_model_mismatch",
+                ErrorStage::Embedding,
+                "embedding provider returned a vector for a different model",
+            ));
+        }
+        if result.dimensions != self.config.embedding_dimensions {
+            return Err(ApiError::new(
+                "retrieval.embedding_dimension_mismatch",
+                ErrorStage::Embedding,
+                format!(
+                    "embedding provider returned {} dimensions, expected {}",
+                    result.dimensions, self.config.embedding_dimensions
+                ),
+            ));
+        }
+        let vector = result
             .vectors
             .into_iter()
-            .next()
-            .map(|vector| vector.values)
+            .find(|vector| vector.chunk_id == ChunkId::new("query"))
             .ok_or_else(|| {
                 ApiError::new(
                     "retrieval.missing_query_vector",
                     ErrorStage::Retrieving,
                     "embedding provider returned no query vector",
                 )
-            })
+            })?;
+        if vector.values.len() as u32 != self.config.embedding_dimensions {
+            return Err(ApiError::new(
+                "retrieval.embedding_dimension_mismatch",
+                ErrorStage::Embedding,
+                format!(
+                    "query vector has {} dimensions, expected {}",
+                    vector.values.len(),
+                    self.config.embedding_dimensions
+                ),
+            ));
+        }
+        Ok(vector.values)
     }
 }
 
@@ -187,7 +226,7 @@ fn visibility_value(visibility: &Visibility) -> &'static str {
     }
 }
 
-fn match_from_vector(item: &VectorSearchMatch) -> Result<RetrievalMatch, ApiError> {
+pub(crate) fn match_from_vector(item: &VectorSearchMatch) -> Result<RetrievalMatch, ApiError> {
     let citation = Citation::from_vector_match(item)?;
     Ok(RetrievalMatch {
         chunk_id: citation.chunk_id.clone(),
@@ -199,7 +238,14 @@ fn match_from_vector(item: &VectorSearchMatch) -> Result<RetrievalMatch, ApiErro
             .text
             .clone()
             .or_else(|| payload_string(&item.payload, "chunk_text"))
-            .unwrap_or_default(),
+            .ok_or_else(|| {
+                ApiError::new(
+                    "retrieval.missing_chunk_text",
+                    ErrorStage::Retrieving,
+                    "vector search match did not include text or chunk_text payload",
+                )
+                .with_context("point_id", item.point_id.0.clone())
+            })?,
         citation,
     })
 }

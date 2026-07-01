@@ -11,7 +11,7 @@ mod document_bridge;
 mod ledger;
 mod support;
 #[cfg(test)]
-mod target_payload;
+mod target_payload_fixture;
 
 use document_bridge::prepare_atomic_source;
 pub use ledger::LedgerPayload;
@@ -21,7 +21,7 @@ use support::{
     file_locator, insert_missing_or_null,
 };
 #[cfg(test)]
-pub(in crate::ops) use target_payload::target_vector_payload_for_chunk;
+pub(in crate::ops) use target_payload_fixture::target_vector_payload_fixture_for_chunk;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceOrigin {

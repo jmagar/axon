@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use axon_vectors::payload::{VECTOR_REQUIRED_FIELDS, VECTOR_VISIBILITY_VALUES};
+use axon_vectors::payload::{
+    VECTOR_PAYLOAD_CONTRACT_VERSION, VECTOR_REQUIRED_FIELDS, VECTOR_VISIBILITY_VALUES,
+};
 use jsonschema::validator_for;
 
 use super::{fixture_repo, generate};
@@ -166,9 +168,14 @@ fn generated_vector_payload_schema_includes_registered_required_fields() {
         serde_json::json!(VECTOR_VISIBILITY_VALUES)
     );
     assert_eq!(
-        value["properties"]["payload_contract_version"]["type"],
-        serde_json::json!("string")
+        value["properties"]["payload_contract_version"]["const"],
+        serde_json::json!(VECTOR_PAYLOAD_CONTRACT_VERSION)
     );
+    assert_eq!(
+        value["properties"]["source_generation"]["x-qdrant-index"],
+        serde_json::json!("keyword")
+    );
+    assert!(value["x-axon"]["redaction_guardrails"].is_object());
     assert!(value["$defs"]["SourceRange"].get("anyOf").is_some());
     assert!(
         value["allOf"]
@@ -177,6 +184,20 @@ fn generated_vector_payload_schema_includes_registered_required_fields() {
             .iter()
             .any(|conditional| conditional["if"]["properties"]["source_family"]["const"] == "web")
     );
+    let api_dtos = value["x-axon"]["api_dtos"].as_array().unwrap();
+    for dto in [
+        "EmbeddingResult",
+        "EmbeddingVector",
+        "SparseVector",
+        "VectorDeleteSelector",
+        "VectorStoreDeleteResult",
+        "VectorSearchMatch",
+    ] {
+        assert!(
+            api_dtos.iter().any(|value| value.as_str() == Some(dto)),
+            "{dto} should be listed in vector payload DTO coverage"
+        );
+    }
 }
 
 #[test]
@@ -191,6 +212,10 @@ fn generated_vector_payload_schema_rejects_runtime_invalid_family_and_range_shap
     let validator = validator_for(&value).unwrap();
     let mut payload = value["x-axon"]["examples"][0].clone();
     payload["payload_contract_version"] = serde_json::json!(20260701);
+    assert!(validator.validate(&payload).is_err());
+
+    let mut payload = value["x-axon"]["examples"][0].clone();
+    payload["payload_contract_version"] = serde_json::json!("2026-06-01");
     assert!(validator.validate(&payload).is_err());
 
     let mut payload = value["x-axon"]["examples"][0].clone();

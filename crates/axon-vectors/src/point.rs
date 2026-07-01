@@ -23,7 +23,6 @@ pub struct VectorPointBatchBuilder {
 
 #[derive(Debug, Clone)]
 pub struct VectorPointBatchBuildContext {
-    pub embedding_provider: ProviderId,
     pub embedded_at: Timestamp,
 }
 
@@ -43,8 +42,20 @@ pub enum VectorPointBatchBuildError {
         expected: u32,
         actual: u32,
     },
-    InvalidGeneration {
-        generation: SourceGenerationId,
+    EmbeddingBatchMismatch {
+        expected: BatchId,
+        actual: BatchId,
+    },
+    InvalidEmbeddingBatchId {
+        value: String,
+    },
+    EmbeddingProviderMismatch {
+        expected: ProviderId,
+        actual: ProviderId,
+    },
+    EmbeddingModelMismatch {
+        expected: String,
+        actual: String,
     },
     Payload {
         chunk_id: ChunkId,
@@ -82,11 +93,27 @@ impl fmt::Display for VectorPointBatchBuildError {
                     )
                 }
             }
-            Self::InvalidGeneration { generation } => {
+            Self::EmbeddingBatchMismatch { expected, actual } => {
                 write!(
                     f,
-                    "source generation `{}` is not a non-negative integer",
-                    generation.0
+                    "embedding result batch `{}` does not match embedding batch `{}`",
+                    actual.0, expected.0
+                )
+            }
+            Self::InvalidEmbeddingBatchId { value } => {
+                write!(f, "embedding batch id `{value}` is not a valid UUID")
+            }
+            Self::EmbeddingProviderMismatch { expected, actual } => {
+                write!(
+                    f,
+                    "embedding result provider `{}` does not match embedding batch provider `{}`",
+                    actual.0, expected.0
+                )
+            }
+            Self::EmbeddingModelMismatch { expected, actual } => {
+                write!(
+                    f,
+                    "embedding result model `{actual}` does not match embedding batch model `{expected}`"
                 )
             }
             Self::Payload { chunk_id, source } => {
@@ -134,9 +161,9 @@ impl VectorPointBatchBuilder {
             });
         }
 
+        validate_embedding_provenance(&self.document, &self.embeddings)?;
         let chunks = chunks_by_id(&self.document)?;
         let vectors = vectors_by_chunk_id(&self.embeddings, &chunks, expected_dimensions)?;
-        let source_generation = parse_generation(&self.document.generation)?;
         let mut points = Vec::with_capacity(self.document.chunks.len());
 
         for chunk in &self.document.chunks {
@@ -151,7 +178,6 @@ impl VectorPointBatchBuilder {
                 chunk,
                 &self.embeddings,
                 &self.context,
-                source_generation,
             )?;
             points.push(VectorPoint {
                 point_id: stable_point_id(
@@ -159,7 +185,6 @@ impl VectorPointBatchBuilder {
                     &self.collection.dense.name,
                     &self.document.document_id,
                     &chunk.chunk_id,
-                    &self.embeddings.model,
                     &self.document.generation,
                 ),
                 chunk_id: chunk.chunk_id.clone(),
@@ -179,6 +204,59 @@ impl VectorPointBatchBuilder {
             payload_indexes: self.collection.payload_indexes,
         })
     }
+}
+
+fn validate_embedding_provenance(
+    document: &PreparedDocument,
+    embeddings: &EmbeddingResult,
+) -> Result<(), VectorPointBatchBuildError> {
+    let Some(batch_id) = document
+        .metadata
+        .get("embedding_batch_id")
+        .and_then(|value| value.as_str())
+        .map(parse_embedding_batch_id)
+        .transpose()?
+    else {
+        return Ok(());
+    };
+    if embeddings.batch_id != batch_id {
+        return Err(VectorPointBatchBuildError::EmbeddingBatchMismatch {
+            expected: batch_id,
+            actual: embeddings.batch_id.clone(),
+        });
+    }
+    if let Some(provider_id) = document
+        .metadata
+        .get("embedding_provider_id")
+        .and_then(|value| value.as_str())
+        .map(ProviderId::new)
+        && embeddings.provider_id != provider_id
+    {
+        return Err(VectorPointBatchBuildError::EmbeddingProviderMismatch {
+            expected: provider_id,
+            actual: embeddings.provider_id.clone(),
+        });
+    }
+    if let Some(model) = document
+        .metadata
+        .get("embedding_model")
+        .and_then(|value| value.as_str())
+        && embeddings.model != model
+    {
+        return Err(VectorPointBatchBuildError::EmbeddingModelMismatch {
+            expected: model.to_string(),
+            actual: embeddings.model.clone(),
+        });
+    }
+    Ok(())
+}
+
+fn parse_embedding_batch_id(value: &str) -> Result<BatchId, VectorPointBatchBuildError> {
+    Uuid::parse_str(value).map(BatchId::new).map_err(|_| {
+        VectorPointBatchBuildError::InvalidEmbeddingBatchId {
+            value: value.to_string(),
+        }
+    })
 }
 
 fn chunks_by_id(
@@ -232,9 +310,10 @@ fn build_payload(
     chunk: &PreparedChunk,
     embeddings: &EmbeddingResult,
     context: &VectorPointBatchBuildContext,
-    source_generation: i64,
 ) -> Result<MetadataMap, VectorPointBatchBuildError> {
     let mut metadata = document.metadata.clone();
+    metadata.remove("embedding_batch_id");
+    metadata.remove("embedding_provider_id");
     metadata.0.extend(chunk.metadata.0.clone());
     metadata.insert(
         "payload_contract_version".to_string(),
@@ -242,11 +321,24 @@ fn build_payload(
     );
     metadata.insert("collection".to_string(), json!(collection.collection));
     metadata.insert("source_id".to_string(), json!(document.source_id.0));
-    metadata.insert("source_generation".to_string(), json!(source_generation));
-    metadata.insert("committed_generation".to_string(), json!(source_generation));
+    metadata.insert(
+        "source_item_key".to_string(),
+        json!(document.source_item_key.0),
+    );
+    metadata.insert(
+        "source_generation".to_string(),
+        json!(document.generation.0),
+    );
+    metadata.insert(
+        "committed_generation".to_string(),
+        json!(document.generation.0),
+    );
     metadata.insert("document_id".to_string(), json!(document.document_id.0));
     metadata.insert("chunk_id".to_string(), json!(chunk.chunk_id.0));
+    metadata.insert("chunk_key".to_string(), json!(chunk.chunk_key));
+    metadata.insert("content_hash".to_string(), json!(chunk.content_hash));
     metadata.insert("chunk_text".to_string(), json!(chunk.content));
+    metadata.insert("content_kind".to_string(), json!(chunk.content_kind));
     metadata.insert(
         "chunk_locator".to_string(),
         chunk_locator_json(&chunk.chunk_locator),
@@ -269,7 +361,7 @@ fn build_payload(
     );
     metadata.insert(
         "embedding_provider".to_string(),
-        json!(context.embedding_provider.0.clone()),
+        json!(embeddings.provider_id.0.clone()),
     );
     metadata.insert(
         "embedding_profile".to_string(),
@@ -279,6 +371,7 @@ fn build_payload(
         "embedded_at".to_string(),
         json!(context.embedded_at.0.clone()),
     );
+    metadata.insert("vector_namespace".to_string(), json!(collection.dense.name));
 
     VectorPayload::try_from_metadata(metadata)
         .map(|payload| payload.into_metadata())
@@ -298,33 +391,15 @@ fn insert_default_string(metadata: &mut MetadataMap, field: &str, value: &str) {
     }
 }
 
-fn parse_generation(generation: &SourceGenerationId) -> Result<i64, VectorPointBatchBuildError> {
-    let parsed =
-        generation
-            .0
-            .parse::<i64>()
-            .map_err(|_| VectorPointBatchBuildError::InvalidGeneration {
-                generation: generation.clone(),
-            })?;
-    if parsed >= 0 {
-        Ok(parsed)
-    } else {
-        Err(VectorPointBatchBuildError::InvalidGeneration {
-            generation: generation.clone(),
-        })
-    }
-}
-
 fn stable_point_id(
     collection: &str,
     vector_namespace: &str,
     document_id: &DocumentId,
     chunk_id: &ChunkId,
-    embedding_model: &str,
     source_generation: &SourceGenerationId,
 ) -> VectorPointId {
     let key = format!(
-        "{collection}\0{vector_namespace}\0{}\0{}\0{embedding_model}\0{}",
+        "{collection}\0{vector_namespace}\0{}\0{}\0{}",
         document_id.0, chunk_id.0, source_generation.0
     );
     VectorPointId::new(Uuid::new_v5(&Uuid::NAMESPACE_URL, key.as_bytes()).to_string())

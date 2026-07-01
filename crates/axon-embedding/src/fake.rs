@@ -135,7 +135,8 @@ impl EmbeddingProvider for FakeEmbeddingProvider {
 
         Ok(EmbeddingResult {
             batch_id: batch.batch_id,
-            model: "fake-embedding".to_string(),
+            provider_id: batch.provider_id,
+            model: batch.model,
             dimensions: self.dimensions,
             vectors,
             usage: ProviderUsage {

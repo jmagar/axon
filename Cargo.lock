@@ -841,6 +841,7 @@ version = "6.2.1"
 name = "axon-retrieval"
 version = "6.2.1"
 dependencies = [
+ "async-trait",
  "axon-api",
  "axon-embedding",
  "axon-error",

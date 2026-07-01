@@ -1374,6 +1374,9 @@
         "model": {
           "type": "string"
         },
+        "provider_id": {
+          "$ref": "#/$defs/EmbeddingResult_ProviderId"
+        },
         "usage": {
           "$ref": "#/$defs/EmbeddingResult_ProviderUsage"
         },
@@ -1392,6 +1395,7 @@
       },
       "required": [
         "batch_id",
+        "provider_id",
         "model",
         "dimensions",
         "vectors",
@@ -1427,6 +1431,9 @@
         "values"
       ],
       "type": "object"
+    },
+    "EmbeddingResult_ProviderId": {
+      "type": "string"
     },
     "EmbeddingResult_ProviderUsage": {
       "additionalProperties": false,
@@ -5718,6 +5725,206 @@
       ],
       "type": "string"
     },
+    "VectorDeleteSelector": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "collection": {
+              "type": "string"
+            },
+            "generation": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/VectorDeleteSelector_SourceGenerationId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "const": "source",
+              "type": "string"
+            },
+            "source_id": {
+              "$ref": "#/$defs/VectorDeleteSelector_SourceId"
+            }
+          },
+          "required": [
+            "kind",
+            "collection",
+            "source_id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "collection": {
+              "type": "string"
+            },
+            "generation": {
+              "$ref": "#/$defs/VectorDeleteSelector_SourceGenerationId"
+            },
+            "kind": {
+              "const": "generation",
+              "type": "string"
+            },
+            "source_id": {
+              "$ref": "#/$defs/VectorDeleteSelector_SourceId"
+            }
+          },
+          "required": [
+            "kind",
+            "collection",
+            "source_id",
+            "generation"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "collection": {
+              "type": "string"
+            },
+            "document_id": {
+              "$ref": "#/$defs/VectorDeleteSelector_DocumentId"
+            },
+            "generation": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/VectorDeleteSelector_SourceGenerationId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "const": "document",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "collection",
+            "document_id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "chunk_ids": {
+              "items": {
+                "$ref": "#/$defs/VectorDeleteSelector_ChunkId"
+              },
+              "type": "array"
+            },
+            "collection": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "chunks",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "collection",
+            "chunk_ids"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "collection": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "points",
+              "type": "string"
+            },
+            "point_ids": {
+              "items": {
+                "$ref": "#/$defs/VectorDeleteSelector_VectorPointId"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind",
+            "collection",
+            "point_ids"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "canonical_uri": {
+              "type": "string"
+            },
+            "collection": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "canonical_uri",
+              "type": "string"
+            },
+            "match_prefix": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "collection",
+            "canonical_uri",
+            "match_prefix"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "collection": {
+              "type": "string"
+            },
+            "filter": true,
+            "kind": {
+              "const": "filter",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "collection",
+            "filter"
+          ],
+          "type": "object"
+        }
+      ],
+      "title": "VectorDeleteSelector"
+    },
+    "VectorDeleteSelector_ChunkId": {
+      "type": "string"
+    },
+    "VectorDeleteSelector_DocumentId": {
+      "type": "string"
+    },
+    "VectorDeleteSelector_SourceGenerationId": {
+      "type": "string"
+    },
+    "VectorDeleteSelector_SourceId": {
+      "type": "string"
+    },
+    "VectorDeleteSelector_VectorPointId": {
+      "type": "string"
+    },
     "VectorDistance": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "enum": [
@@ -6650,7 +6857,7 @@
         "path": "crates/axon-api/src/source/status.rs"
       },
       {
-        "checksum": "sha256:a11af79bc5e6e71efef79e4ead255fe3f265e09ace9d0c26df269aeaa97b8645",
+        "checksum": "sha256:8f5abe96f08143b41de5c037c36da96f0e02046eef7a319eae6b58213beda523",
         "kind": "rust_module",
         "path": "crates/axon-api/src/source/vector.rs"
       },

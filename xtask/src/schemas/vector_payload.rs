@@ -9,6 +9,7 @@ use super::super::rel;
 use super::super::schema_json::{json_string, schema_defs};
 use super::super::source_input::{SourceInput, source_inputs};
 use axon_vectors::payload::{
+    BARE_SECRET_TOKEN_PREFIXES, FORBIDDEN_FIELD_FRAGMENTS, FORBIDDEN_VALUE_FRAGMENTS,
     VECTOR_REQUIRED_FIELDS, VECTOR_SHARED_FIELDS, VECTOR_SOURCE_FAMILIES,
     VECTOR_SOURCE_FAMILY_FIELDS, VECTOR_VISIBILITY_VALUES,
 };
@@ -16,12 +17,18 @@ use axon_vectors::payload::{
 const VECTOR_API_DTOS: &[&str] = &[
     "EmbeddingBatch",
     "EmbeddingInput",
+    "EmbeddingResult",
+    "EmbeddingVector",
+    "SparseVector",
     "VectorPointBatch",
     "VectorPoint",
     "PayloadIndexSpec",
     "CollectionSpec",
+    "VectorDeleteSelector",
+    "VectorStoreDeleteResult",
     "VectorSearchRequest",
     "VectorSearchResult",
+    "VectorSearchMatch",
 ];
 
 pub fn vector_payload_artifacts(root: &Path) -> Result<Vec<SchemaArtifact>> {
@@ -91,6 +98,7 @@ fn schema_bundle(inputs: &[SourceInput], registry: &VectorPayloadRegistry) -> Va
             "source_inputs": inputs,
             "clean_break": true,
             "source_specific_families": registry_families_json(registry),
+            "redaction_guardrails": redaction_guardrails(),
             "index_plan": index_plan(),
             "examples": payload_examples(registry),
             "api_dtos": VECTOR_API_DTOS
@@ -190,7 +198,11 @@ fn schema_properties(registry: &VectorPayloadRegistry) -> Value {
 
 fn shared_field_schema(field: &str) -> Value {
     match field {
-        "payload_contract_version" => json!({ "type": "string", "x-qdrant-index": "keyword" }),
+        "payload_contract_version" => json!({
+            "type": "string",
+            "const": axon_vectors::payload::VECTOR_PAYLOAD_CONTRACT_VERSION,
+            "x-qdrant-index": "keyword"
+        }),
         "collection" | "source_id" | "source_item_key" | "document_id" | "chunk_id"
         | "chunk_key" | "content_hash" | "chunk_text" | "job_id" | "document_status"
         | "embedding_model" | "embedding_provider" | "embedding_profile" => {
@@ -204,13 +216,11 @@ fn shared_field_schema(field: &str) -> Value {
                 "x-qdrant-index": "keyword"
             })
         }
-        "source_generation" | "committed_generation" | "embedding_dimensions" => {
-            let minimum = if field == "embedding_dimensions" {
-                1
-            } else {
-                0
-            };
-            json!({ "type": "integer", "minimum": minimum, "x-qdrant-index": "integer" })
+        "source_generation" | "committed_generation" => {
+            json!({ "type": "string", "minLength": 1, "x-qdrant-index": "keyword" })
+        }
+        "embedding_dimensions" => {
+            json!({ "type": "integer", "minimum": 1, "x-qdrant-index": "integer" })
         }
         "chunk_locator" => json!({ "$ref": "#/$defs/ChunkLocator" }),
         "source_range" => json!({ "$ref": "#/$defs/SourceRange" }),
@@ -226,6 +236,22 @@ fn shared_field_schema(field: &str) -> Value {
         "embedded_at" => json!({ "type": "string", "minLength": 1, "format": "date-time" }),
         _ => json!({ "type": "string", "minLength": 1 }),
     }
+}
+
+fn redaction_guardrails() -> Value {
+    json!({
+        "scope": "metadata_and_locator_fields",
+        "body_text_fields_excluded": ["chunk_text"],
+        "forbidden_field_fragments": FORBIDDEN_FIELD_FRAGMENTS,
+        "forbidden_value_fragments": FORBIDDEN_VALUE_FRAGMENTS,
+        "bare_secret_token_prefixes": BARE_SECRET_TOKEN_PREFIXES,
+        "also_rejects": [
+            "dotenv-style assignments",
+            "absolute local paths",
+            "raw HTML blobs in metadata",
+            "adapter response blobs"
+        ]
+    })
 }
 
 fn source_specific_field_schema(field: &str) -> Value {
@@ -263,8 +289,8 @@ fn index_plan() -> Value {
             { "field_name": "source_family", "field_schema": "keyword" },
             { "field_name": "source_id", "field_schema": "keyword" },
             { "field_name": "source_item_key", "field_schema": "keyword" },
-            { "field_name": "source_generation", "field_schema": "integer" },
-            { "field_name": "committed_generation", "field_schema": "integer" },
+            { "field_name": "source_generation", "field_schema": "keyword" },
+            { "field_name": "committed_generation", "field_schema": "keyword" },
             { "field_name": "document_id", "field_schema": "keyword" },
             { "field_name": "chunk_id", "field_schema": "keyword" },
             { "field_name": "job_id", "field_schema": "keyword" },
@@ -314,7 +340,7 @@ fn required_example_value(field: &str, family: &str) -> Value {
         "payload_contract_version" => json!("2026-07-01"),
         "collection" => json!("axon"),
         "source_id" => json!(format!("src-{family}")),
-        "source_generation" | "committed_generation" => json!(7),
+        "source_generation" | "committed_generation" => json!(format!("gen-{family}-7")),
         "document_id" => json!(format!("doc-{family}")),
         "chunk_id" => json!(format!("chunk-{family}-0")),
         "chunk_locator" => json!({
@@ -390,13 +416,29 @@ fn markdown(inputs: &[SourceInput], registry: &VectorPayloadRegistry) -> String 
     let mut out = String::from(
         "# vector-payload Schema Reference\n\nGenerated by `cargo xtask schemas vector-payload`.\n\n",
     );
-    out.push_str("## Required Fields\n\n| Field | Type |\n|---|---|\n");
+    out.push_str("## Required Fields\n\n| Field | Schema |\n|---|---|\n");
     for field in registry.required_fields {
         out.push_str(&format!(
             "| `{field}` | `{}` |\n",
-            display_type(&shared_field_schema(field))
+            display_schema(&shared_field_schema(field))
         ));
     }
+
+    out.push_str("\n## Redaction Guardrails\n\n");
+    out.push_str("Payload validation applies metadata and locator guardrails before vector writes. `chunk_text` is treated as document body text and is not rejected merely for containing examples such as local paths, dotenv assignments, or HTML snippets.\n\n");
+    out.push_str("| Category | Values |\n|---|---|\n");
+    out.push_str(&format!(
+        "| Forbidden field fragments | `{}` |\n",
+        FORBIDDEN_FIELD_FRAGMENTS.join("`, `")
+    ));
+    out.push_str(&format!(
+        "| Forbidden value fragments | `{}` |\n",
+        FORBIDDEN_VALUE_FRAGMENTS.join("`, `")
+    ));
+    out.push_str(&format!(
+        "| Bare token prefixes | `{}` |\n",
+        BARE_SECRET_TOKEN_PREFIXES.join("`, `")
+    ));
 
     out.push_str("\n## Source-Specific Families\n\n| Family | Fields |\n|---|---|\n");
     for (family, fields) in registry.source_families {
@@ -426,17 +468,41 @@ fn markdown(inputs: &[SourceInput], registry: &VectorPayloadRegistry) -> String 
     out
 }
 
-fn display_type(schema: &Value) -> String {
+fn display_schema(schema: &Value) -> String {
     if let Some(reference) = schema.get("$ref").and_then(Value::as_str) {
         return reference.to_string();
     }
+    let mut parts = Vec::new();
     match schema.get("type") {
-        Some(Value::String(kind)) => kind.clone(),
-        Some(Value::Array(kinds)) => kinds
+        Some(Value::String(kind)) => parts.push(kind.clone()),
+        Some(Value::Array(kinds)) => parts.push(
+            kinds
+                .iter()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>()
+                .join(" | "),
+        ),
+        _ => parts.push("unknown".to_string()),
+    }
+    if let Some(value) = schema.get("const").and_then(Value::as_str) {
+        parts.push(format!("const={value}"));
+    }
+    if let Some(values) = schema.get("enum").and_then(Value::as_array) {
+        let values = values
             .iter()
             .filter_map(Value::as_str)
             .collect::<Vec<_>>()
-            .join(" | "),
-        _ => "unknown".to_string(),
+            .join("|");
+        parts.push(format!("enum={values}"));
     }
+    if let Some(format) = schema.get("format").and_then(Value::as_str) {
+        parts.push(format!("format={format}"));
+    }
+    if let Some(minimum) = schema.get("minimum") {
+        parts.push(format!("minimum={minimum}"));
+    }
+    if let Some(min_length) = schema.get("minLength") {
+        parts.push(format!("minLength={min_length}"));
+    }
+    parts.join("; ")
 }

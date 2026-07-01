@@ -14,7 +14,7 @@ fn collection() -> CollectionSpec {
         },
         payload_indexes: vec![
             payload_index("source_id", PayloadFieldSchema::Keyword),
-            payload_index("source_generation", PayloadFieldSchema::Integer),
+            payload_index("source_generation", PayloadFieldSchema::Keyword),
             payload_index("document_id", PayloadFieldSchema::Keyword),
             payload_index("chunk_id", PayloadFieldSchema::Keyword),
             payload_index("vector_namespace", PayloadFieldSchema::Keyword),
@@ -48,7 +48,7 @@ fn batch() -> VectorPointBatch {
                 sparse_vector: None,
                 payload: payload(
                     "src-a",
-                    7,
+                    "7",
                     "doc-a",
                     "chunk-a",
                     "dense",
@@ -64,7 +64,7 @@ fn batch() -> VectorPointBatch {
                 sparse_vector: None,
                 payload: payload(
                     "src-a",
-                    8,
+                    "8",
                     "doc-b",
                     "chunk-b",
                     "dense",
@@ -80,7 +80,7 @@ fn batch() -> VectorPointBatch {
                 sparse_vector: None,
                 payload: payload(
                     "src-b",
-                    7,
+                    "7",
                     "doc-c",
                     "chunk-c",
                     "summary",
@@ -100,7 +100,7 @@ fn batch() -> VectorPointBatch {
 #[allow(clippy::too_many_arguments)]
 fn payload(
     source_id: &str,
-    generation: i64,
+    generation: &str,
     document_id: &str,
     chunk_id: &str,
     namespace: &str,
@@ -266,7 +266,7 @@ async fn fake_vector_store_records_payload_indexes_from_collection_spec() {
     assert_eq!(spec.payload_indexes.len(), 7);
     assert!(spec.payload_indexes.iter().any(|index| {
         index.field_name == "source_generation"
-            && index.field_schema == PayloadFieldSchema::Integer
+            && index.field_schema == PayloadFieldSchema::Keyword
             && index.required_for_filters
     }));
 }
@@ -279,7 +279,7 @@ async fn fake_vector_store_filters_searches_by_indexed_payload_fields() {
 
     for (field, value, expected) in [
         ("source_id", json!("src-b"), "point-c"),
-        ("source_generation", json!(8), "point-b"),
+        ("source_generation", json!("8"), "point-b"),
         ("document_id", json!("doc-c"), "point-c"),
         ("chunk_id", json!("chunk-b"), "point-b"),
         ("vector_namespace", json!("summary"), "point-c"),
@@ -319,7 +319,7 @@ async fn fake_vector_store_filters_searches_by_indexed_payload_fields() {
         result
             .results
             .iter()
-            .all(|result| result.payload["source_generation"] == 7)
+            .all(|result| result.payload["source_generation"] == "7")
     );
 }
 
@@ -391,6 +391,25 @@ async fn delete_selectors_only_delete_matching_points() {
 }
 
 #[tokio::test]
+async fn raw_filter_delete_selector_rejects_unsupported_query_shapes() {
+    let store = FakeVectorStore::new("fake-vector");
+    store.ensure_collection(collection()).await.unwrap();
+    store.upsert(batch()).await.unwrap();
+
+    let err = store
+        .delete(VectorDeleteSelector::Filter {
+            collection: "axon-test".to_string(),
+            filter: json!({"must": [{"key": "source_id", "match": {"value": "src-a"}}]}),
+        })
+        .await
+        .unwrap_err();
+
+    assert_eq!(err.code.to_string(), "vector.invalid_delete_selector");
+    let result = store.search(search(MetadataMap::new())).await.unwrap();
+    assert_eq!(result.results.len(), 3);
+}
+
+#[tokio::test]
 async fn point_delete_selector_only_deletes_named_points() {
     let store = FakeVectorStore::new("fake-vector");
     store.ensure_collection(collection()).await.unwrap();
@@ -437,7 +456,7 @@ async fn cleanup_debt_generation_delete_cannot_delete_unrelated_generations() {
         .unwrap();
     assert_eq!(result.results.len(), 1);
     assert_eq!(result.results[0].point_id, VectorPointId::new("point-b"));
-    assert_eq!(result.results[0].payload["source_generation"], 8);
+    assert_eq!(result.results[0].payload["source_generation"], "8");
 }
 
 #[tokio::test]

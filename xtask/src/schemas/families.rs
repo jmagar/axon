@@ -241,6 +241,10 @@ fn api_vector_schema_defs() -> Vec<(&'static str, Value)> {
             schemars::schema_for!(axon_api::source::SparseVectorConfig).into(),
         ),
         (
+            "VectorDeleteSelector",
+            schemars::schema_for!(axon_api::source::VectorDeleteSelector).into(),
+        ),
+        (
             "VectorStoreDeleteResult",
             schemars::schema_for!(axon_api::source::VectorStoreDeleteResult).into(),
         ),
@@ -462,6 +466,7 @@ fn api_markdown(inputs: &[SourceInput]) -> String {
         "VectorPoint",
         "PayloadIndexSpec",
         "CollectionSpec",
+        "VectorDeleteSelector",
         "VectorSearchRequest",
         "VectorSearchResult",
         "VectorSearchMatch",

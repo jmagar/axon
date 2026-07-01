@@ -36,8 +36,17 @@ fn prepared_document_and_embeddings_build_validated_points() {
     assert_eq!(batch.points[0].vector, vec![1.0, 2.0, 3.0]);
     assert_eq!(batch.points[0].payload["collection"], "axon-test");
     assert_eq!(batch.points[0].payload["source_id"], "src-web");
-    assert_eq!(batch.points[0].payload["source_generation"], 7);
+    assert_eq!(
+        batch.points[0].payload["source_item_key"],
+        "https://example.com/docs"
+    );
+    assert_eq!(batch.points[0].payload["source_generation"], "7");
+    assert_eq!(batch.points[0].payload["committed_generation"], "7");
     assert_eq!(batch.points[0].payload["chunk_id"], "chunk-web-1");
+    assert_eq!(batch.points[0].payload["chunk_key"], "chunk-web-1");
+    assert_eq!(batch.points[0].payload["content_hash"], "hash-0");
+    assert_eq!(batch.points[0].payload["content_kind"], "markdown");
+    assert_eq!(batch.points[0].payload["vector_namespace"], "dense");
     assert_eq!(batch.points[0].payload["chunk_text"], "chunk-web-1 content");
     assert!(batch.points[0].payload["source_range"].is_object());
     assert_eq!(batch.payload_indexes.len(), 3);
@@ -84,7 +93,7 @@ fn duplicate_chunk_ids_fail() {
 }
 
 #[test]
-fn point_ids_are_stable_and_include_embedding_model() {
+fn embedding_result_model_must_match_document_embedding_provenance() {
     let document = test_prepared_document();
     let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
     let first = builder(test_collection_spec(3), document.clone(), embeddings)
@@ -96,13 +105,46 @@ fn point_ids_are_stable_and_include_embedding_model() {
         .build()
         .unwrap();
 
-    let other_model = test_embedding_result_for(&document, "other-embedding-model", 3);
+    let mut other_model_document = document.clone();
+    other_model_document.metadata.insert(
+        "embedding_model".to_string(),
+        json!("other-embedding-model"),
+    );
+    let other_model = test_embedding_result_for(&other_model_document, "other-embedding-model", 3);
     let changed = builder(test_collection_spec(3), document, other_model)
+        .build()
+        .unwrap_err();
+
+    assert_eq!(first.points[0].point_id, second.points[0].point_id);
+    assert!(matches!(
+        changed,
+        VectorPointBatchBuildError::EmbeddingModelMismatch { .. }
+    ));
+}
+
+#[test]
+fn point_ids_stay_stable_across_embedding_model_when_generation_is_same() {
+    let document = test_prepared_document();
+    let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
+    let first = builder(test_collection_spec(3), document.clone(), embeddings)
+        .build()
+        .unwrap();
+
+    let mut other_model_document = document.clone();
+    other_model_document.metadata.insert(
+        "embedding_model".to_string(),
+        json!("other-embedding-model"),
+    );
+    let other_model = test_embedding_result_for(&other_model_document, "other-embedding-model", 3);
+    let second = builder(test_collection_spec(3), other_model_document, other_model)
         .build()
         .unwrap();
 
     assert_eq!(first.points[0].point_id, second.points[0].point_id);
-    assert_ne!(first.points[0].point_id, changed.points[0].point_id);
+    assert_ne!(
+        first.points[0].payload["embedding_model"],
+        second.points[0].payload["embedding_model"]
+    );
 }
 
 #[test]
@@ -209,21 +251,17 @@ fn dimensions_mismatch_fails() {
 }
 
 #[test]
-fn negative_source_generation_fails_before_payload_build() {
+fn opaque_source_generation_builds_keyword_payload_fields() {
     let mut document = test_prepared_document();
-    document.generation = SourceGenerationId::new("-1");
+    document.generation = SourceGenerationId::new("gen_0001");
     let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
 
-    let err = builder(test_collection_spec(3), document, embeddings)
+    let batch = builder(test_collection_spec(3), document, embeddings)
         .build()
-        .unwrap_err();
+        .unwrap();
 
-    assert_eq!(
-        err,
-        VectorPointBatchBuildError::InvalidGeneration {
-            generation: SourceGenerationId::new("-1")
-        }
-    );
+    assert_eq!(batch.points[0].payload["source_generation"], "gen_0001");
+    assert_eq!(batch.points[0].payload["committed_generation"], "gen_0001");
 }
 
 #[test]
@@ -244,5 +282,40 @@ fn payload_validation_runs_before_returning_batch() {
             chunk_id,
             source: crate::payload::VectorPayloadValidationError::ForbiddenField { field }
         } if chunk_id == ChunkId::new("chunk-web-1") && field == "raw_auth_headers"
+    ));
+}
+
+#[test]
+fn document_body_examples_do_not_trigger_metadata_redaction_guardrails() {
+    let mut document = test_prepared_document();
+    document.chunks[0].content =
+        "Use /tmp/axon and TOKEN=value in examples, or render <html> snippets.".to_string();
+    let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
+
+    let batch = builder(test_collection_spec(3), document, embeddings)
+        .build()
+        .unwrap();
+
+    assert!(
+        batch.points[0].payload["chunk_text"]
+            .as_str()
+            .unwrap()
+            .contains("TOKEN=value")
+    );
+}
+
+#[test]
+fn embedding_result_must_match_document_embedding_provenance() {
+    let document = test_prepared_document();
+    let mut embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
+    embeddings.provider_id = ProviderId::new("other-provider");
+
+    let err = builder(test_collection_spec(3), document, embeddings)
+        .build()
+        .unwrap_err();
+
+    assert!(matches!(
+        err,
+        VectorPointBatchBuildError::EmbeddingProviderMismatch { .. }
     ));
 }

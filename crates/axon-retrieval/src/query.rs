@@ -21,15 +21,8 @@ pub struct RetrievalRequest {
 }
 
 impl RetrievalRequest {
-    pub fn plan(&self) -> RetrievalPlan {
-        RetrievalPlan::from_request(
-            self,
-            vec![
-                Visibility::Public,
-                Visibility::Internal,
-                Visibility::Derived,
-            ],
-        )
+    pub fn plan(&self, allowed_visibility: Vec<Visibility>) -> RetrievalPlan {
+        RetrievalPlan::from_request(self, allowed_visibility)
     }
 }
 

@@ -1,6 +1,8 @@
 # PR9 Plan: Vector And Embedding Split
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status:** Executed by PR #315. Checklist items are marked complete to prevent this historical implementation plan from being mistaken for active remaining work.
+>
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 Issue: [#298](https://github.com/jmagar/axon/issues/298)
 Branch: `codex/vector-embedding-split`
@@ -99,41 +101,41 @@ provider fakes, `axon-vectors` vector store fakes and payload builder, existing
 - Consumes: `axon_api::source::{EmbeddingBatch, EmbeddingInput, EmbeddingResult, EmbeddingVector, ProviderCapability}`
 - Produces: reusable `EmbeddingBatchBuilder`, `EmbeddingBatchValidation`, deterministic fake vectors, provider capability helpers.
 
-- [ ] Write failing tests for batch validation:
+- [x] Write failing tests for batch validation:
   - empty batch is rejected
   - duplicate chunk ids are rejected
   - blank embedding text is rejected
   - mixed content kinds are accepted but order is preserved
 
-- [ ] Run `cargo test -p axon-embedding batch --locked` and confirm the new tests fail for missing validation.
+- [x] Run `cargo test -p axon-embedding batch --locked` and confirm the new tests fail for missing validation.
 
-- [ ] Implement `EmbeddingBatchBuilder` and validation helpers in `batch.rs`.
+- [x] Implement `EmbeddingBatchBuilder` and validation helpers in `batch.rs`.
 
-- [ ] Write failing tests for fake provider behavior:
+- [x] Write failing tests for fake provider behavior:
   - fake output is deterministic for the same chunk id and dimensions
   - fake output preserves input order
   - fake rejects zero dimensions
   - fake records calls without exposing mutable internals
 
-- [ ] Run `cargo test -p axon-embedding fake --locked` and confirm the new tests fail for missing behavior.
+- [x] Run `cargo test -p axon-embedding fake --locked` and confirm the new tests fail for missing behavior.
 
-- [ ] Implement minimal fake/provider fixes.
+- [x] Implement minimal fake/provider fixes.
 
-- [ ] Add provider capability helper constructors in `capability.rs` so callers do not hand-roll capability metadata.
+- [x] Add provider capability helper constructors in `capability.rs` so callers do not hand-roll capability metadata.
 
-- [ ] Write failing adapter-shell tests:
+- [x] Write failing adapter-shell tests:
   - TEI adapter config preserves endpoint, model, dimensions, timeout, max batch inputs, and instruction support
   - OpenAI-compatible adapter config preserves base URL, model, dimensions, timeout, and batch limits
   - adapter shells expose capabilities without making network calls
   - live `embed` calls return `provider.not_wired` until current runtime TEI plumbing is deliberately moved
 
-- [ ] Run `cargo test -p axon-embedding provider --locked` and confirm the new adapter-shell tests fail.
+- [x] Run `cargo test -p axon-embedding provider --locked` and confirm the new adapter-shell tests fail.
 
-- [ ] Implement TEI/OpenAI-compatible adapter shells with capability reporting only; do not move live current runtime embedding calls yet.
+- [x] Implement TEI/OpenAI-compatible adapter shells with capability reporting only; do not move live current runtime embedding calls yet.
 
-- [ ] Run `cargo test -p axon-embedding --locked`.
+- [x] Run `cargo test -p axon-embedding --locked`.
 
-- [ ] Commit: `feat(embedding): harden provider batch boundary`.
+- [x] Commit: `feat(embedding): harden provider batch boundary`.
 
 ## Task 2: Add `axon-vectors` Payload Registry And Validation
 
@@ -159,18 +161,18 @@ provider fakes, `axon-vectors` vector store fakes and payload builder, existing
 - Consumes: `PreparedDocument`, `PreparedChunk`, `EmbeddingResult`, `VectorPointBatch`
 - Produces: `VectorPayload`, `VectorPayloadValidationError`, source-specific field registry.
 
-- [ ] Write failing payload validation tests for the required vector-payload contract:
+- [x] Write failing payload validation tests for the required vector-payload contract:
   - every payload has `payload_contract_version`, `collection`, `source_id`, `source_generation`, `document_id`, `chunk_id`, `chunk_locator`, `source_range`, `visibility`, `redaction_status`, `job_id`, `document_status`, `embedding_model`, `embedding_dimensions`, `embedding_provider`, `embedding_profile`, and `embedded_at`
   - forbidden fields such as raw auth headers, cookies, API keys, raw `.env` values, absolute home paths, raw HTML blobs, and adapter response blobs are rejected
   - unknown source-specific fields are rejected unless they use an approved registry entry
   - `source_generation` and `committed_generation` are numeric/filterable
   - bad visibility values are rejected
 
-- [ ] Run `cargo test -p axon-vectors payload --locked` and confirm the new tests fail.
+- [x] Run `cargo test -p axon-vectors payload --locked` and confirm the new tests fail.
 
-- [ ] Implement `VectorPayload` as a typed wrapper over `MetadataMap` with explicit required-field validation.
+- [x] Implement `VectorPayload` as a typed wrapper over `MetadataMap` with explicit required-field validation.
 
-- [ ] Implement source-specific field registry entries for initial PR9 families:
+- [x] Implement source-specific field registry entries for initial PR9 families:
   - code: `code_language`, `code_symbol_name`, `code_symbol_kind`, `code_file_type`
   - web: `web_title`, `web_domain`, `web_status_code`, `web_depth`
   - package: `package_ecosystem`, `package_name`, `package_version`
@@ -178,11 +180,11 @@ provider fakes, `axon-vectors` vector store fakes and payload builder, existing
   - graph: `graph_node_ids`, `graph_edge_ids`, `graph_confidence`
   - memory: `memory_id`, `memory_importance`, `memory_status`
 
-- [ ] Implement fixture loader tests for every required valid/invalid fixture.
+- [x] Implement fixture loader tests for every required valid/invalid fixture.
 
-- [ ] Run `cargo test -p axon-vectors payload --locked`.
+- [x] Run `cargo test -p axon-vectors payload --locked`.
 
-- [ ] Commit: `feat(vectors): add payload registry and validation`.
+- [x] Commit: `feat(vectors): add payload registry and validation`.
 
 ## Task 3: Build `VectorPointBatch` From Prepared Documents And Embeddings
 
@@ -198,7 +200,7 @@ provider fakes, `axon-vectors` vector store fakes and payload builder, existing
 - Consumes: `PreparedDocument`, `EmbeddingResult`, `CollectionSpec`, payload metadata options
 - Produces: deterministic `VectorPointBatch` with validated payloads.
 
-- [ ] Write failing tests:
+- [x] Write failing tests:
   - one prepared document with two chunks and two embeddings produces two points
   - embedding chunk-id mismatch fails before producing a partial batch
   - duplicate chunk ids fail
@@ -207,15 +209,15 @@ provider fakes, `axon-vectors` vector store fakes and payload builder, existing
   - dimensions mismatch fails
   - payload validation runs before returning the batch
 
-- [ ] Run `cargo test -p axon-vectors point --locked` and confirm tests fail.
+- [x] Run `cargo test -p axon-vectors point --locked` and confirm tests fail.
 
-- [ ] Implement `VectorPointBatchBuilder`.
+- [x] Implement `VectorPointBatchBuilder`.
 
-- [ ] Add test helpers in `testing.rs` for compact prepared-document and embedding-result fixtures.
+- [x] Add test helpers in `testing.rs` for compact prepared-document and embedding-result fixtures.
 
-- [ ] Run `cargo test -p axon-vectors point --locked`.
+- [x] Run `cargo test -p axon-vectors point --locked`.
 
-- [ ] Commit: `feat(vectors): build validated point batches`.
+- [x] Commit: `feat(vectors): build validated point batches`.
 
 ## Task 4: Harden `VectorStore` Fake, Filters, Collection Specs, And Delete Safety
 
@@ -233,7 +235,7 @@ provider fakes, `axon-vectors` vector store fakes and payload builder, existing
 - Consumes: `CollectionSpec`, `VectorPointBatch`, `VectorDeleteSelector`, `VectorSearchRequest`
 - Produces: deterministic fake store behavior and safe filter/delete helpers.
 
-- [ ] Write failing tests:
+- [x] Write failing tests:
   - collection creation is idempotent for the same dimensions/vector names
   - collection creation rejects dimension/vector-name drift
   - payload indexes are recorded from `CollectionSpec`
@@ -242,17 +244,17 @@ provider fakes, `axon-vectors` vector store fakes and payload builder, existing
   - cleanup debt selectors cannot delete unrelated source/generation points
   - fake store can simulate unavailable, timeout, rate-limit, fatal, partial failure, and slow write modes
 
-- [ ] Run `cargo test -p axon-vectors store --locked` and confirm tests fail.
+- [x] Run `cargo test -p axon-vectors store --locked` and confirm tests fail.
 
-- [ ] Implement collection-spec normalization and drift checks.
+- [x] Implement collection-spec normalization and drift checks.
 
-- [ ] Implement typed filter helpers for indexed fields from the vector payload schema.
+- [x] Implement typed filter helpers for indexed fields from the vector payload schema.
 
-- [ ] Implement selector support in fake store for source, generation, document, chunks, and points.
+- [x] Implement selector support in fake store for source, generation, document, chunks, and points.
 
-- [ ] Run `cargo test -p axon-vectors --locked`.
+- [x] Run `cargo test -p axon-vectors --locked`.
 
-- [ ] Commit: `feat(vectors): harden vector store fake and filters`.
+- [x] Commit: `feat(vectors): harden vector store fake and filters`.
 
 ## Task 5: Add Qdrant Boundary Shell Without Public Runtime Cutover
 
@@ -269,21 +271,21 @@ provider fakes, `axon-vectors` vector store fakes and payload builder, existing
 - Consumes: target `VectorStore` trait and `CollectionSpec`
 - Produces: `QdrantVectorStore` constructor/config, collection/index planning helpers, request conversion helpers.
 
-- [ ] Write failing conversion tests that do not require a live Qdrant:
+- [x] Write failing conversion tests that do not require a live Qdrant:
   - `CollectionSpec` converts to named dense vector config and optional sparse config
   - payload index specs convert to Qdrant index requests
   - source/generation/document filters convert to Qdrant filters using indexed payload fields
   - `VectorPointBatch` converts to Qdrant upsert points without dropping payload fields
 
-- [ ] Run `cargo test -p axon-vectors qdrant --locked` and confirm tests fail.
+- [x] Run `cargo test -p axon-vectors qdrant --locked` and confirm tests fail.
 
-- [ ] Implement `QdrantVectorStore` as a non-wired target implementation shell with conversion helpers and clear `vector.not_wired` live-call errors where live client plumbing is not yet moved.
+- [x] Implement `QdrantVectorStore` as a non-wired target implementation shell with conversion helpers and clear `vector.not_wired` live-call errors where live client plumbing is not yet moved.
 
-- [ ] Ensure no current runtime path imports `axon-vectors::qdrant::QdrantVectorStore` yet.
+- [x] Ensure no current runtime path imports `axon-vectors::qdrant::QdrantVectorStore` yet.
 
-- [ ] Run `cargo test -p axon-vectors qdrant --locked`.
+- [x] Run `cargo test -p axon-vectors qdrant --locked`.
 
-- [ ] Commit: `feat(vectors): add qdrant vector store boundary`.
+- [x] Commit: `feat(vectors): add qdrant vector store boundary`.
 
 ## Task 6: Bridge Current Source-Document Payload Metadata To Target Batch Shape
 
@@ -300,21 +302,21 @@ provider fakes, `axon-vectors` vector store fakes and payload builder, existing
 - Consumes: existing legacy `PreparedDoc` and target `PreparedDocument`
 - Produces: compatibility metadata that can be validated by `axon-vectors` without changing current Qdrant writes.
 
-- [ ] Write failing tests:
+- [x] Write failing tests:
   - bridge metadata includes target prepared chunk id/key/hash, source id, source item key, source generation, document id, chunk id, and content hash
   - memory/atomic explicit point ids remain preserved
   - bridge does not copy raw absolute local paths into public payload identity
   - bridge output can be converted into a target `VectorPayload` fixture without adding unregistered fields
 
-- [ ] Run `cargo test -p axon-vector source_doc --locked` and confirm tests fail.
+- [x] Run `cargo test -p axon-vector source_doc --locked` and confirm tests fail.
 
-- [ ] Implement minimal bridge metadata additions and target validation helper calls.
+- [x] Implement minimal bridge metadata additions and target validation helper calls.
 
-- [ ] Keep `axon-vector` as current runtime owner; do not route live writes through `axon-vectors` yet.
+- [x] Keep `axon-vector` as current runtime owner; do not route live writes through `axon-vectors` yet.
 
-- [ ] Run `cargo test -p axon-vector source_doc --locked`.
+- [x] Run `cargo test -p axon-vector source_doc --locked`.
 
-- [ ] Commit: `feat(vector): validate source-doc payload bridge`.
+- [x] Commit: `feat(vector): validate source-doc payload bridge`.
 
 ## Task 7: Add Retrieval Boundary Fakes For Later Query/Ask Cutover
 
@@ -333,19 +335,19 @@ provider fakes, `axon-vectors` vector store fakes and payload builder, existing
 - Consumes: target `VectorStore` search results and `EmbeddingProvider` query embeddings
 - Produces: `RetrievalEngine`, `RetrievalPlan`, deterministic fake retrieval result, citation/context DTO helpers.
 
-- [ ] Write failing tests:
+- [x] Write failing tests:
   - retrieval plan preserves source id, generation, visibility, and namespace filters
   - ranking is deterministic with fixed fake vector search results
   - context assembly respects byte/token budget inputs
   - citations always include source id, document id, chunk id, canonical URI, and source range
 
-- [ ] Run `cargo test -p axon-retrieval --locked` and confirm tests fail.
+- [x] Run `cargo test -p axon-retrieval --locked` and confirm tests fail.
 
-- [ ] Implement minimal boundary/fake retrieval engine without moving current query/ask runtime.
+- [x] Implement minimal boundary/fake retrieval engine without moving current query/ask runtime.
 
-- [ ] Run `cargo test -p axon-retrieval --locked`.
+- [x] Run `cargo test -p axon-retrieval --locked`.
 
-- [ ] Commit: `feat(retrieval): add retrieval boundary fake`.
+- [x] Commit: `feat(retrieval): add retrieval boundary fake`.
 
 ## Task 8: Schema, Docs, And Drift Checks
 
@@ -363,25 +365,25 @@ provider fakes, `axon-vectors` vector store fakes and payload builder, existing
 - Consumes: `axon-api`, `axon-vectors` payload registry, vector-payload contract
 - Produces: generated vector payload schema/check artifacts and source-input manifests.
 
-- [ ] Write failing schema tests:
+- [x] Write failing schema tests:
   - vector payload generated schema includes every registered required field
   - generated Qdrant index plan references only schema fields
   - payload fixture examples validate through the same registry used by the builder
   - schema source input manifest includes payload builder, metadata contract, chunking contract, and API vector DTOs
 
-- [ ] Run `cargo test -p xtask schemas --locked` and confirm tests fail.
+- [x] Run `cargo test -p xtask schemas --locked` and confirm tests fail.
 
-- [ ] Implement the minimal generator/check updates.
+- [x] Implement the minimal generator/check updates.
 
-- [ ] Run `cargo xtask schemas generate`.
+- [x] Run `cargo xtask schemas generate`.
 
-- [ ] Run `cargo xtask schemas generate --check`.
+- [x] Run `cargo xtask schemas generate --check`.
 
-- [ ] Commit: `feat(schemas): generate vector payload contract`.
+- [x] Commit: `feat(schemas): generate vector payload contract`.
 
 ## Task 9: Verification, Reviews, And PR Gate
 
-- [ ] Run targeted tests:
+- [x] Run targeted tests:
 
 ```bash
 cargo test -p axon-embedding --locked
@@ -392,7 +394,7 @@ cargo test -p axon-api source --locked
 cargo test -p xtask schemas --locked
 ```
 
-- [ ] Run structural checks:
+- [x] Run structural checks:
 
 ```bash
 cargo xtask schemas generate --check
@@ -404,15 +406,15 @@ cargo fmt --all --check
 git diff --check
 ```
 
-- [ ] Run a changed-file LOC check and split any Rust file over 500 LOC.
+- [x] Run a changed-file LOC check and split any Rust file over 500 LOC.
 
-- [ ] Push and open the PR.
+- [x] Push and open the PR.
 
-- [ ] Run mandatory `lavra-review` on the PR and address all findings.
+- [x] Run mandatory `lavra-review` on the PR and address all findings.
 
-- [ ] Dispatch PR review toolkit agents and address all findings.
+- [x] Dispatch PR review toolkit agents and address all findings.
 
-- [ ] Re-read issue #298 and audit the active PR9 checklist item-by-item:
+- [x] Re-read issue #298 and audit the active PR9 checklist item-by-item:
   - `EmbeddingProvider`
   - `VectorStore`
   - `VectorPointBatch`
@@ -424,11 +426,11 @@ git diff --check
   - no old crate deletion
   - no unvalidated new vector writes
 
-- [ ] Post the final pre-merge gate audit to the PR/issue.
+- [x] Post the final pre-merge gate audit to the PR/issue.
 
-- [ ] Confirm required GitHub checks are green.
+- [x] Confirm required GitHub checks are green.
 
-- [ ] Merge only after the audit and required checks are green.
+- [x] Merge only after the audit and required checks are green.
 
 ## Expected Verification Set
 

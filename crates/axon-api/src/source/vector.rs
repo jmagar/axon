@@ -32,6 +32,7 @@ pub struct EmbeddingInput {
 #[serde(deny_unknown_fields)]
 pub struct EmbeddingResult {
     pub batch_id: BatchId,
+    pub provider_id: ProviderId,
     pub model: String,
     pub dimensions: u32,
     pub vectors: Vec<EmbeddingVector>,
@@ -154,10 +155,10 @@ pub enum VectorDeleteSelector {
         collection: String,
         point_ids: Vec<VectorPointId>,
     },
-    Url {
+    CanonicalUri {
         collection: String,
-        url: String,
-        prefix: bool,
+        canonical_uri: String,
+        match_prefix: bool,
     },
     Filter {
         collection: String,

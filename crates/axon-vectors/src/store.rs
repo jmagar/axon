@@ -9,7 +9,9 @@ use axon_api::source::*;
 use tokio::sync::Mutex;
 
 use crate::collection::{check_collection_drift, normalize_collection_spec};
-use crate::filter::{matches_delete_selector, matches_search_filters, selector_collection};
+use crate::filter::{
+    matches_delete_selector, matches_search_filters, selector_collection, validate_delete_selector,
+};
 use crate::payload::VectorPayload;
 use crate::sparse::{batch_sparse_vectors_by_chunk, validate_sparse_vector};
 
@@ -279,6 +281,7 @@ impl VectorStore for FakeVectorStore {
         if let Some(err) = self.mode_error_for(axon_error::ErrorStage::Cleaning) {
             return Err(err);
         }
+        validate_delete_selector(&selector)?;
         let collection = selector_collection(&selector).to_string();
         let Some(points) = state.points.get_mut(&collection) else {
             return Ok(delete_result(collection, 0));
@@ -300,6 +303,19 @@ impl VectorStore for FakeVectorStore {
         let query_vector = request.dense_vector.as_deref().unwrap_or_default();
         let query_sparse = request.sparse_vector.as_ref();
         let spec = state.collections.get(&request.collection);
+        if let (Some(spec), Some(query_vector)) = (spec, request.dense_vector.as_ref())
+            && query_vector.len() as u32 != spec.dense.dimensions
+        {
+            return Err(ApiError::new(
+                "vector.dimension_mismatch",
+                axon_error::ErrorStage::Retrieving,
+                format!(
+                    "query vector dimensions {} do not match collection dimensions {}",
+                    query_vector.len(),
+                    spec.dense.dimensions
+                ),
+            ));
+        }
         if (query_sparse.is_some() || request.hybrid == Some(true))
             && spec.is_none_or(|spec| spec.sparse.is_none())
         {

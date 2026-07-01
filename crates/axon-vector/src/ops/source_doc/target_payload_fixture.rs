@@ -3,7 +3,7 @@ use serde_json::{Map, Value};
 use super::{LedgerPayload, PreparedDoc};
 use axon_vectors::payload::VECTOR_PAYLOAD_CONTRACT_VERSION;
 
-pub(in crate::ops) fn target_vector_payload_for_chunk(
+pub(in crate::ops) fn target_vector_payload_fixture_for_chunk(
     doc: &PreparedDoc,
     chunk_index: usize,
     collection: &str,
@@ -19,7 +19,8 @@ pub(in crate::ops) fn target_vector_payload_for_chunk(
         .ledger_payload
         .as_ref()
         .map(LedgerPayload::generation)
-        .unwrap_or(1);
+        .map(|generation| generation.to_string())
+        .unwrap_or_else(|| "legacy-vector:gen-1".to_string());
     let source_id = doc
         .ledger_payload
         .as_ref()
@@ -64,7 +65,10 @@ pub(in crate::ops) fn target_vector_payload_for_chunk(
     payload.insert("source_family".to_string(), source_family.into());
     payload.insert("source_id".to_string(), source_id.into());
     payload.insert("source_item_key".to_string(), source_item_key.into());
-    payload.insert("source_generation".to_string(), source_generation.into());
+    payload.insert(
+        "source_generation".to_string(),
+        source_generation.clone().into(),
+    );
     payload.insert("committed_generation".to_string(), source_generation.into());
     payload.insert(
         "document_id".to_string(),
@@ -133,6 +137,12 @@ fn enrich_source_specific_fields(
             payload.insert("memory_id".to_string(), doc.url.clone().into());
             payload.insert("memory_status".to_string(), "active".into());
         }
+        "web" => {
+            insert_source_field(payload, doc_extra, "web_title");
+            insert_source_field(payload, doc_extra, "web_domain");
+            insert_source_field(payload, doc_extra, "web_status_code");
+            insert_source_field(payload, doc_extra, "web_depth");
+        }
         _ => {}
     }
 }
@@ -151,6 +161,15 @@ fn target_source_family(
     if doc.source_type == "memory" {
         return "memory";
     }
+    if doc.source_type == "session" {
+        return "session";
+    }
+    if matches!(
+        doc.source_type.as_str(),
+        "package" | "crates" | "npm" | "pypi"
+    ) {
+        return "package";
+    }
     if chunk_extra
         .and_then(|extra| extra.get("chunk_content_kind"))
         .and_then(Value::as_str)
@@ -162,6 +181,14 @@ fn target_source_family(
 }
 
 fn insert_target_code_field(
+    payload: &mut Map<String, Value>,
+    doc_extra: Option<&Map<String, Value>>,
+    field: &str,
+) {
+    insert_source_field(payload, doc_extra, field);
+}
+
+fn insert_source_field(
     payload: &mut Map<String, Value>,
     doc_extra: Option<&Map<String, Value>>,
     field: &str,
