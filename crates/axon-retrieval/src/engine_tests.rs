@@ -185,11 +185,91 @@ fn citations_always_include_source_document_chunk_uri_and_range() {
 }
 
 #[test]
+fn citation_from_vector_match_reads_nested_chunk_locator_and_source_range() {
+    let mut payload = MetadataMap::new();
+    payload.insert(
+        "chunk_locator".to_string(),
+        json!({
+            "canonical_uri": "https://example.com/docs/guide",
+            "path": "docs/guide.md",
+            "range": {
+                "line_start": 4,
+                "line_end": 8,
+            }
+        }),
+    );
+    payload.insert(
+        "source_range".to_string(),
+        json!({
+            "line_start": 10,
+            "line_end": 14,
+            "byte_start": 100,
+            "byte_end": 180,
+        }),
+    );
+
+    let citation = Citation::from_vector_match(&axon_api::source::VectorSearchMatch {
+        point_id: VectorPointId::new("point-nested"),
+        score: 0.99,
+        chunk_id: Some(ChunkId::new("chunk-1")),
+        document_id: Some(DocumentId::new("doc-1")),
+        source_id: Some(SourceId::new("src-docs")),
+        source_item_key: None,
+        text: Some("hello".to_string()),
+        payload,
+    })
+    .expect("nested vector payloads should parse");
+
+    assert_eq!(citation.canonical_uri, "https://example.com/docs/guide");
+    assert_eq!(citation.range.line_start, Some(10));
+    assert_eq!(citation.range.line_end, Some(14));
+    assert_eq!(citation.range.byte_start, Some(100));
+    assert_eq!(citation.range.byte_end, Some(180));
+}
+
+#[test]
+fn citation_from_vector_match_falls_back_to_chunk_locator_range() {
+    let mut payload = MetadataMap::new();
+    payload.insert(
+        "chunk_locator".to_string(),
+        json!({
+            "canonical_uri": "https://example.com/docs/guide",
+            "range": {
+                "line_start": 21,
+                "line_end": 24,
+                "char_start": 500,
+                "char_end": 620,
+            }
+        }),
+    );
+
+    let citation = Citation::from_vector_match(&axon_api::source::VectorSearchMatch {
+        point_id: VectorPointId::new("point-locator-range"),
+        score: 0.99,
+        chunk_id: Some(ChunkId::new("chunk-1")),
+        document_id: Some(DocumentId::new("doc-1")),
+        source_id: Some(SourceId::new("src-docs")),
+        source_item_key: None,
+        text: Some("hello".to_string()),
+        payload,
+    })
+    .expect("chunk locator range should be accepted when source_range is absent");
+
+    assert_eq!(citation.canonical_uri, "https://example.com/docs/guide");
+    assert_eq!(citation.range.line_start, Some(21));
+    assert_eq!(citation.range.line_end, Some(24));
+    assert_eq!(citation.range.char_start, Some(500));
+    assert_eq!(citation.range.char_end, Some(620));
+}
+
+#[test]
 fn citation_from_vector_match_rejects_missing_range_locator() {
     let mut payload = MetadataMap::new();
     payload.insert(
-        "canonical_uri".to_string(),
-        json!("https://example.com/docs/guide"),
+        "chunk_locator".to_string(),
+        json!({
+            "canonical_uri": "https://example.com/docs/guide",
+        }),
     );
 
     let err = Citation::from_vector_match(&axon_api::source::VectorSearchMatch {
@@ -213,14 +293,25 @@ fn point(point_id: &str, chunk_id: &str, vector: &[f32], text: &str) -> VectorPo
     payload.insert("source_generation".to_string(), json!("gen-7"));
     payload.insert("document_id".to_string(), json!(format!("doc-{chunk_id}")));
     payload.insert(
-        "canonical_uri".to_string(),
-        json!(format!("https://example.com/{chunk_id}")),
+        "chunk_locator".to_string(),
+        json!({
+            "canonical_uri": format!("https://example.com/{chunk_id}"),
+            "range": {
+                "line_start": 1,
+                "line_end": 3,
+            }
+        }),
     );
     payload.insert("visibility".to_string(), json!("internal"));
     payload.insert("vector_namespace".to_string(), json!("docs"));
     payload.insert("text".to_string(), json!(text));
-    payload.insert("line_start".to_string(), json!(1));
-    payload.insert("line_end".to_string(), json!(3));
+    payload.insert(
+        "source_range".to_string(),
+        json!({
+            "line_start": 1,
+            "line_end": 3,
+        }),
+    );
 
     VectorPoint {
         point_id: VectorPointId::new(point_id),

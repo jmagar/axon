@@ -2,6 +2,7 @@
 
 use axon_api::source::{ChunkId, DocumentId, SourceId, SourceRange, VectorSearchMatch};
 use axon_error::{ApiError, ErrorStage};
+use serde_json::Value;
 
 pub const MODULE_NAME: &str = "citation";
 
@@ -55,8 +56,10 @@ impl Citation {
         })?;
         let canonical_uri = item
             .payload
-            .get("canonical_uri")
-            .and_then(|value| value.as_str())
+            .get("chunk_locator")
+            .and_then(|value| value.as_object())
+            .and_then(|value| value.get("canonical_uri"))
+            .and_then(Value::as_str)
             .ok_or_else(|| {
                 ApiError::new(
                     "retrieval.missing_canonical_uri",
@@ -65,24 +68,7 @@ impl Citation {
                 )
             })?
             .to_string();
-        let range = SourceRange {
-            line_start: payload_u32(item, "line_start"),
-            line_end: payload_u32(item, "line_end"),
-            byte_start: payload_u64(item, "byte_start"),
-            byte_end: payload_u64(item, "byte_end"),
-            char_start: payload_u64(item, "char_start"),
-            char_end: payload_u64(item, "char_end"),
-            time_start_ms: payload_u64(item, "time_start_ms"),
-            time_end_ms: payload_u64(item, "time_end_ms"),
-            dom_selector: payload_string(item, "dom_selector"),
-            json_pointer: payload_string(item, "json_pointer"),
-            yaml_path: payload_string(item, "yaml_path"),
-            xml_xpath: payload_string(item, "xml_xpath"),
-            csv_row: payload_u32(item, "csv_row"),
-            session_turn_id: payload_string(item, "session_turn_id"),
-            turn_start: payload_string(item, "turn_start"),
-            turn_end: payload_string(item, "turn_end"),
-        };
+        let range = payload_range(item);
         if !has_locator(&range) {
             return Err(ApiError::new(
                 "retrieval.missing_source_range",
@@ -104,16 +90,60 @@ impl Citation {
     }
 }
 
-fn payload_u32(item: &VectorSearchMatch, key: &str) -> Option<u32> {
-    item.payload.get(key)?.as_u64()?.try_into().ok()
+fn payload_range(item: &VectorSearchMatch) -> SourceRange {
+    let source_range = item.payload.get("source_range");
+    let chunk_locator_range = item
+        .payload
+        .get("chunk_locator")
+        .and_then(|value| value.as_object())
+        .and_then(|value| value.get("range"));
+
+    SourceRange {
+        line_start: nested_u32(source_range, "line_start")
+            .or_else(|| nested_u32(chunk_locator_range, "line_start")),
+        line_end: nested_u32(source_range, "line_end")
+            .or_else(|| nested_u32(chunk_locator_range, "line_end")),
+        byte_start: nested_u64(source_range, "byte_start")
+            .or_else(|| nested_u64(chunk_locator_range, "byte_start")),
+        byte_end: nested_u64(source_range, "byte_end")
+            .or_else(|| nested_u64(chunk_locator_range, "byte_end")),
+        char_start: nested_u64(source_range, "char_start")
+            .or_else(|| nested_u64(chunk_locator_range, "char_start")),
+        char_end: nested_u64(source_range, "char_end")
+            .or_else(|| nested_u64(chunk_locator_range, "char_end")),
+        time_start_ms: nested_u64(source_range, "time_start_ms")
+            .or_else(|| nested_u64(chunk_locator_range, "time_start_ms")),
+        time_end_ms: nested_u64(source_range, "time_end_ms")
+            .or_else(|| nested_u64(chunk_locator_range, "time_end_ms")),
+        dom_selector: nested_string(source_range, "dom_selector")
+            .or_else(|| nested_string(chunk_locator_range, "dom_selector")),
+        json_pointer: nested_string(source_range, "json_pointer")
+            .or_else(|| nested_string(chunk_locator_range, "json_pointer")),
+        yaml_path: nested_string(source_range, "yaml_path")
+            .or_else(|| nested_string(chunk_locator_range, "yaml_path")),
+        xml_xpath: nested_string(source_range, "xml_xpath")
+            .or_else(|| nested_string(chunk_locator_range, "xml_xpath")),
+        csv_row: nested_u32(source_range, "csv_row")
+            .or_else(|| nested_u32(chunk_locator_range, "csv_row")),
+        session_turn_id: nested_string(source_range, "session_turn_id")
+            .or_else(|| nested_string(chunk_locator_range, "session_turn_id")),
+        turn_start: nested_string(source_range, "turn_start")
+            .or_else(|| nested_string(chunk_locator_range, "turn_start")),
+        turn_end: nested_string(source_range, "turn_end")
+            .or_else(|| nested_string(chunk_locator_range, "turn_end")),
+    }
 }
 
-fn payload_u64(item: &VectorSearchMatch, key: &str) -> Option<u64> {
-    item.payload.get(key)?.as_u64()
+fn nested_u32(value: Option<&Value>, key: &str) -> Option<u32> {
+    value?.as_object()?.get(key)?.as_u64()?.try_into().ok()
 }
 
-fn payload_string(item: &VectorSearchMatch, key: &str) -> Option<String> {
-    let value = item.payload.get(key)?.as_str()?.trim();
+fn nested_u64(value: Option<&Value>, key: &str) -> Option<u64> {
+    value?.as_object()?.get(key)?.as_u64()
+}
+
+fn nested_string(value: Option<&Value>, key: &str) -> Option<String> {
+    let value = value?.as_object()?.get(key)?.as_str()?.trim();
     (!value.is_empty()).then(|| value.to_string())
 }
 
