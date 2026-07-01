@@ -58,6 +58,7 @@ string_id!(SourceItemKey);
 string_id!(SourceGenerationId);
 string_id!(DocumentId);
 string_id!(ChunkId);
+string_id!(VectorPointId);
 string_id!(ProviderId);
 string_id!(ArtifactId);
 string_id!(CleanupDebtId);

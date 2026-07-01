@@ -174,11 +174,56 @@ pub struct SourceResult {
     pub counts: SourceCounts,
     pub warnings: Vec<SourceWarning>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub inline: Option<serde_json::Value>,
+    pub inline: Option<InlineSourceResult>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub job: Option<serde_json::Value>,
+    pub job: Option<JobDescriptor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub watch: Option<WatchResult>,
     pub artifacts: Vec<ArtifactRef>,
     pub errors: Vec<SourceError>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct InlineSourceResult {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<ContentRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    pub metadata: MetadataMap,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct JobDescriptor {
+    pub job_id: JobId,
+    pub kind: JobKind,
+    pub status: LifecycleStatus,
+    pub poll: PollDescriptor,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PollDescriptor {
+    pub status_url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub events_url: Option<String>,
+    pub suggested_interval_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WatchResult {
+    pub watch_id: WatchId,
+    pub source_id: SourceId,
+    pub status: LifecycleStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_run_at: Option<Timestamp>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job: Option<JobDescriptor>,
+    pub warnings: Vec<SourceWarning>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

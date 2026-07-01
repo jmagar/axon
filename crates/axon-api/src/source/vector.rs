@@ -63,13 +63,15 @@ pub struct VectorPointBatch {
     pub points: Vec<VectorPoint>,
     pub model: String,
     pub dimensions: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sparse_vectors: Option<Vec<SparseVector>>,
     pub payload_indexes: Vec<PayloadIndexSpec>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct VectorPoint {
-    pub point_id: String,
+    pub point_id: VectorPointId,
     pub chunk_id: ChunkId,
     pub vector: Vec<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -99,9 +101,7 @@ pub enum PayloadFieldSchema {
     Keyword,
     Integer,
     Float,
-    Bool,
+    Boolean,
     Datetime,
     Text,
-    Uuid,
-    Geo,
 }

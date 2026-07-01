@@ -50,6 +50,43 @@ fn source_request_rejects_unknown_external_fields() {
 }
 
 #[test]
+fn source_request_rejects_removed_flat_execution_output_shape() {
+    let err = serde_json::from_value::<SourceRequest>(json!({
+        "source": "github.com/jmagar/axon",
+        "execution": "background",
+        "output": "auto"
+    }))
+    .expect_err("clean-break source request must reject old flat policy fields");
+
+    assert!(err.to_string().contains("invalid type"), "{err}");
+}
+
+#[test]
+fn nested_source_dtos_reject_unknown_fields() {
+    let content_err = serde_json::from_value::<ContentRef>(json!({
+        "kind": "artifact",
+        "artifact_id": "artifact_1",
+        "extra": true
+    }))
+    .expect_err("content ref must reject unknown fields");
+    assert!(
+        content_err.to_string().contains("unknown field"),
+        "{content_err}"
+    );
+
+    let selector_err = serde_json::from_value::<CleanupSelector>(json!({
+        "kind": "generation",
+        "generation": "gen_0001",
+        "extra": true
+    }))
+    .expect_err("cleanup selector must reject unknown fields");
+    assert!(
+        selector_err.to_string().contains("unknown field"),
+        "{selector_err}"
+    );
+}
+
+#[test]
 fn enum_wire_values_are_snake_case_and_closed() {
     assert_eq!(
         serde_json::to_value(SourceKind::McpTool).unwrap(),
@@ -161,7 +198,7 @@ fn vector_payload_uses_contract_field_names() {
         batch_id: BatchId(Uuid::new_v4()),
         collection: "axon".to_string(),
         points: vec![VectorPoint {
-            point_id: "point_1".to_string(),
+            point_id: VectorPointId::from("point_1"),
             chunk_id: ChunkId::from("chunk_1"),
             vector: vec![0.1, 0.2],
             sparse_vector: Some(SparseVector {
@@ -173,6 +210,7 @@ fn vector_payload_uses_contract_field_names() {
         }],
         model: "Qwen3-Embedding-0.6B".to_string(),
         dimensions: 2,
+        sparse_vectors: None,
         payload_indexes: vec![PayloadIndexSpec {
             field_name: "source_id".to_string(),
             field_schema: PayloadFieldSchema::Keyword,

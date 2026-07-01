@@ -79,6 +79,8 @@ pub struct ManifestItem {
     pub mtime: Option<Timestamp>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fetch_plan: Option<FetchPlan>,
     pub metadata: MetadataMap,
     pub graph_hints: Vec<GraphCandidate>,
 }
@@ -121,6 +123,7 @@ pub struct AcquiredSourceItem {
     pub content_ref: ContentRef,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw_artifact_id: Option<ArtifactId>,
+    pub headers: RedactedHeaders,
     pub fetched_at: Timestamp,
     pub metadata: MetadataMap,
 }

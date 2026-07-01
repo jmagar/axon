@@ -69,6 +69,7 @@ pub struct SourceLimits {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct AdapterOptions {
     pub values: MetadataMap,
 }
@@ -81,7 +82,7 @@ pub struct AdapterRef {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ContentRef {
     InlineText {
         text: String,
@@ -197,12 +198,14 @@ pub struct ParserHint {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ChunkProfile {
-    Code,
+    CodeAst,
     Markdown,
-    Transcript,
-    Session,
-    Structured,
+    Html,
     PlainText,
+    Transcript,
+    Structured,
+    Session,
+    BinaryMetadata,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -231,11 +234,46 @@ pub struct ArtifactRef {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ArtifactKind {
-    Raw,
-    Normalized,
-    Screenshot,
+    RawContent,
+    NormalizedContent,
     Manifest,
     Report,
+    Screenshot,
+    Warc,
+    ProviderTrace,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FetchPlan {
+    pub uri: String,
+    pub method: String,
+    pub headers: RedactedHeaders,
+    pub render_required: bool,
+    pub cache_policy: CachePolicy,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CachePolicy {
+    Use,
+    Bypass,
+    Refresh,
+    OnlyIfCached,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RedactedHeaders {
+    pub headers: Vec<RedactedHeader>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RedactedHeader {
+    pub name: String,
+    pub value: String,
+    pub redacted: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

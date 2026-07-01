@@ -79,7 +79,7 @@ pub struct CleanupKey {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CleanupSelector {
     Source { source_id: SourceId },
     Generation { generation: SourceGenerationId },
