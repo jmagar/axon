@@ -1,6 +1,6 @@
 # Local Source Ledger Spike Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Create PR2 for issue #298 by proving one local source can flow through the target pipeline shape far enough to expose the real friction before public CLI/MCP/REST rewiring.
 
@@ -18,6 +18,7 @@
 - Do not write Qdrant points through the new path.
 - Do not rewrite the job runtime.
 - Do not migrate, tombstone, or preserve existing local data.
+- Do not persist cleanup debt in the spike; persistent cleanup debt belongs to the later ledger-owned lifecycle PR.
 - Do not touch any `CLAUDE.md` files.
 - Keep files under 500 lines.
 - Add sibling test files; do not add inline tests in implementation modules.
@@ -32,7 +33,8 @@ This PR includes:
 - A small local-source adapter prototype that discovers local files and emits manifest/source-document inputs.
 - A source-ledger draft generation for the local source before preparation.
 - Markdown and Rust fixture tests proving prepared docs carry canonical local source and draft generation metadata.
-- Ledger assertions for source id, source kind, collection, generation, item keys, content hashes, and cleanup placeholders.
+- Ledger assertions for source id, source kind, collection, generation, item keys, and content hashes.
+- Output-only cleanup placeholders proving the shape that later PRs will persist as ledger cleanup debt.
 - Spike notes recording which current local embed/watch pieces should move versus be rewritten in later PRs.
 
 This PR excludes:
@@ -43,7 +45,7 @@ This PR excludes:
 - Watch scheduler changes.
 - Background job runtime changes.
 - Qdrant collection or payload writes.
-- Cleanup execution.
+- Cleanup debt persistence or execution.
 - Public config changes.
 
 ## Implementation Shape
@@ -81,8 +83,8 @@ Use concrete field types from the existing crates where ergonomic. The spike out
 
 ## Task 1: Add Failing Spike Tests
 
-- [ ] Create `crates/axon-services/src/source_spike_tests.rs`.
-- [ ] Add a Markdown fixture test:
+- [x] Create `crates/axon-services/src/source_spike_tests.rs`.
+- [x] Add a Markdown fixture test:
   - create a temp local source root with `README.md`
   - create an isolated SQLite source-ledger store
   - run the spike
@@ -91,21 +93,21 @@ Use concrete field types from the existing crates where ergonomic. The spike out
   - assert the manifest item has a stable content hash and nonzero size
   - assert at least one prepared doc/chunk is produced
   - assert prepared metadata contains the local source id and draft generation
-- [ ] Add a Rust fixture test:
+- [x] Add a Rust fixture test:
   - create a temp local source root with `src/lib.rs`
   - run the spike
   - assert the item key is `src/lib.rs`
   - assert prepared output uses the code-aware preparation path
   - assert prepared metadata contains the local source id and draft generation
-- [ ] Add a ledger status assertion:
+- [x] Add a ledger status assertion:
   - source kind is local path/local filesystem
   - collection is the requested collection
   - committed generation is still unset/zero
   - active or max generation matches the spike generation
-- [ ] Add cleanup placeholder assertions:
+- [x] Add cleanup placeholder assertions:
   - placeholders identify the source and generation
   - placeholders are not executed
-  - placeholders make clear later PRs will move cleanup into ledger cleanup debt
+  - placeholders make clear later PRs will persist cleanup into ledger cleanup debt
 
 Run and confirm the new tests fail for missing implementation:
 
@@ -115,79 +117,79 @@ cargo test -p axon-services source_spike --locked
 
 ## Task 2: Implement Local Source Manifest Discovery
 
-- [ ] Add `crates/axon-services/src/source_spike.rs`.
-- [ ] Resolve `LocalSourceSpikeInput.root` to a canonical local root where possible.
-- [ ] Support a single file or directory.
-- [ ] Walk directories deterministically.
-- [ ] Ignore directories/files already ignored by the existing local embed path where a reusable helper exists.
-- [ ] Produce stable relative item keys using slash separators.
-- [ ] Compute content hash, size, and modified timestamp for each file.
-- [ ] Infer content kind/language using the existing source-document or input-classification helpers where possible.
-- [ ] Keep acquisition local-only and synchronous; no network or browser behavior.
+- [x] Add `crates/axon-services/src/source_spike.rs`.
+- [x] Resolve `LocalSourceSpikeInput.root` to a canonical local root where possible.
+- [x] Support a single file or directory.
+- [x] Walk directories deterministically.
+- [x] Ignore directories/files already ignored by the existing local embed path where a reusable helper exists.
+- [x] Produce stable relative item keys using slash separators.
+- [x] Compute content hash, size, and modified timestamp for each file.
+- [x] Infer content kind/language using the existing source-document or input-classification helpers where possible.
+- [x] Keep acquisition local-only and synchronous; no network or browser behavior.
 
 ## Task 3: Create Ledger Draft Generation Before Preparation
 
-- [ ] Build a `SourceIdentity` for the local root.
-- [ ] Ensure the source exists in `SourceLedgerStore`.
-- [ ] Begin a new generation owned by the spike owner.
-- [ ] Diff or record the discovered manifest through existing ledger APIs.
-- [ ] Do not commit the generation.
-- [ ] Do not publish the generation.
-- [ ] Abort or release any lease/generation cleanly on test failure paths if the store API requires it.
-- [ ] Return ledger-derived source id, source kind, collection, generation, and manifest details in `LocalSourceSpikeOutput`.
+- [x] Build a `SourceIdentity` for the local root.
+- [x] Ensure the source exists in `SourceLedgerStore`.
+- [x] Begin a new generation owned by the spike owner.
+- [x] Diff or record the discovered manifest through existing ledger APIs.
+- [x] Do not commit the generation.
+- [x] Do not publish the generation.
+- [x] Abort or release any lease/generation cleanly on test failure paths if the store API requires it.
+- [x] Return ledger-derived source id, source kind, collection, generation, and manifest details in `LocalSourceSpikeOutput`.
 
 ## Task 4: Convert Local Items To SourceDocument And PreparedDoc
 
-- [ ] Convert each manifest item into the existing runtime `axon_vector::ops::source_doc::SourceDocument`.
-- [ ] Attach ledger metadata using the sanctioned ledger payload path, not spoofable raw extras.
-- [ ] Include source id, source kind, collection, generation, item key, canonical URI, file path, content hash, size, and content kind in metadata.
-- [ ] Call the existing `prepare_source_document` path for each document.
-- [ ] Keep `prepare_embed_docs` unchanged.
-- [ ] Keep `PreparedDoc` shape unchanged unless the tests prove a minimal metadata hook is missing.
+- [x] Convert each manifest item into the existing runtime `axon_vector::ops::source_doc::SourceDocument`.
+- [x] Attach ledger metadata using the sanctioned ledger payload path, not spoofable raw extras.
+- [x] Include source id, source kind, collection, generation, item key, canonical URI, file path, content hash, size, and content kind in metadata.
+- [x] Call the existing `prepare_source_document` path for each document.
+- [x] Keep `prepare_embed_docs` unchanged.
+- [x] Keep `PreparedDoc` shape unchanged unless the tests prove a minimal metadata hook is missing.
 
 ## Task 5: Record Move-Versus-Rewrite Notes
 
-- [ ] Add `docs/pipeline-unification/delivery/local-source-ledger-spike-notes.md`.
-- [ ] Document which current local embed/watch pieces can move mostly as-is:
+- [x] Add `docs/pipeline-unification/delivery/local-source-ledger-spike-notes.md`.
+- [x] Document which current local embed/watch pieces can move mostly as-is:
   - file discovery/exclusion
   - source-document construction
   - code/markdown preparation
   - TEI batching knobs
-- [ ] Document which pieces should be rewritten in later PRs:
+- [x] Document which pieces should be rewritten in later PRs:
   - public command surface
   - watch ownership/status naming
   - generation publish
   - cleanup debt execution
   - progress/heartbeat model
-- [ ] Link the notes back to issue #298 and this PR2 plan.
+- [x] Link the notes back to issue #298 and this PR2 plan.
 
 ## Task 6: Verify
 
-- [ ] Run targeted services tests:
+- [x] Run targeted services tests:
 
 ```bash
 cargo test -p axon-services source_spike --locked
 ```
 
-- [ ] Run source-ledger tests if ledger APIs were touched:
+- [x] Run source-ledger tests if ledger APIs were touched:
 
 ```bash
 cargo test -p axon-source-ledger --locked
 ```
 
-- [ ] Run vector source-doc tests if source-document metadata handling was touched:
+- [x] Run vector source-doc tests if source-document metadata handling was touched:
 
 ```bash
 cargo test -p axon-vector source_doc --locked
 ```
 
-- [ ] Run formatting:
+- [x] Run formatting:
 
 ```bash
 cargo fmt -- --check
 ```
 
-- [ ] Run the lightweight repo structure check:
+- [x] Run the lightweight repo structure check:
 
 ```bash
 cargo xtask check-repo-structure
