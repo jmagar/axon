@@ -359,9 +359,13 @@ fn field_conditions(
 
 fn validate_filter_value(field: &str, value: &serde_json::Value) -> Result<()> {
     match value {
-        serde_json::Value::String(_)
-        | serde_json::Value::Number(_)
-        | serde_json::Value::Bool(_) => Ok(()),
+        serde_json::Value::String(_) | serde_json::Value::Bool(_) => Ok(()),
+        serde_json::Value::Number(number) if number.as_i64().is_some() => Ok(()),
+        serde_json::Value::Number(_) => Err(ApiError::new(
+            "vector.invalid_filter_value",
+            axon_error::ErrorStage::Retrieving,
+            format!("filter field {field} numeric equality supports signed integers only"),
+        )),
         serde_json::Value::Array(values) => {
             for value in values {
                 validate_filter_value(field, value)?;

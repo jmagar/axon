@@ -1,7 +1,9 @@
-//! Target pipeline crate skeleton for `axon-embedding`.
+//! Embedding provider boundary for the target source pipeline.
 //!
-//! This crate is intentionally marker-only in PR0. Runtime behavior moves here
-//! in issue #298 implementation PRs after contract tests exist.
+//! PR9 gives this crate real contract-tested provider traits, deterministic
+//! fakes, provider capabilities, reservation metadata, and non-wired provider
+//! shells. Existing public runtime paths remain in the legacy crates until a
+//! later cutover PR.
 
 pub mod batch;
 pub mod capability;

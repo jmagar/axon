@@ -1371,6 +1371,9 @@
           "minimum": 0,
           "type": "integer"
         },
+        "job_id": {
+          "$ref": "#/$defs/EmbeddingResult_JobId"
+        },
         "model": {
           "type": "string"
         },
@@ -1395,6 +1398,7 @@
       },
       "required": [
         "batch_id",
+        "job_id",
         "provider_id",
         "model",
         "dimensions",
@@ -1431,6 +1435,10 @@
         "values"
       ],
       "type": "object"
+    },
+    "EmbeddingResult_JobId": {
+      "format": "uuid",
+      "type": "string"
     },
     "EmbeddingResult_ProviderId": {
       "type": "string"
@@ -6857,7 +6865,7 @@
         "path": "crates/axon-api/src/source/status.rs"
       },
       {
-        "checksum": "sha256:8f5abe96f08143b41de5c037c36da96f0e02046eef7a319eae6b58213beda523",
+        "checksum": "sha256:94034a921193161691a6a38b0b31aa7559b7f4f2d90d1a7bf1f2254a26a42107",
         "kind": "rust_module",
         "path": "crates/axon-api/src/source/vector.rs"
       },

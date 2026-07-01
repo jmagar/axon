@@ -43,6 +43,14 @@ fn prepared_document_and_embeddings_build_validated_points() {
     assert_eq!(batch.points[0].payload["source_generation"], "7");
     assert_eq!(batch.points[0].payload["committed_generation"], "7");
     assert_eq!(batch.points[0].payload["chunk_id"], "chunk-web-1");
+    assert_eq!(
+        batch.points[0].payload["job_id"],
+        uuid::Uuid::from_u128(43).to_string()
+    );
+    assert_eq!(
+        batch.points[0].payload["embedding_batch_id"],
+        uuid::Uuid::from_u128(42).to_string()
+    );
     assert_eq!(batch.points[0].payload["chunk_key"], "chunk-web-1");
     assert_eq!(batch.points[0].payload["content_hash"], "hash-0");
     assert_eq!(batch.points[0].payload["content_kind"], "markdown");
@@ -50,6 +58,29 @@ fn prepared_document_and_embeddings_build_validated_points() {
     assert_eq!(batch.points[0].payload["chunk_text"], "chunk-web-1 content");
     assert!(batch.points[0].payload["source_range"].is_object());
     assert_eq!(batch.payload_indexes.len(), 3);
+}
+
+#[test]
+fn preparer_internal_chunk_metadata_is_not_copied_into_vector_payload() {
+    let mut document = test_prepared_document();
+    document.chunks[0]
+        .metadata
+        .insert("chunking_profile".to_string(), json!("markdown_sections"));
+    document.chunks[0]
+        .metadata
+        .insert("chunking_method".to_string(), json!("tree_sitter"));
+    document.chunks[0]
+        .metadata
+        .insert("preparer_version".to_string(), json!("2026-07-01"));
+    let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
+
+    let batch = builder(test_collection_spec(3), document, embeddings)
+        .build()
+        .unwrap();
+
+    assert!(!batch.points[0].payload.contains_key("chunking_profile"));
+    assert!(!batch.points[0].payload.contains_key("chunking_method"));
+    assert!(!batch.points[0].payload.contains_key("preparer_version"));
 }
 
 #[test]
@@ -246,6 +277,30 @@ fn dimensions_mismatch_fails() {
             chunk_id: Some(ChunkId::new("chunk-web-1")),
             expected: 3,
             actual: 2
+        }
+    );
+}
+
+#[test]
+fn non_finite_dense_vectors_fail_before_payload_build() {
+    let document = test_prepared_document();
+    let embeddings = test_embedding_result_with_vectors(
+        "text-embedding-test",
+        3,
+        vec![
+            ("chunk-web-1", vec![1.0, f32::NAN, 3.0]),
+            ("chunk-web-2", vec![4.0, 5.0, 6.0]),
+        ],
+    );
+
+    let err = builder(test_collection_spec(3), document, embeddings)
+        .build()
+        .unwrap_err();
+
+    assert_eq!(
+        err,
+        VectorPointBatchBuildError::InvalidDenseVector {
+            chunk_id: ChunkId::new("chunk-web-1")
         }
     );
 }

@@ -1,7 +1,8 @@
-//! Target pipeline crate skeleton for `axon-vectors`.
+//! Vector store, payload, and point-batch boundary for the target source pipeline.
 //!
-//! This crate is intentionally marker-only in PR0. Runtime behavior moves here
-//! in issue #298 implementation PRs after contract tests exist.
+//! PR9 gives this crate real contract-tested DTO conversion, payload validation,
+//! deterministic fake-store behavior, and Qdrant conversion helpers. Existing
+//! public runtime paths remain in the legacy crates until a later cutover PR.
 
 pub mod collection;
 pub mod filter;

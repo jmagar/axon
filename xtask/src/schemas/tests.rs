@@ -35,6 +35,7 @@ pub(super) fn fixture_repo() -> TempDir {
         "crates/axon-vectors/src/lib.rs",
         "crates/axon-vectors/src/payload.rs",
         "crates/axon-vectors/src/point.rs",
+        "xtask/src/schemas/vector_payload_markdown.rs",
         "docs/pipeline-unification/runtime/error-handling.md",
         "docs/pipeline-unification/surfaces/command-contract.md",
         "docs/pipeline-unification/surfaces/rest-contract.md",

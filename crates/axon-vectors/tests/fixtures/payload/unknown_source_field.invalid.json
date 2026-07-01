@@ -25,6 +25,7 @@
   "visibility": "public",
   "redaction_status": "clean",
   "job_id": "00000000-0000-0000-0000-000000000008",
+  "embedding_batch_id": "00000000-0000-0000-0000-000000000042",
   "document_status": "ready",
   "embedding_model": "text-embedding-test",
   "embedding_dimensions": 1024,

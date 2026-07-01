@@ -234,9 +234,8 @@ impl VectorStore for FakeVectorStore {
         }
         validate_delete_selector(&selector)?;
         let collection = selector_collection(&selector).to_string();
-        let Some(points) = state.points.get_mut(&collection) else {
-            return Ok(delete_result(collection, 0));
-        };
+        state.collection_spec(&collection, axon_error::ErrorStage::Cleaning)?;
+        let points = state.points.entry(collection.clone()).or_default();
         let before = points.len();
         points.retain(|_, point| !matches_delete_selector(point, &selector));
         Ok(delete_result(
@@ -251,12 +250,17 @@ impl VectorStore for FakeVectorStore {
         if let Some(err) = self.mode_error_for(axon_error::ErrorStage::Retrieving) {
             return Err(err);
         }
-        let query_vector = request.dense_vector.as_deref().unwrap_or_default();
+        let query_vector = request.dense_vector.as_deref().ok_or_else(|| {
+            ApiError::new(
+                "vector.missing_query_vector",
+                axon_error::ErrorStage::Retrieving,
+                "fake vector store search requires a dense query vector",
+            )
+        })?;
         let query_sparse = request.sparse_vector.as_ref();
-        let spec = state.collections.get(&request.collection);
-        if let (Some(spec), Some(query_vector)) = (spec, request.dense_vector.as_ref())
-            && query_vector.len() as u32 != spec.dense.dimensions
-        {
+        let spec =
+            state.collection_spec(&request.collection, axon_error::ErrorStage::Retrieving)?;
+        if query_vector.len() as u32 != spec.dense.dimensions {
             return Err(ApiError::new(
                 "vector.dimension_mismatch",
                 axon_error::ErrorStage::Retrieving,
@@ -267,9 +271,7 @@ impl VectorStore for FakeVectorStore {
                 ),
             ));
         }
-        if (query_sparse.is_some() || request.hybrid == Some(true))
-            && spec.is_none_or(|spec| spec.sparse.is_none())
-        {
+        if (query_sparse.is_some() || request.hybrid == Some(true)) && spec.sparse.is_none() {
             return Err(ApiError::new(
                 "vector.sparse_not_configured",
                 axon_error::ErrorStage::Retrieving,
@@ -397,6 +399,22 @@ impl VectorStore for FakeVectorStore {
     async fn reset(&self) -> Result<()> {
         *self.state.lock().await = FakeVectorState::default();
         Ok(())
+    }
+}
+
+impl FakeVectorState {
+    fn collection_spec(
+        &self,
+        collection: &str,
+        stage: axon_error::ErrorStage,
+    ) -> Result<&CollectionSpec> {
+        self.collections.get(collection).ok_or_else(|| {
+            ApiError::new(
+                "vector.collection_not_found",
+                stage,
+                format!("collection {collection} has not been ensured"),
+            )
+        })
     }
 }
 

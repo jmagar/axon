@@ -32,6 +32,7 @@ pub struct EmbeddingInput {
 #[serde(deny_unknown_fields)]
 pub struct EmbeddingResult {
     pub batch_id: BatchId,
+    pub job_id: JobId,
     pub provider_id: ProviderId,
     pub model: String,
     pub dimensions: u32,

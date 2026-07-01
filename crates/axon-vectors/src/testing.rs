@@ -86,6 +86,7 @@ pub fn test_embedding_result_for(
 ) -> EmbeddingResult {
     EmbeddingResult {
         batch_id: BatchId::new(uuid::Uuid::from_u128(42)),
+        job_id: JobId::new(uuid::Uuid::from_u128(43)),
         provider_id: ProviderId::new("fake-embedding"),
         model: model.into(),
         dimensions,
@@ -115,6 +116,7 @@ pub fn test_embedding_result_with_vectors(
 ) -> EmbeddingResult {
     EmbeddingResult {
         batch_id: BatchId::new(uuid::Uuid::from_u128(42)),
+        job_id: JobId::new(uuid::Uuid::from_u128(43)),
         provider_id: ProviderId::new("fake-embedding"),
         model: model.into(),
         dimensions,

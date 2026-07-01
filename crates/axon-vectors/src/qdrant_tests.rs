@@ -193,6 +193,32 @@ fn unsupported_filter_value_shapes_are_rejected_before_qdrant_conversion() {
 }
 
 #[test]
+fn float_filter_values_are_rejected_before_qdrant_conversion() {
+    for value in [json!(0.42), json!([1, 2.5])] {
+        let request = VectorSearchRequest {
+            collection: "axon-test".to_string(),
+            query: "docs".to_string(),
+            limit: 10,
+            dense_vector: None,
+            sparse_vector: None,
+            filters: MetadataMap(
+                [("graph_confidence".to_string(), value)]
+                    .into_iter()
+                    .collect(),
+            ),
+            hybrid: None,
+            generation: None,
+            graph_refs: Vec::new(),
+            metadata: MetadataMap::new(),
+        };
+
+        let err = qdrant_filter(&request).unwrap_err();
+
+        assert_eq!(err.code.to_string(), "vector.invalid_filter_value");
+    }
+}
+
+#[test]
 fn array_filter_values_convert_to_qdrant_should_groups() {
     let request = VectorSearchRequest {
         collection: "axon-test".to_string(),

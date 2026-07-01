@@ -95,6 +95,10 @@ pub(in crate::ops) fn target_vector_payload_fixture_for_chunk(
         "job_id".to_string(),
         "00000000-0000-0000-0000-000000000000".into(),
     );
+    payload.insert(
+        "embedding_batch_id".to_string(),
+        "00000000-0000-0000-0000-000000000001".into(),
+    );
     payload.insert("document_status".to_string(), "prepared".into());
     payload.insert("embedding_model".to_string(), "legacy-vector-bridge".into());
     payload.insert("embedding_dimensions".to_string(), 1.into());

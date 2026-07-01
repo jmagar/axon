@@ -42,6 +42,9 @@ pub enum VectorPointBatchBuildError {
         expected: u32,
         actual: u32,
     },
+    InvalidDenseVector {
+        chunk_id: ChunkId,
+    },
     EmbeddingBatchMismatch {
         expected: BatchId,
         actual: BatchId,
@@ -102,6 +105,13 @@ impl fmt::Display for VectorPointBatchBuildError {
             }
             Self::InvalidEmbeddingBatchId { value } => {
                 write!(f, "embedding batch id `{value}` is not a valid UUID")
+            }
+            Self::InvalidDenseVector { chunk_id } => {
+                write!(
+                    f,
+                    "embedding vector for chunk `{}` contains non-finite values",
+                    chunk_id.0
+                )
             }
             Self::EmbeddingProviderMismatch { expected, actual } => {
                 write!(
@@ -164,6 +174,7 @@ impl VectorPointBatchBuilder {
         validate_embedding_provenance(&self.document, &self.embeddings)?;
         let chunks = chunks_by_id(&self.document)?;
         let batch_id = self.embeddings.batch_id.clone();
+        let job_id = self.embeddings.job_id.clone();
         let provider_id = self.embeddings.provider_id.clone();
         let model = self.embeddings.model.clone();
         let mut vectors =
@@ -181,6 +192,7 @@ impl VectorPointBatchBuilder {
                 &self.document,
                 chunk,
                 &batch_id,
+                &job_id,
                 &provider_id,
                 &model,
                 &self.context,
@@ -291,6 +303,11 @@ fn vectors_by_chunk_id(
                 actual: vector.values.len() as u32,
             });
         }
+        if vector.values.iter().any(|value| !value.is_finite()) {
+            return Err(VectorPointBatchBuildError::InvalidDenseVector {
+                chunk_id: vector.chunk_id.clone(),
+            });
+        }
         if !chunks.contains(&vector.chunk_id) {
             return Err(VectorPointBatchBuildError::UnexpectedEmbeddingChunk {
                 chunk_id: vector.chunk_id.clone(),
@@ -309,6 +326,7 @@ fn build_payload(
     document: &PreparedDocument,
     chunk: &PreparedChunk,
     batch_id: &BatchId,
+    job_id: &JobId,
     provider_id: &ProviderId,
     model: &str,
     context: &VectorPointBatchBuildContext,
@@ -316,7 +334,11 @@ fn build_payload(
     let mut metadata = document.metadata.clone();
     metadata.remove("embedding_batch_id");
     metadata.remove("embedding_provider_id");
-    metadata.0.extend(chunk.metadata.0.clone());
+    for (field, value) in chunk.metadata.0.clone() {
+        if !PREPARER_INTERNAL_CHUNK_METADATA.contains(&field.as_str()) {
+            metadata.insert(field, value);
+        }
+    }
     metadata.insert(
         "payload_contract_version".to_string(),
         json!(VECTOR_PAYLOAD_CONTRACT_VERSION),
@@ -351,7 +373,11 @@ fn build_payload(
     );
     insert_default_string(&mut metadata, "visibility", "internal");
     insert_default_string(&mut metadata, "redaction_status", "clean");
-    metadata.insert("job_id".to_string(), json!(batch_id.0.to_string()));
+    metadata.insert("job_id".to_string(), json!(job_id.0.to_string()));
+    metadata.insert(
+        "embedding_batch_id".to_string(),
+        json!(batch_id.0.to_string()),
+    );
     metadata.insert("document_status".to_string(), json!("prepared"));
     metadata.insert("embedding_model".to_string(), json!(model));
     metadata.insert(
@@ -389,6 +415,9 @@ fn insert_default_string(metadata: &mut MetadataMap, field: &str, value: &str) {
         metadata.insert(field.to_string(), json!(value));
     }
 }
+
+const PREPARER_INTERNAL_CHUNK_METADATA: &[&str] =
+    &["chunking_profile", "chunking_method", "preparer_version"];
 
 fn stable_point_id(
     collection: &str,

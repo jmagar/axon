@@ -1,6 +1,8 @@
 # PR9 Plan: Vector And Embedding Split
 
-> **Status:** Executed by PR #315. Checklist items are marked complete to prevent this historical implementation plan from being mistaken for active remaining work.
+> **Status:** Active PR #315. Completed task checkboxes mark implemented work;
+> final merge-gate items remain unchecked until the pre-merge audit, required
+> checks, and merge actually complete.
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
@@ -162,10 +164,10 @@ provider fakes, `axon-vectors` vector store fakes and payload builder, existing
 - Produces: `VectorPayload`, `VectorPayloadValidationError`, source-specific field registry.
 
 - [x] Write failing payload validation tests for the required vector-payload contract:
-  - every payload has `payload_contract_version`, `collection`, `source_id`, `source_generation`, `document_id`, `chunk_id`, `chunk_locator`, `source_range`, `visibility`, `redaction_status`, `job_id`, `document_status`, `embedding_model`, `embedding_dimensions`, `embedding_provider`, `embedding_profile`, and `embedded_at`
+  - every payload has `payload_contract_version`, `collection`, `source_id`, `source_generation`, `document_id`, `chunk_id`, `chunk_locator`, `source_range`, `visibility`, `redaction_status`, `job_id`, `document_status`, `embedding_batch_id`, `embedding_model`, `embedding_dimensions`, `embedding_provider`, `embedding_profile`, and `embedded_at`
   - forbidden fields such as raw auth headers, cookies, API keys, raw `.env` values, absolute home paths, raw HTML blobs, and adapter response blobs are rejected
   - unknown source-specific fields are rejected unless they use an approved registry entry
-  - `source_generation` and `committed_generation` are numeric/filterable
+  - `source_generation` and `committed_generation` are opaque keyword strings and filterable
   - bad visibility values are rejected
 
 - [x] Run `cargo test -p axon-vectors payload --locked` and confirm the new tests fail.
@@ -204,8 +206,8 @@ provider fakes, `axon-vectors` vector store fakes and payload builder, existing
   - one prepared document with two chunks and two embeddings produces two points
   - embedding chunk-id mismatch fails before producing a partial batch
   - duplicate chunk ids fail
-  - point ids are stable for `(collection, vector_namespace, document_id, chunk_id, embedding_model, source_generation)`
-  - point id changes when embedding model changes
+  - point ids are stable for `(collection, vector_namespace, document_id, chunk_id, source_generation)`
+  - embedding model changes update payload provenance without churning point ids
   - dimensions mismatch fails
   - payload validation runs before returning the batch
 
@@ -269,7 +271,7 @@ provider fakes, `axon-vectors` vector store fakes and payload builder, existing
 **Interfaces:**
 
 - Consumes: target `VectorStore` trait and `CollectionSpec`
-- Produces: `QdrantVectorStore` constructor/config, collection/index planning helpers, request conversion helpers.
+- Produces: test-visible `QdrantVectorStore` constructor/config, collection/index planning helpers, request conversion helpers.
 
 - [x] Write failing conversion tests that do not require a live Qdrant:
   - `CollectionSpec` converts to named dense vector config and optional sparse config
@@ -426,11 +428,11 @@ git diff --check
   - no old crate deletion
   - no unvalidated new vector writes
 
-- [x] Post the final pre-merge gate audit to the PR/issue.
+- [ ] Post the final pre-merge gate audit to the PR/issue.
 
-- [x] Confirm required GitHub checks are green.
+- [ ] Confirm required GitHub checks are green.
 
-- [x] Merge only after the audit and required checks are green.
+- [ ] Merge only after the audit and required checks are green.
 
 ## Expected Verification Set
 

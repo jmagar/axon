@@ -134,7 +134,11 @@ fn validate_json_filter(filter: &Value) -> Result<()> {
 
 fn validate_filter_value(field: &str, expected: &Value) -> Result<()> {
     match expected {
-        Value::String(_) | Value::Number(_) | Value::Bool(_) => Ok(()),
+        Value::String(_) | Value::Bool(_) => Ok(()),
+        Value::Number(number) if number.as_i64().is_some() => Ok(()),
+        Value::Number(_) => Err(invalid_delete_selector(format!(
+            "filter selector field `{field}` numeric equality supports signed integers only"
+        ))),
         Value::Array(values) => {
             for value in values {
                 validate_filter_value(field, value)?;

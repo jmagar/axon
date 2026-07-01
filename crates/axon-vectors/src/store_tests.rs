@@ -135,6 +135,10 @@ fn payload(
                 "job_id".to_string(),
                 json!("00000000-0000-0000-0000-000000000000"),
             ),
+            (
+                "embedding_batch_id".to_string(),
+                json!("00000000-0000-0000-0000-000000000010"),
+            ),
             ("document_status".to_string(), json!("prepared")),
             ("embedding_model".to_string(), json!("fake-embedding")),
             ("embedding_dimensions".to_string(), json!(3)),
@@ -338,6 +342,49 @@ async fn fake_vector_store_rejects_upsert_without_matching_collection() {
 }
 
 #[tokio::test]
+async fn fake_vector_store_rejects_search_and_delete_without_matching_collection() {
+    let store = FakeVectorStore::new("fake-vector");
+
+    let err = store.search(search(MetadataMap::new())).await.unwrap_err();
+    assert_eq!(err.code.to_string(), "vector.collection_not_found");
+
+    let err = store
+        .delete(VectorDeleteSelector::Chunks {
+            collection: "axon-test".to_string(),
+            chunk_ids: vec![ChunkId::new("chunk-a")],
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(err.code.to_string(), "vector.collection_not_found");
+}
+
+#[tokio::test]
+async fn fake_vector_store_rejects_vectorless_searches() {
+    let store = FakeVectorStore::new("fake-vector");
+    store.ensure_collection(collection()).await.unwrap();
+    let mut request = search(MetadataMap::new());
+    request.dense_vector = None;
+
+    let err = store.search(request).await.unwrap_err();
+
+    assert_eq!(err.code.to_string(), "vector.missing_query_vector");
+}
+
+#[tokio::test]
+async fn fake_vector_store_rejects_non_finite_dense_vectors_before_insert() {
+    let store = FakeVectorStore::new("fake-vector");
+    store.ensure_collection(collection()).await.unwrap();
+    let mut invalid = batch();
+    invalid.points[0].vector[1] = f32::INFINITY;
+
+    let err = store.upsert(invalid).await.unwrap_err();
+
+    assert_eq!(err.code.to_string(), "vector.invalid_dense_vector");
+    let result = store.search(search(MetadataMap::new())).await.unwrap();
+    assert!(result.results.is_empty());
+}
+
+#[tokio::test]
 async fn fake_vector_store_rejects_invalid_payloads_before_insert() {
     let store = FakeVectorStore::new("fake-vector");
     store.ensure_collection(collection()).await.unwrap();
@@ -400,6 +447,25 @@ async fn raw_filter_delete_selector_rejects_unsupported_query_shapes() {
         .delete(VectorDeleteSelector::Filter {
             collection: "axon-test".to_string(),
             filter: json!({"must": [{"key": "source_id", "match": {"value": "src-a"}}]}),
+        })
+        .await
+        .unwrap_err();
+
+    assert_eq!(err.code.to_string(), "vector.invalid_delete_selector");
+    let result = store.search(search(MetadataMap::new())).await.unwrap();
+    assert_eq!(result.results.len(), 3);
+}
+
+#[tokio::test]
+async fn raw_filter_delete_selector_rejects_float_values() {
+    let store = FakeVectorStore::new("fake-vector");
+    store.ensure_collection(collection()).await.unwrap();
+    store.upsert(batch()).await.unwrap();
+
+    let err = store
+        .delete(VectorDeleteSelector::Filter {
+            collection: "axon-test".to_string(),
+            filter: json!({"graph_confidence": 0.93}),
         })
         .await
         .unwrap_err();

@@ -396,6 +396,69 @@ fn vector_match_text_falls_back_to_chunk_text_payload() {
 }
 
 #[test]
+fn vector_match_rejects_non_clean_redaction_status() {
+    let mut payload = MetadataMap::new();
+    payload.insert("chunk_text".to_string(), json!("payload body"));
+    payload.insert("redaction_status".to_string(), json!("redacted"));
+    payload.insert(
+        "chunk_locator".to_string(),
+        json!({
+            "canonical_uri": "https://example.com/docs",
+            "range": { "line_start": 1, "line_end": 2 }
+        }),
+    );
+    payload.insert(
+        "source_range".to_string(),
+        json!({ "line_start": 1, "line_end": 2 }),
+    );
+
+    let err = super::engine::match_from_vector(&axon_api::source::VectorSearchMatch {
+        point_id: VectorPointId::new("point-redacted"),
+        score: 1.0,
+        chunk_id: Some(ChunkId::new("chunk")),
+        document_id: Some(DocumentId::new("doc")),
+        source_id: Some(SourceId::new("src")),
+        source_item_key: None,
+        text: None,
+        payload,
+    })
+    .unwrap_err();
+
+    assert_eq!(err.code.to_string(), "retrieval.redaction_status_not_clean");
+}
+
+#[test]
+fn vector_match_rejects_missing_redaction_status() {
+    let mut payload = MetadataMap::new();
+    payload.insert("chunk_text".to_string(), json!("payload body"));
+    payload.insert(
+        "chunk_locator".to_string(),
+        json!({
+            "canonical_uri": "https://example.com/docs",
+            "range": { "line_start": 1, "line_end": 2 }
+        }),
+    );
+    payload.insert(
+        "source_range".to_string(),
+        json!({ "line_start": 1, "line_end": 2 }),
+    );
+
+    let err = super::engine::match_from_vector(&axon_api::source::VectorSearchMatch {
+        point_id: VectorPointId::new("point-missing-redaction"),
+        score: 1.0,
+        chunk_id: Some(ChunkId::new("chunk")),
+        document_id: Some(DocumentId::new("doc")),
+        source_id: Some(SourceId::new("src")),
+        source_item_key: None,
+        text: None,
+        payload,
+    })
+    .unwrap_err();
+
+    assert_eq!(err.code.to_string(), "retrieval.missing_redaction_status");
+}
+
+#[test]
 fn vector_match_without_text_fails_loudly() {
     let mut payload = MetadataMap::new();
     payload.insert(
@@ -703,6 +766,10 @@ fn point_with_filters(
         "job_id".to_string(),
         json!("00000000-0000-0000-0000-000000000099"),
     );
+    payload.insert(
+        "embedding_batch_id".to_string(),
+        json!("00000000-0000-0000-0000-000000000012"),
+    );
     payload.insert("document_status".to_string(), json!("prepared"));
     payload.insert("embedding_model".to_string(), json!("fake-embedding"));
     payload.insert("embedding_dimensions".to_string(), json!(4));
@@ -755,6 +822,7 @@ impl EmbeddingProvider for MalformedEmbeddingProvider {
     ) -> EmbeddingProviderResult<EmbeddingResult> {
         Ok(EmbeddingResult {
             batch_id: batch.batch_id,
+            job_id: batch.job_id,
             provider_id: batch.provider_id,
             model: batch.model,
             dimensions: self.dimensions,

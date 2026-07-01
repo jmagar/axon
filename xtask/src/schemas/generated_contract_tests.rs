@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use axon_vectors::payload::{
+    BARE_SECRET_TOKEN_PREFIXES, FORBIDDEN_FIELD_FRAGMENTS, FORBIDDEN_VALUE_FRAGMENTS,
     VECTOR_PAYLOAD_CONTRACT_VERSION, VECTOR_REQUIRED_FIELDS, VECTOR_VISIBILITY_VALUES,
 };
 use jsonschema::validator_for;
@@ -175,6 +176,10 @@ fn generated_vector_payload_schema_includes_registered_required_fields() {
         value["properties"]["source_generation"]["x-qdrant-index"],
         serde_json::json!("keyword")
     );
+    assert_eq!(
+        value["properties"]["embedding_batch_id"]["x-qdrant-index"],
+        serde_json::json!("keyword")
+    );
     assert!(value["x-axon"]["redaction_guardrails"].is_object());
     assert!(value["$defs"]["SourceRange"].get("anyOf").is_some());
     assert!(
@@ -261,6 +266,84 @@ fn generated_vector_payload_index_plan_references_only_schema_fields() {
             "index field {field_name} must exist in schema properties"
         );
     }
+}
+
+#[test]
+fn generated_vector_payload_index_plan_matches_schema_index_annotations() {
+    let tmp = fixture_repo();
+    generate(tmp.path()).unwrap();
+
+    let value = generated_json(
+        tmp.path(),
+        "docs/reference/sources/vector-payload.schema.json",
+    );
+    let properties = value["properties"].as_object().unwrap();
+    let mut annotated = properties
+        .iter()
+        .filter_map(|(field_name, schema)| {
+            schema
+                .get("x-qdrant-index")
+                .and_then(serde_json::Value::as_str)
+                .map(|field_schema| {
+                    serde_json::json!({
+                        "field_name": field_name,
+                        "field_schema": field_schema,
+                    })
+                })
+        })
+        .collect::<Vec<_>>();
+    let mut planned = value["x-axon"]["index_plan"]["indexes"]
+        .as_array()
+        .unwrap()
+        .clone();
+
+    annotated.sort_by(|left, right| {
+        left["field_name"]
+            .as_str()
+            .cmp(&right["field_name"].as_str())
+    });
+    planned.sort_by(|left, right| {
+        left["field_name"]
+            .as_str()
+            .cmp(&right["field_name"].as_str())
+    });
+
+    assert_eq!(planned, annotated);
+    assert!(
+        planned
+            .iter()
+            .any(|index| index["field_name"] == "redaction_status")
+    );
+    assert!(
+        planned
+            .iter()
+            .any(|index| index["field_name"] == "vector_namespace")
+    );
+}
+
+#[test]
+fn generated_vector_payload_redaction_guardrails_match_runtime_constants() {
+    let tmp = fixture_repo();
+    generate(tmp.path()).unwrap();
+
+    let value = generated_json(
+        tmp.path(),
+        "docs/reference/sources/vector-payload.schema.json",
+    );
+    let guardrails = &value["x-axon"]["redaction_guardrails"];
+
+    assert_eq!(
+        guardrails["forbidden_field_fragments"],
+        serde_json::json!(FORBIDDEN_FIELD_FRAGMENTS)
+    );
+    assert_eq!(
+        guardrails["forbidden_value_fragments"],
+        serde_json::json!(FORBIDDEN_VALUE_FRAGMENTS)
+    );
+    assert_eq!(
+        guardrails["bare_secret_token_prefixes"],
+        serde_json::json!(BARE_SECRET_TOKEN_PREFIXES)
+    );
 }
 
 #[test]

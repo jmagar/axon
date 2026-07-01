@@ -135,6 +135,7 @@ impl EmbeddingProvider for FakeEmbeddingProvider {
 
         Ok(EmbeddingResult {
             batch_id: batch.batch_id,
+            job_id: batch.job_id,
             provider_id: batch.provider_id,
             model: batch.model,
             dimensions: self.dimensions,

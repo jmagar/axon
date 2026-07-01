@@ -59,6 +59,16 @@ pub(crate) fn validate_upsert_batch(
                 ),
             ));
         }
+        if point.vector.iter().any(|value| !value.is_finite()) {
+            return Err(ApiError::new(
+                "vector.invalid_dense_vector",
+                stage,
+                format!(
+                    "point {} dense vector contains non-finite values",
+                    point.point_id.0
+                ),
+            ));
+        }
         VectorPayload::try_from_metadata(point.payload.clone())
             .map_err(|err| ApiError::new("vector.invalid_payload", stage, err.to_string()))?;
     }

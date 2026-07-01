@@ -1358,6 +1358,11 @@
       "minLength": 1,
       "type": "string"
     },
+    "embedding_batch_id": {
+      "minLength": 1,
+      "type": "string",
+      "x-qdrant-index": "keyword"
+    },
     "embedding_dimensions": {
       "minimum": 1,
       "type": "integer",
@@ -1476,7 +1481,8 @@
     },
     "vector_namespace": {
       "minLength": 1,
-      "type": "string"
+      "type": "string",
+      "x-qdrant-index": "keyword"
     },
     "visibility": {
       "enum": [
@@ -1518,6 +1524,7 @@
     "redaction_status",
     "job_id",
     "document_status",
+    "embedding_batch_id",
     "embedding_model",
     "embedding_dimensions",
     "embedding_provider",
@@ -1587,6 +1594,7 @@
         "document_id": "doc-code",
         "document_status": "prepared",
         "embedded_at": "2026-06-30T00:00:00Z",
+        "embedding_batch_id": "embedding_batch_id",
         "embedding_dimensions": 768,
         "embedding_model": "text-embedding-test",
         "embedding_profile": "default",
@@ -1654,6 +1662,7 @@
         "document_id": "doc-web",
         "document_status": "prepared",
         "embedded_at": "2026-06-30T00:00:00Z",
+        "embedding_batch_id": "embedding_batch_id",
         "embedding_dimensions": 768,
         "embedding_model": "text-embedding-test",
         "embedding_profile": "default",
@@ -1725,6 +1734,7 @@
         "document_id": "doc-package",
         "document_status": "prepared",
         "embedded_at": "2026-06-30T00:00:00Z",
+        "embedding_batch_id": "embedding_batch_id",
         "embedding_dimensions": 768,
         "embedding_model": "text-embedding-test",
         "embedding_profile": "default",
@@ -1795,6 +1805,7 @@
         "document_id": "doc-session",
         "document_status": "prepared",
         "embedded_at": "2026-06-30T00:00:00Z",
+        "embedding_batch_id": "embedding_batch_id",
         "embedding_dimensions": 768,
         "embedding_model": "text-embedding-test",
         "embedding_profile": "default",
@@ -1866,6 +1877,7 @@
         "document_id": "doc-graph",
         "document_status": "prepared",
         "embedded_at": "2026-06-30T00:00:00Z",
+        "embedding_batch_id": "embedding_batch_id",
         "embedding_dimensions": 768,
         "embedding_model": "text-embedding-test",
         "embedding_profile": "default",
@@ -1941,6 +1953,7 @@
         "document_id": "doc-memory",
         "document_status": "prepared",
         "embedded_at": "2026-06-30T00:00:00Z",
+        "embedding_batch_id": "embedding_batch_id",
         "embedding_dimensions": 768,
         "embedding_model": "text-embedding-test",
         "embedding_profile": "default",
@@ -1981,7 +1994,15 @@
       "collection": "axon",
       "indexes": [
         {
-          "field_name": "payload_contract_version",
+          "field_name": "chunk_id",
+          "field_schema": "keyword"
+        },
+        {
+          "field_name": "chunk_key",
+          "field_schema": "keyword"
+        },
+        {
+          "field_name": "chunk_text",
           "field_schema": "keyword"
         },
         {
@@ -1989,7 +2010,59 @@
           "field_schema": "keyword"
         },
         {
+          "field_name": "committed_generation",
+          "field_schema": "keyword"
+        },
+        {
+          "field_name": "content_hash",
+          "field_schema": "keyword"
+        },
+        {
+          "field_name": "document_id",
+          "field_schema": "keyword"
+        },
+        {
+          "field_name": "document_status",
+          "field_schema": "keyword"
+        },
+        {
+          "field_name": "embedding_batch_id",
+          "field_schema": "keyword"
+        },
+        {
+          "field_name": "embedding_dimensions",
+          "field_schema": "integer"
+        },
+        {
+          "field_name": "embedding_model",
+          "field_schema": "keyword"
+        },
+        {
+          "field_name": "embedding_profile",
+          "field_schema": "keyword"
+        },
+        {
+          "field_name": "embedding_provider",
+          "field_schema": "keyword"
+        },
+        {
+          "field_name": "job_id",
+          "field_schema": "keyword"
+        },
+        {
+          "field_name": "payload_contract_version",
+          "field_schema": "keyword"
+        },
+        {
+          "field_name": "redaction_status",
+          "field_schema": "keyword"
+        },
+        {
           "field_name": "source_family",
+          "field_schema": "keyword"
+        },
+        {
+          "field_name": "source_generation",
           "field_schema": "keyword"
         },
         {
@@ -2001,35 +2074,7 @@
           "field_schema": "keyword"
         },
         {
-          "field_name": "source_generation",
-          "field_schema": "keyword"
-        },
-        {
-          "field_name": "committed_generation",
-          "field_schema": "keyword"
-        },
-        {
-          "field_name": "document_id",
-          "field_schema": "keyword"
-        },
-        {
-          "field_name": "chunk_id",
-          "field_schema": "keyword"
-        },
-        {
-          "field_name": "job_id",
-          "field_schema": "keyword"
-        },
-        {
-          "field_name": "document_status",
-          "field_schema": "keyword"
-        },
-        {
-          "field_name": "embedding_model",
-          "field_schema": "keyword"
-        },
-        {
-          "field_name": "embedding_provider",
+          "field_name": "vector_namespace",
           "field_schema": "keyword"
         },
         {
@@ -2109,17 +2154,17 @@
     },
     "source_inputs": [
       {
-        "checksum": "sha256:8f5abe96f08143b41de5c037c36da96f0e02046eef7a319eae6b58213beda523",
+        "checksum": "sha256:94034a921193161691a6a38b0b31aa7559b7f4f2d90d1a7bf1f2254a26a42107",
         "kind": "rust_module",
         "path": "crates/axon-api/src/source/vector.rs"
       },
       {
-        "checksum": "sha256:71f00ddda41a6f4a64f020b0b8c201c6321ea34a245665502bb2ce0f849913fb",
+        "checksum": "sha256:a22a875e26722ba297f4a94cb1e0b0aa4c35713d78462b5a5d745930f0408854",
         "kind": "rust_module",
         "path": "crates/axon-vectors/src/payload.rs"
       },
       {
-        "checksum": "sha256:770bcdbdbccdb50bdaafa77c8275d40ecbb06bf100a507c3fef5f2721c43ba46",
+        "checksum": "sha256:2e082cbf128d3896c4fa69bcab856b752e9aa4abf29f1b60365d6c82aef5e1ce",
         "kind": "rust_module",
         "path": "crates/axon-vectors/src/point.rs"
       },
@@ -2137,6 +2182,11 @@
         "checksum": "sha256:debc62b438633191ee4b56a7597828d49752b322d4dffc3ca786a08cc2d3a0f2",
         "kind": "markdown_contract",
         "path": "docs/pipeline-unification/sources/metadata-payload.md"
+      },
+      {
+        "checksum": "sha256:0f3cbd29ffe9bbb55e7c2a8b582a61ad41cef53d6692688a98c64a74898813c2",
+        "kind": "rust_module",
+        "path": "xtask/src/schemas/vector_payload_markdown.rs"
       }
     ],
     "source_specific_families": [
