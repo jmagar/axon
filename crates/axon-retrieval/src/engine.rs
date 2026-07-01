@@ -112,6 +112,16 @@ where
             .map(match_from_vector)
             .collect::<Result<Vec<_>, _>>()?;
         let context = ContextBundle::from_matches(&matches, plan.byte_budget, plan.token_budget);
+        if !matches.is_empty() && context.chunk_ids.is_empty() {
+            return Err(ApiError::new(
+                "retrieval.context_budget_too_small",
+                ErrorStage::Retrieving,
+                format!(
+                    "retrieval context budget admitted no chunks; byte_budget={}, token_budget={}",
+                    plan.byte_budget, plan.token_budget
+                ),
+            ));
+        }
         let allowed_ids = context
             .chunk_ids
             .iter()
@@ -134,8 +144,8 @@ where
         let result = self
             .embedding_provider
             .embed(EmbeddingBatch {
-                batch_id: BatchId::new(Uuid::from_u128(1)),
-                job_id: JobId::new(Uuid::from_u128(2)),
+                batch_id: BatchId::new(Uuid::new_v4()),
+                job_id: JobId::new(Uuid::new_v4()),
                 provider_id: self.config.embedding_provider_id.clone(),
                 model: self.config.embedding_model.clone(),
                 items: vec![EmbeddingInput {

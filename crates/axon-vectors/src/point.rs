@@ -353,10 +353,7 @@ fn build_payload(
         "source_generation".to_string(),
         json!(document.generation.0),
     );
-    metadata.insert(
-        "committed_generation".to_string(),
-        json!(document.generation.0),
-    );
+    insert_default_string(&mut metadata, "committed_generation", "uncommitted");
     metadata.insert("document_id".to_string(), json!(document.document_id.0));
     metadata.insert("chunk_id".to_string(), json!(chunk.chunk_id.0));
     metadata.insert("chunk_key".to_string(), json!(chunk.chunk_key));

@@ -28,12 +28,17 @@ Current runtime vector behavior is still concentrated in `axon-vector`. PR9
 extracts stable target boundaries into `axon-embedding`, `axon-vectors`, and the
 retrieval-facing DTO/test foundations in `axon-retrieval`, then bridges current
 source-document payload construction through those target shapes where safe.
+The legacy `axon-vector` Qdrant source publish/count path remains unchanged in
+this PR because the current runtime still writes numeric `source_generation` and
+`source_index_version` payload fields. The later source-family cutover must
+replace that legacy publisher with the target generation publisher before opaque
+string generations become the live write path.
 
 `axon-embedding` owns embedding provider contracts, deterministic fakes, batch
 formation, provider capability, typed reservation-facing metadata, and
 non-wired TEI/OpenAI-compatible adapter shells. `axon-vectors` owns collection
 specs, vector point batches, payload validation, filter/delete/search traits,
-fake store behavior, and a non-wired Qdrant implementation boundary shell.
+fake store behavior, and a test-only Qdrant conversion boundary shell.
 `axon-retrieval` stays a boundary crate only in PR9: it may add retrieval
 DTO/fake contracts needed by vector-store search tests, but final
 query/retrieve/ask movement is a later PR.

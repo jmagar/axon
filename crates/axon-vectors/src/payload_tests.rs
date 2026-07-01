@@ -210,7 +210,7 @@ fn http_urls_with_local_path_words_do_not_trigger_local_path_redaction() {
         "chunk_locator".to_string(),
         serde_json::json!({
             "canonical_uri": "https://docs.example.com/users/home/setup",
-            "path": "/users/home/setup",
+            "path": "https://docs.example.com/users/home/setup",
             "heading_path": ["Users", "Home"],
             "symbol": null,
             "range": { "line_start": 1, "line_end": 2 }

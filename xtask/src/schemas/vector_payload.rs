@@ -207,11 +207,11 @@ fn shared_field_schema(field: &str) -> Value {
             "x-qdrant-index": "keyword"
         }),
         "collection" | "source_id" | "source_item_key" | "document_id" | "chunk_id"
-        | "chunk_key" | "content_hash" | "chunk_text" | "job_id" | "embedding_batch_id"
-        | "document_status" | "embedding_model" | "embedding_provider" | "embedding_profile"
-        | "vector_namespace" => {
+        | "chunk_key" | "content_hash" | "job_id" | "embedding_batch_id" | "document_status"
+        | "embedding_model" | "embedding_provider" | "embedding_profile" | "vector_namespace" => {
             json!({ "type": "string", "minLength": 1, "x-qdrant-index": "keyword" })
         }
+        "chunk_text" => json!({ "type": "string", "minLength": 1 }),
         "source_family" => {
             json!({
                 "type": "string",
@@ -369,7 +369,8 @@ fn required_example_value(field: &str, family: &str) -> Value {
         "payload_contract_version" => json!("2026-07-01"),
         "collection" => json!("axon"),
         "source_id" => json!(format!("src-{family}")),
-        "source_generation" | "committed_generation" => json!(format!("gen-{family}-7")),
+        "source_generation" => json!(format!("gen-{family}-7")),
+        "committed_generation" => json!("uncommitted"),
         "document_id" => json!(format!("doc-{family}")),
         "chunk_id" => json!(format!("chunk-{family}-0")),
         "chunk_locator" => json!({

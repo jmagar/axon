@@ -1,6 +1,6 @@
 //! Shared write validation for vector store implementations.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use axon_api::source::*;
 
@@ -23,6 +23,16 @@ pub(crate) fn validate_upsert_batch(
             ),
         ));
     }
+    if batch.collection != spec.collection {
+        return Err(ApiError::new(
+            "vector.collection_mismatch",
+            stage,
+            format!(
+                "batch collection {} does not match collection spec {}",
+                batch.collection, spec.collection
+            ),
+        ));
+    }
     let has_sparse = batch.sparse_vectors.is_some()
         || batch
             .points
@@ -39,7 +49,24 @@ pub(crate) fn validate_upsert_batch(
         ));
     }
     let batch_sparse = batch_sparse_vectors_by_chunk(batch, stage)?;
+    let mut point_ids = BTreeSet::new();
+    let mut chunk_ids = BTreeSet::new();
+    let mut batch_job_id: Option<String> = None;
     for point in &batch.points {
+        if !point_ids.insert(point.point_id.clone()) {
+            return Err(ApiError::new(
+                "vector.duplicate_point_id",
+                stage,
+                format!("batch contains duplicate point id {}", point.point_id.0),
+            ));
+        }
+        if !chunk_ids.insert(point.chunk_id.clone()) {
+            return Err(ApiError::new(
+                "vector.duplicate_chunk_id",
+                stage,
+                format!("batch contains duplicate chunk id {}", point.chunk_id.0),
+            ));
+        }
         let sparse_vector = point
             .sparse_vector
             .as_ref()
@@ -69,8 +96,130 @@ pub(crate) fn validate_upsert_batch(
                 ),
             ));
         }
+        validate_payload_lineage(batch, point, &mut batch_job_id, stage)?;
         VectorPayload::try_from_metadata(point.payload.clone())
             .map_err(|err| ApiError::new("vector.invalid_payload", stage, err.to_string()))?;
     }
     Ok(batch_sparse)
+}
+
+fn validate_payload_lineage(
+    batch: &VectorPointBatch,
+    point: &VectorPoint,
+    batch_job_id: &mut Option<String>,
+    stage: axon_error::ErrorStage,
+) -> Result<()> {
+    require_payload_string(point, "collection", stage)
+        .and_then(|value| require_equal(point, "collection", value, &batch.collection, stage))?;
+    require_payload_string(point, "embedding_batch_id", stage).and_then(|value| {
+        require_equal(
+            point,
+            "embedding_batch_id",
+            value,
+            &batch.batch_id.0.to_string(),
+            stage,
+        )
+    })?;
+    require_payload_string(point, "embedding_model", stage)
+        .and_then(|value| require_equal(point, "embedding_model", value, &batch.model, stage))?;
+    require_payload_u64(point, "embedding_dimensions", stage).and_then(|value| {
+        if value == u64::from(batch.dimensions) {
+            Ok(())
+        } else {
+            Err(lineage_mismatch(
+                point,
+                "embedding_dimensions",
+                value.to_string(),
+                batch.dimensions.to_string(),
+                stage,
+            ))
+        }
+    })?;
+    let job_id = require_payload_string(point, "job_id", stage)?.to_string();
+    if let Some(expected) = batch_job_id.as_ref() {
+        require_equal(point, "job_id", &job_id, expected, stage)?;
+    } else {
+        *batch_job_id = Some(job_id);
+    }
+    Ok(())
+}
+
+fn require_payload_string<'a>(
+    point: &'a VectorPoint,
+    field: &str,
+    stage: axon_error::ErrorStage,
+) -> Result<&'a str> {
+    point
+        .payload
+        .get(field)
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            ApiError::new(
+                "vector.payload_lineage_mismatch",
+                stage,
+                format!(
+                    "point {} is missing string payload field {field}",
+                    point.point_id.0
+                ),
+            )
+        })
+}
+
+fn require_payload_u64(
+    point: &VectorPoint,
+    field: &str,
+    stage: axon_error::ErrorStage,
+) -> Result<u64> {
+    point
+        .payload
+        .get(field)
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| {
+            ApiError::new(
+                "vector.payload_lineage_mismatch",
+                stage,
+                format!(
+                    "point {} is missing numeric payload field {field}",
+                    point.point_id.0
+                ),
+            )
+        })
+}
+
+fn require_equal(
+    point: &VectorPoint,
+    field: &str,
+    actual: &str,
+    expected: &str,
+    stage: axon_error::ErrorStage,
+) -> Result<()> {
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(lineage_mismatch(
+            point,
+            field,
+            actual.to_string(),
+            expected.to_string(),
+            stage,
+        ))
+    }
+}
+
+fn lineage_mismatch(
+    point: &VectorPoint,
+    field: &str,
+    actual: String,
+    expected: String,
+    stage: axon_error::ErrorStage,
+) -> ApiError {
+    ApiError::new(
+        "vector.payload_lineage_mismatch",
+        stage,
+        format!(
+            "point {} payload field {field} has {actual}, expected {expected}",
+            point.point_id.0
+        ),
+    )
 }

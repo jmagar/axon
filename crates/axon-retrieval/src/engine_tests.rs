@@ -132,7 +132,7 @@ async fn retrieval_applies_all_namespace_filters() {
     let provider = Arc::new(FakeEmbeddingProvider::new("fake-embedding", 4));
     store
         .upsert(VectorPointBatch {
-            batch_id: BatchId::new(Uuid::from_u128(13)),
+            batch_id: BatchId::new(Uuid::from_u128(12)),
             collection: "axon-test".to_string(),
             model: "fake-embedding".to_string(),
             dimensions: 4,
@@ -225,7 +225,7 @@ async fn standard_retrieval_access_excludes_sensitive_and_redacted_chunks() {
     let provider = Arc::new(FakeEmbeddingProvider::new("fake-embedding", 4));
     store
         .upsert(VectorPointBatch {
-            batch_id: BatchId::new(Uuid::from_u128(31)),
+            batch_id: BatchId::new(Uuid::from_u128(12)),
             collection: "axon-test".to_string(),
             model: "fake-embedding".to_string(),
             dimensions: 4,
@@ -301,7 +301,7 @@ async fn standard_retrieval_access_excludes_non_clean_redaction_status() {
         .insert("redaction_status".to_string(), json!("redacted"));
     store
         .upsert(VectorPointBatch {
-            batch_id: BatchId::new(Uuid::from_u128(32)),
+            batch_id: BatchId::new(Uuid::from_u128(12)),
             collection: "axon-test".to_string(),
             model: "fake-embedding".to_string(),
             dimensions: 4,
@@ -362,6 +362,67 @@ async fn retrieval_rejects_embedding_dimension_mismatch_before_search() {
     assert_eq!(store.calls().await, vec!["ensure_collection"]);
 }
 
+#[tokio::test]
+async fn retrieval_rejects_embedding_provider_and_model_mismatches_before_search() {
+    let store = Arc::new(FakeVectorStore::new("fake-vectors"));
+    store
+        .ensure_collection(test_collection_spec(4))
+        .await
+        .unwrap();
+
+    let provider = Arc::new(MalformedEmbeddingProvider::provider_mismatch());
+    let engine = RetrievalEngine::new(store.clone(), provider, retrieval_config());
+    let err = engine.retrieve(request()).await.unwrap_err();
+    assert_eq!(
+        err.code.to_string(),
+        "retrieval.embedding_provider_mismatch"
+    );
+
+    let provider = Arc::new(MalformedEmbeddingProvider::model_mismatch());
+    let engine = RetrievalEngine::new(store.clone(), provider, retrieval_config());
+    let err = engine.retrieve(request()).await.unwrap_err();
+    assert_eq!(err.code.to_string(), "retrieval.embedding_model_mismatch");
+
+    assert_eq!(store.calls().await, vec!["ensure_collection"]);
+}
+
+#[tokio::test]
+async fn retrieval_rejects_context_budgets_that_admit_no_chunks() {
+    let store = Arc::new(FakeVectorStore::new("fake-vectors"));
+    store
+        .ensure_collection(test_collection_spec(4))
+        .await
+        .unwrap();
+    let provider = Arc::new(FakeEmbeddingProvider::new("fake-embedding", 4));
+    store
+        .upsert(VectorPointBatch {
+            batch_id: BatchId::new(Uuid::from_u128(12)),
+            collection: "axon-test".to_string(),
+            model: "fake-embedding".to_string(),
+            dimensions: 4,
+            sparse_vectors: None,
+            payload_indexes: test_collection_spec(4).payload_indexes,
+            points: vec![point_in_namespace(
+                "point-budget",
+                "chunk-budget",
+                &[1.0, 0.0, 0.0, 0.0],
+                "Body too large for the tiny budget",
+                "docs",
+            )],
+        })
+        .await
+        .unwrap();
+
+    let mut request = request();
+    request.byte_budget = 1;
+    request.token_budget = 1;
+    let engine = RetrievalEngine::new(store, provider, retrieval_config());
+
+    let err = engine.retrieve(request).await.unwrap_err();
+
+    assert_eq!(err.code.to_string(), "retrieval.context_budget_too_small");
+}
+
 #[test]
 fn vector_match_text_falls_back_to_chunk_text_payload() {
     let mut payload = MetadataMap::new();
@@ -393,6 +454,59 @@ fn vector_match_text_falls_back_to_chunk_text_payload() {
     let matched = super::engine::match_from_vector(&item).unwrap();
 
     assert_eq!(matched.text, "payload body");
+}
+
+#[test]
+fn vector_match_rejects_malformed_source_ranges() {
+    for (field, expected_code, payload) in [
+        (
+            "source_range",
+            "retrieval.invalid_source_range",
+            json!({
+                "chunk_locator": {
+                    "canonical_uri": "https://example.com/docs",
+                    "range": { "line_start": 1, "line_end": 2 }
+                },
+                "source_range": "not-a-range"
+            }),
+        ),
+        (
+            "chunk_locator.range",
+            "retrieval.invalid_chunk_locator_range",
+            json!({
+                "chunk_locator": {
+                    "canonical_uri": "https://example.com/docs",
+                    "range": "not-a-range"
+                },
+                "source_range": { "line_start": 1, "line_end": 2 }
+            }),
+        ),
+    ] {
+        let mut metadata = MetadataMap::new();
+        metadata.insert("chunk_text".to_string(), json!("payload body"));
+        metadata.insert("redaction_status".to_string(), json!("clean"));
+        metadata.extend(
+            payload
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone())),
+        );
+
+        let err = super::engine::match_from_vector(&axon_api::source::VectorSearchMatch {
+            point_id: VectorPointId::new(format!("point-{field}")),
+            score: 1.0,
+            chunk_id: Some(ChunkId::new("chunk")),
+            document_id: Some(DocumentId::new("doc")),
+            source_id: Some(SourceId::new("src")),
+            source_item_key: None,
+            text: None,
+            payload: metadata,
+        })
+        .unwrap_err();
+
+        assert_eq!(err.code.to_string(), expected_code, "{field}");
+    }
 }
 
 #[test]
@@ -768,7 +882,7 @@ fn point_with_filters(
     );
     payload.insert(
         "embedding_batch_id".to_string(),
-        json!("00000000-0000-0000-0000-000000000012"),
+        json!("00000000-0000-0000-0000-00000000000c"),
     );
     payload.insert("document_status".to_string(), json!("prepared"));
     payload.insert("embedding_model".to_string(), json!("fake-embedding"));
@@ -793,6 +907,8 @@ fn point_with_filters(
 struct MalformedEmbeddingProvider {
     vectors: Vec<EmbeddingVector>,
     dimensions: u32,
+    provider_id: ProviderId,
+    model: String,
 }
 
 impl MalformedEmbeddingProvider {
@@ -800,6 +916,8 @@ impl MalformedEmbeddingProvider {
         Self {
             vectors: Vec::new(),
             dimensions: 4,
+            provider_id: ProviderId::new("fake-embedding"),
+            model: "fake-embedding".to_string(),
         }
     }
 
@@ -810,6 +928,32 @@ impl MalformedEmbeddingProvider {
                 values: vec![1.0, 2.0, 3.0],
             }],
             dimensions: 3,
+            provider_id: ProviderId::new("fake-embedding"),
+            model: "fake-embedding".to_string(),
+        }
+    }
+
+    fn provider_mismatch() -> Self {
+        Self {
+            vectors: vec![EmbeddingVector {
+                chunk_id: ChunkId::new("query"),
+                values: vec![1.0, 2.0, 3.0, 4.0],
+            }],
+            dimensions: 4,
+            provider_id: ProviderId::new("other-provider"),
+            model: "fake-embedding".to_string(),
+        }
+    }
+
+    fn model_mismatch() -> Self {
+        Self {
+            vectors: vec![EmbeddingVector {
+                chunk_id: ChunkId::new("query"),
+                values: vec![1.0, 2.0, 3.0, 4.0],
+            }],
+            dimensions: 4,
+            provider_id: ProviderId::new("fake-embedding"),
+            model: "other-model".to_string(),
         }
     }
 }
@@ -823,8 +967,8 @@ impl EmbeddingProvider for MalformedEmbeddingProvider {
         Ok(EmbeddingResult {
             batch_id: batch.batch_id,
             job_id: batch.job_id,
-            provider_id: batch.provider_id,
-            model: batch.model,
+            provider_id: self.provider_id.clone(),
+            model: self.model.clone(),
             dimensions: self.dimensions,
             vectors: self.vectors.clone(),
             usage: ProviderUsage {

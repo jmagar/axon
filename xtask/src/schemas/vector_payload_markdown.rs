@@ -13,6 +13,7 @@ pub(super) fn markdown(inputs: &[SourceInput], registry: &StaticVectorPayloadCon
             display_schema(&shared_field_schema(field))
         ));
     }
+    out.push_str("\nGeneration fields are deliberately split: `source_generation` is the staged source generation written during prepare/vector-point construction, while `committed_generation` is `uncommitted` until a later publisher promotes a complete generation. Retrieval generation filters target `committed_generation`.\n");
 
     out.push_str("\n## Redaction Guardrails\n\n");
     out.push_str("Payload validation applies metadata and locator guardrails before vector writes. `chunk_text` is treated as document body text and is not rejected merely for containing examples such as local paths or HTML snippets, but auth headers, cookies, dotenv-style assignments, bare secret tokens, and adapter response markers still fail closed.\n\n");
@@ -35,7 +36,9 @@ pub(super) fn markdown(inputs: &[SourceInput], registry: &StaticVectorPayloadCon
         out.push_str(&format!("| `{}` | `{}` |\n", family, fields.join("`, `")));
     }
 
-    out.push_str("\n## Qdrant Index Plan\n\n| Field | Schema |\n|---|---|\n");
+    out.push_str("\n## Indexable Payload Fields\n\n");
+    out.push_str("This table lists schema-declared payload fields that may be indexed by a vector-store collection spec. Runtime Qdrant index creation uses the normalized `CollectionSpec.payload_indexes`; the required retrieval indexes are owned by `axon-vectors::collection`.\n\n");
+    out.push_str("| Field | Schema |\n|---|---|\n");
     for index in index_plan(registry)["indexes"].as_array().unwrap() {
         out.push_str(&format!(
             "| `{}` | `{}` |\n",

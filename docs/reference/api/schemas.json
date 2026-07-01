@@ -997,7 +997,7 @@
       "properties": {
         "dimensions": {
           "format": "uint32",
-          "minimum": 0,
+          "minimum": 1,
           "type": "integer"
         },
         "distance": {
@@ -5706,7 +5706,7 @@
       "properties": {
         "dimensions": {
           "format": "uint32",
-          "minimum": 0,
+          "minimum": 1,
           "type": "integer"
         },
         "distance": {
@@ -6865,7 +6865,7 @@
         "path": "crates/axon-api/src/source/status.rs"
       },
       {
-        "checksum": "sha256:94034a921193161691a6a38b0b31aa7559b7f4f2d90d1a7bf1f2254a26a42107",
+        "checksum": "sha256:97c767a15c9f88a3a7278ac32c6b7b1a4fce722223e9dd3c5f59079fee69b9ac",
         "kind": "rust_module",
         "path": "crates/axon-api/src/source/vector.rs"
       },

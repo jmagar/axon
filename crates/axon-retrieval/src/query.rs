@@ -44,5 +44,3 @@ pub(crate) struct RetrievalResult {
     pub(crate) context: ContextBundle,
     pub(crate) citations: Vec<Citation>,
 }
-
-pub(crate) type SearchResult = RetrievalResult;

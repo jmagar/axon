@@ -41,7 +41,10 @@ fn prepared_document_and_embeddings_build_validated_points() {
         "https://example.com/docs"
     );
     assert_eq!(batch.points[0].payload["source_generation"], "7");
-    assert_eq!(batch.points[0].payload["committed_generation"], "7");
+    assert_eq!(
+        batch.points[0].payload["committed_generation"],
+        "uncommitted"
+    );
     assert_eq!(batch.points[0].payload["chunk_id"], "chunk-web-1");
     assert_eq!(
         batch.points[0].payload["job_id"],
@@ -58,6 +61,25 @@ fn prepared_document_and_embeddings_build_validated_points() {
     assert_eq!(batch.points[0].payload["chunk_text"], "chunk-web-1 content");
     assert!(batch.points[0].payload["source_range"].is_object());
     assert_eq!(batch.payload_indexes.len(), 3);
+}
+
+#[test]
+fn absolute_local_chunk_locator_paths_fail_payload_validation() {
+    let mut document = test_prepared_document();
+    document.chunks[0].chunk_locator.path = Some("/home/jmagar/workspace/private.rs".to_string());
+    let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
+
+    let err = builder(test_collection_spec(3), document, embeddings)
+        .build()
+        .unwrap_err();
+
+    assert!(matches!(
+        err,
+        VectorPointBatchBuildError::Payload {
+            chunk_id,
+            source: crate::payload::VectorPayloadValidationError::ForbiddenValue { field },
+        } if chunk_id == ChunkId::new("chunk-web-1") && field == "chunk_locator.path"
+    ));
 }
 
 #[test]
@@ -316,7 +338,10 @@ fn opaque_source_generation_builds_keyword_payload_fields() {
         .unwrap();
 
     assert_eq!(batch.points[0].payload["source_generation"], "gen_0001");
-    assert_eq!(batch.points[0].payload["committed_generation"], "gen_0001");
+    assert_eq!(
+        batch.points[0].payload["committed_generation"],
+        "uncommitted"
+    );
 }
 
 #[test]

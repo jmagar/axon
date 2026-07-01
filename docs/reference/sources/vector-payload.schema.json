@@ -1309,8 +1309,7 @@
     },
     "chunk_text": {
       "minLength": 1,
-      "type": "string",
-      "x-qdrant-index": "keyword"
+      "type": "string"
     },
     "code_file_type": {
       "type": "string"
@@ -1589,7 +1588,7 @@
         "code_symbol_kind": "struct",
         "code_symbol_name": "VectorPayload",
         "collection": "axon",
-        "committed_generation": "gen-code-7",
+        "committed_generation": "uncommitted",
         "content_hash": "sha256:codehash",
         "document_id": "doc-code",
         "document_status": "prepared",
@@ -1657,7 +1656,7 @@
         },
         "chunk_text": "chunk_text",
         "collection": "axon",
-        "committed_generation": "gen-web-7",
+        "committed_generation": "uncommitted",
         "content_hash": "sha256:webhash",
         "document_id": "doc-web",
         "document_status": "prepared",
@@ -1729,7 +1728,7 @@
         },
         "chunk_text": "chunk_text",
         "collection": "axon",
-        "committed_generation": "gen-package-7",
+        "committed_generation": "uncommitted",
         "content_hash": "sha256:packagehash",
         "document_id": "doc-package",
         "document_status": "prepared",
@@ -1800,7 +1799,7 @@
         },
         "chunk_text": "chunk_text",
         "collection": "axon",
-        "committed_generation": "gen-session-7",
+        "committed_generation": "uncommitted",
         "content_hash": "sha256:sessionhash",
         "document_id": "doc-session",
         "document_status": "prepared",
@@ -1872,7 +1871,7 @@
         },
         "chunk_text": "chunk_text",
         "collection": "axon",
-        "committed_generation": "gen-graph-7",
+        "committed_generation": "uncommitted",
         "content_hash": "sha256:graphhash",
         "document_id": "doc-graph",
         "document_status": "prepared",
@@ -1948,7 +1947,7 @@
         },
         "chunk_text": "chunk_text",
         "collection": "axon",
-        "committed_generation": "gen-memory-7",
+        "committed_generation": "uncommitted",
         "content_hash": "sha256:memoryhash",
         "document_id": "doc-memory",
         "document_status": "prepared",
@@ -1999,10 +1998,6 @@
         },
         {
           "field_name": "chunk_key",
-          "field_schema": "keyword"
-        },
-        {
-          "field_name": "chunk_text",
           "field_schema": "keyword"
         },
         {
@@ -2154,7 +2149,7 @@
     },
     "source_inputs": [
       {
-        "checksum": "sha256:94034a921193161691a6a38b0b31aa7559b7f4f2d90d1a7bf1f2254a26a42107",
+        "checksum": "sha256:97c767a15c9f88a3a7278ac32c6b7b1a4fce722223e9dd3c5f59079fee69b9ac",
         "kind": "rust_module",
         "path": "crates/axon-api/src/source/vector.rs"
       },
@@ -2164,7 +2159,7 @@
         "path": "crates/axon-vectors/src/payload.rs"
       },
       {
-        "checksum": "sha256:2e082cbf128d3896c4fa69bcab856b752e9aa4abf29f1b60365d6c82aef5e1ce",
+        "checksum": "sha256:698c1a043423685b53859cb7669c3424f3ea5c2a605c4b3d4b2a69ca4ad5b0bc",
         "kind": "rust_module",
         "path": "crates/axon-vectors/src/point.rs"
       },
@@ -2184,7 +2179,7 @@
         "path": "docs/pipeline-unification/sources/metadata-payload.md"
       },
       {
-        "checksum": "sha256:0f3cbd29ffe9bbb55e7c2a8b582a61ad41cef53d6692688a98c64a74898813c2",
+        "checksum": "sha256:bf5569bdc196eace00f780bf0d87f9d859f8097b024e5be8966b0ea911eeb47e",
         "kind": "rust_module",
         "path": "xtask/src/schemas/vector_payload_markdown.rs"
       }

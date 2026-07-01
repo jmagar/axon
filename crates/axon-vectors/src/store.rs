@@ -8,9 +8,12 @@ use async_trait::async_trait;
 use axon_api::source::*;
 use tokio::sync::Mutex;
 
-use crate::collection::{check_collection_drift, normalize_collection_spec};
+use crate::collection::{
+    check_collection_drift, normalize_collection_spec, validate_collection_spec,
+};
 use crate::filter::{
     matches_delete_selector, matches_search_filters, selector_collection, validate_delete_selector,
+    validate_search_filters,
 };
 use crate::validation::validate_upsert_batch;
 
@@ -22,7 +25,6 @@ pub trait VectorStore: Send + Sync {
     async fn upsert(&self, batch: VectorPointBatch) -> Result<VectorStoreWriteResult>;
     async fn delete(&self, selector: VectorDeleteSelector) -> Result<VectorStoreDeleteResult>;
     async fn search(&self, request: VectorSearchRequest) -> Result<VectorSearchResult>;
-    async fn reset(&self) -> Result<()>;
     async fn capabilities(&self) -> Result<ProviderCapability>;
 }
 
@@ -153,6 +155,7 @@ impl VectorStore for FakeVectorStore {
             return Err(err);
         }
         let spec = normalize_collection_spec(spec);
+        validate_collection_spec(&spec)?;
         if let Some(existing) = state.collections.get(&spec.collection) {
             check_collection_drift(existing, &spec)?;
         } else {
@@ -281,6 +284,7 @@ impl VectorStore for FakeVectorStore {
                 ),
             ));
         }
+        validate_search_filters(&request)?;
         let limit = request.limit as usize;
         let mut scored = state
             .points
@@ -395,8 +399,10 @@ impl VectorStore for FakeVectorStore {
             credential: None,
         })
     }
+}
 
-    async fn reset(&self) -> Result<()> {
+impl FakeVectorStore {
+    pub async fn reset(&self) -> Result<()> {
         *self.state.lock().await = FakeVectorState::default();
         Ok(())
     }

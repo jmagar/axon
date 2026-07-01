@@ -76,6 +76,10 @@ impl FakeEmbeddingProvider {
         error
     }
 
+    fn model_id(&self) -> &'static str {
+        "fake-embedding"
+    }
+
     fn capability_state(&self) -> FakeProviderCapabilityState {
         let mut state = fake_provider_capability_state(
             self.mode_state(),
@@ -103,6 +107,18 @@ impl FakeEmbeddingProvider {
 impl EmbeddingProvider for FakeEmbeddingProvider {
     async fn embed(&self, batch: EmbeddingBatch) -> Result<EmbeddingResult> {
         validate_batch(&batch)?;
+        if batch.provider_id != self.provider_id {
+            return Err(self.error(
+                "provider.provider_mismatch",
+                "embedding batch provider id does not match fake provider",
+            ));
+        }
+        if batch.model != self.model_id() {
+            return Err(self.error(
+                "provider.model_mismatch",
+                "embedding batch model does not match fake provider",
+            ));
+        }
         if self.dimensions == 0 {
             return Err(self.error(
                 "provider.invalid_dimensions",
@@ -136,8 +152,8 @@ impl EmbeddingProvider for FakeEmbeddingProvider {
         Ok(EmbeddingResult {
             batch_id: batch.batch_id,
             job_id: batch.job_id,
-            provider_id: batch.provider_id,
-            model: batch.model,
+            provider_id: self.provider_id.clone(),
+            model: self.model_id().to_string(),
             dimensions: self.dimensions,
             vectors,
             usage: ProviderUsage {
@@ -176,7 +192,7 @@ impl EmbeddingProvider for FakeEmbeddingProvider {
             degraded_modes: Vec::new(),
             fake_overrides_supported: true,
             embedding: embedding_capability(EmbeddingCapabilityConfig {
-                model_id: "fake-embedding".to_string(),
+                model_id: self.model_id().to_string(),
                 dimensions: self.dimensions,
                 max_input_tokens: 8192,
                 max_batch_tokens: 65_536,

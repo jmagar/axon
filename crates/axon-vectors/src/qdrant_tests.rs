@@ -4,6 +4,7 @@ use qdrant_client::qdrant::{
 };
 use serde_json::json;
 
+use crate::filter::SEARCH_GENERATION_FIELD;
 use crate::point::VectorPointBatchBuilder;
 use crate::qdrant::{
     QdrantVectorStore, qdrant_collection_request, qdrant_filter, qdrant_payload_index_requests,
@@ -24,7 +25,7 @@ fn collection_spec_converts_to_named_dense_and_optional_sparse_config() {
         modifier: SparseVectorModifier::Idf,
     });
 
-    let request = qdrant_collection_request(&spec);
+    let request = qdrant_collection_request(&spec).unwrap();
 
     assert_eq!(request.collection_name, "axon-test");
     let vectors = request.vectors_config.unwrap();
@@ -57,6 +58,16 @@ fn collection_spec_converts_to_named_dense_and_optional_sparse_config() {
         sparse.map["bm42"].modifier,
         Some(qdrant_client::qdrant::Modifier::Idf as i32)
     );
+}
+
+#[test]
+fn collection_spec_rejects_zero_dimensions_before_qdrant_conversion() {
+    let mut spec = test_collection_spec(3);
+    spec.dense.dimensions = 0;
+
+    let err = qdrant_collection_request(&spec).unwrap_err();
+
+    assert_eq!(err.code.to_string(), "vector.collection_drift");
 }
 
 #[test]
@@ -112,7 +123,8 @@ fn source_generation_and_document_filters_convert_to_qdrant_filters() {
         })
         .collect::<Vec<_>>();
     assert!(keys.contains(&"source_id"));
-    assert!(keys.contains(&"source_generation"));
+    assert!(keys.contains(&SEARCH_GENERATION_FIELD));
+    assert!(!keys.contains(&"source_generation"));
     assert!(keys.contains(&"document_id"));
     let generation_condition = filter
         .must
@@ -122,9 +134,9 @@ fn source_generation_and_document_filters_convert_to_qdrant_filters() {
             else {
                 return None;
             };
-            (field.key == "source_generation").then_some(field)
+            (field.key == SEARCH_GENERATION_FIELD).then_some(field)
         })
-        .expect("source_generation condition");
+        .expect("search generation condition");
     assert!(matches!(
         generation_condition
             .r#match
@@ -156,8 +168,9 @@ fn opaque_generation_filter_is_converted_as_keyword() {
     let filter = qdrant_filter(&request).unwrap().unwrap();
     let condition::ConditionOneOf::Field(field) = filter.must[0].condition_one_of.as_ref().unwrap()
     else {
-        panic!("expected source_generation field condition");
+        panic!("expected search generation field condition");
     };
+    assert_eq!(field.key, SEARCH_GENERATION_FIELD);
 
     assert!(matches!(
         field
@@ -518,6 +531,26 @@ fn invalid_payloads_are_rejected_before_qdrant_conversion() {
     assert_eq!(err.code.to_string(), "vector.invalid_payload");
 }
 
+#[test]
+fn duplicate_points_are_rejected_before_qdrant_conversion() {
+    let spec = test_collection_spec(3);
+    let document = test_prepared_document();
+    let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
+    let mut batch = VectorPointBatchBuilder::new(
+        spec.clone(),
+        document,
+        embeddings,
+        test_vector_build_context(),
+    )
+    .build()
+    .unwrap();
+    batch.points[1].point_id = batch.points[0].point_id.clone();
+
+    let err = qdrant_upsert_points(&spec, &batch).unwrap_err();
+
+    assert_eq!(err.code.to_string(), "vector.duplicate_point_id");
+}
+
 #[tokio::test]
 async fn qdrant_vector_store_live_calls_return_not_wired_errors() {
     let raw_url = "http://token:secret@127.0.0.1:6334/path?api_key=hunter2";
@@ -535,6 +568,41 @@ async fn qdrant_vector_store_live_calls_return_not_wired_errors() {
     );
     assert!(!err.details.values().any(|value| value.contains(raw_url)));
     assert!(!err.details.values().any(|value| value.contains("hunter2")));
+
+    let document = test_prepared_document();
+    let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
+    let batch = VectorPointBatchBuilder::new(
+        test_collection_spec(3),
+        document,
+        embeddings,
+        test_vector_build_context(),
+    )
+    .build()
+    .unwrap();
+    let delete = VectorDeleteSelector::Chunks {
+        collection: "axon-test".to_string(),
+        chunk_ids: vec![ChunkId::new("chunk-web-1")],
+    };
+    let search = VectorSearchRequest {
+        collection: "axon-test".to_string(),
+        query: "docs".to_string(),
+        limit: 10,
+        dense_vector: Some(vec![1.0, 0.0, 0.0]),
+        sparse_vector: None,
+        filters: MetadataMap::new(),
+        hybrid: Some(false),
+        generation: None,
+        graph_refs: Vec::new(),
+        metadata: MetadataMap::new(),
+    };
+    for err in [
+        store.upsert(batch).await.unwrap_err(),
+        store.delete(delete).await.unwrap_err(),
+        store.search(search).await.unwrap_err(),
+    ] {
+        assert_eq!(err.code.to_string(), "vector.not_wired");
+        assert_eq!(err.provider_id.as_deref(), Some("target-qdrant"));
+    }
 
     let capability = store.capabilities().await.unwrap();
     assert_eq!(capability.provider_kind, ProviderKind::Vector);

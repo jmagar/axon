@@ -124,12 +124,9 @@ fn is_token_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-')
 }
 
-fn absolute_local_path(path: &str, value: &str) -> bool {
+fn absolute_local_path(_path: &str, value: &str) -> bool {
     let normalized = value.to_ascii_lowercase();
     let trimmed = value.trim();
-    if path == "chunk_locator.path" {
-        return false;
-    }
     if normalized.starts_with("http://")
         || normalized.starts_with("https://")
         || normalized.starts_with("local-code://")

@@ -137,7 +137,7 @@ fn payload(
             ),
             (
                 "embedding_batch_id".to_string(),
-                json!("00000000-0000-0000-0000-000000000010"),
+                json!("00000000-0000-0000-0000-00000000000a"),
             ),
             ("document_status".to_string(), json!("prepared")),
             ("embedding_model".to_string(), json!("fake-embedding")),
@@ -252,7 +252,10 @@ async fn collection_drift_rejects_missing_required_payload_indexes() {
     let mut existing = collection();
     existing
         .payload_indexes
-        .retain(|index| index.field_name != "source_id");
+        .iter_mut()
+        .find(|index| index.field_name == "source_id")
+        .unwrap()
+        .field_schema = PayloadFieldSchema::Integer;
     store.ensure_collection(existing).await.unwrap();
 
     let err = store.ensure_collection(collection()).await.unwrap_err();
@@ -267,7 +270,7 @@ async fn fake_vector_store_records_payload_indexes_from_collection_spec() {
     store.ensure_collection(collection()).await.unwrap();
     let spec = store.collection_spec("axon-test").await.unwrap();
 
-    assert_eq!(spec.payload_indexes.len(), 7);
+    assert_eq!(spec.payload_indexes.len(), 9);
     assert!(spec.payload_indexes.iter().any(|index| {
         index.field_name == "source_generation"
             && index.field_schema == PayloadFieldSchema::Keyword
@@ -315,6 +318,12 @@ async fn fake_vector_store_filters_searches_by_indexed_payload_fields() {
         .unwrap();
     assert!(result.results.is_empty());
 
+    let result = store
+        .search(search(filter("web_status_code", json!("200"))))
+        .await
+        .unwrap();
+    assert!(result.results.is_empty());
+
     let mut request = search(MetadataMap::new());
     request.generation = Some(SourceGenerationId::new("7"));
     let result = store.search(request).await.unwrap();
@@ -325,6 +334,38 @@ async fn fake_vector_store_filters_searches_by_indexed_payload_fields() {
             .iter()
             .all(|result| result.payload["source_generation"] == "7")
     );
+}
+
+#[tokio::test]
+async fn fake_vector_store_rejects_invalid_search_filter_shapes() {
+    let store = FakeVectorStore::new("fake-vector");
+    store.ensure_collection(collection()).await.unwrap();
+    store.upsert(batch()).await.unwrap();
+
+    for value in [
+        json!({"eq": "src-a"}),
+        json!(null),
+        json!(0.5),
+        json!([1, 2.5]),
+    ] {
+        let err = store
+            .search(search(filter("source_id", value)))
+            .await
+            .unwrap_err();
+        assert_eq!(err.code.to_string(), "vector.invalid_filter_value");
+    }
+}
+
+#[tokio::test]
+async fn collection_creation_rejects_zero_dimensions() {
+    let store = FakeVectorStore::new("fake-vector");
+    let mut spec = collection();
+    spec.dense.dimensions = 0;
+
+    let err = store.ensure_collection(spec).await.unwrap_err();
+
+    assert_eq!(err.code.to_string(), "vector.collection_drift");
+    assert!(err.message.contains("greater than zero"));
 }
 
 #[tokio::test]
@@ -339,6 +380,54 @@ async fn fake_vector_store_rejects_upsert_without_matching_collection() {
     store.ensure_collection(spec).await.unwrap();
     let err = store.upsert(batch()).await.unwrap_err();
     assert_eq!(err.code.to_string(), "vector.dimension_mismatch");
+}
+
+#[tokio::test]
+async fn fake_vector_store_rejects_duplicate_point_and_chunk_ids() {
+    let store = FakeVectorStore::new("fake-vector");
+    store.ensure_collection(collection()).await.unwrap();
+
+    let mut duplicate_point = batch();
+    duplicate_point.points[1].point_id = duplicate_point.points[0].point_id.clone();
+    let err = store.upsert(duplicate_point).await.unwrap_err();
+    assert_eq!(err.code.to_string(), "vector.duplicate_point_id");
+
+    let mut duplicate_chunk = batch();
+    duplicate_chunk.points[1].chunk_id = duplicate_chunk.points[0].chunk_id.clone();
+    let err = store.upsert(duplicate_chunk).await.unwrap_err();
+    assert_eq!(err.code.to_string(), "vector.duplicate_chunk_id");
+}
+
+#[tokio::test]
+async fn fake_vector_store_rejects_payload_lineage_mismatches() {
+    let store = FakeVectorStore::new("fake-vector");
+    store.ensure_collection(collection()).await.unwrap();
+
+    for (field, value) in [
+        ("collection", json!("other-collection")),
+        (
+            "embedding_batch_id",
+            json!("00000000-0000-0000-0000-000000000011"),
+        ),
+        ("embedding_model", json!("other-model")),
+        ("embedding_dimensions", json!(4)),
+        ("job_id", json!("00000000-0000-0000-0000-000000000001")),
+    ] {
+        let mut invalid = batch();
+        invalid.points[0].payload.insert(field.to_string(), value);
+        if field == "job_id" {
+            invalid.points[1].payload.insert(
+                "job_id".to_string(),
+                json!("00000000-0000-0000-0000-000000000002"),
+            );
+        }
+        let err = store.upsert(invalid).await.unwrap_err();
+        assert_eq!(
+            err.code.to_string(),
+            "vector.payload_lineage_mismatch",
+            "{field}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -576,6 +665,12 @@ async fn fake_vector_store_returns_deterministic_failure_modes_and_records_calls
         .await
         .unwrap_err();
     assert_eq!(err.code.to_string(), "provider.unavailable");
+    assert!(err.retryable);
+
+    let timeout = FakeVectorStore::new("fake-vector").with_mode(FakeVectorMode::Timeout);
+
+    let err = timeout.ensure_collection(collection()).await.unwrap_err();
+    assert_eq!(err.code.to_string(), "provider.timeout");
     assert!(err.retryable);
 
     let rate_limited = FakeVectorStore::new("fake-vector").with_mode(FakeVectorMode::RateLimited);

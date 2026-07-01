@@ -13,6 +13,8 @@ use qdrant_client::qdrant::{
     r#match, quantization_config, vector, vectors, vectors_config,
 };
 
+use crate::collection::{normalize_collection_spec, validate_collection_spec};
+use crate::filter::{SEARCH_GENERATION_FIELD, validate_search_filters};
 use crate::store::{Result, VectorStore};
 use crate::validation::validate_upsert_batch;
 
@@ -66,10 +68,6 @@ impl VectorStore for QdrantVectorStore {
 
     async fn search(&self, _request: VectorSearchRequest) -> Result<VectorSearchResult> {
         Err(self.not_wired(axon_error::ErrorStage::Retrieving))
-    }
-
-    async fn reset(&self) -> Result<()> {
-        Err(self.not_wired(axon_error::ErrorStage::Cleaning))
     }
 
     async fn capabilities(&self) -> Result<ProviderCapability> {
@@ -126,7 +124,9 @@ impl VectorStore for QdrantVectorStore {
     }
 }
 
-pub fn qdrant_collection_request(spec: &CollectionSpec) -> CreateCollection {
+pub fn qdrant_collection_request(spec: &CollectionSpec) -> Result<CreateCollection> {
+    let spec = normalize_collection_spec(spec.clone());
+    validate_collection_spec(&spec)?;
     let settings = QdrantCollectionSettings::default();
     let mut dense = HashMap::new();
     dense.insert(
@@ -142,7 +142,7 @@ pub fn qdrant_collection_request(spec: &CollectionSpec) -> CreateCollection {
         },
     );
 
-    CreateCollection {
+    Ok(CreateCollection {
         collection_name: spec.collection.clone(),
         vectors_config: Some(VectorsConfig {
             config: Some(vectors_config::Config::ParamsMap(VectorParamsMap {
@@ -199,7 +199,7 @@ pub fn qdrant_collection_request(spec: &CollectionSpec) -> CreateCollection {
         sharding_method: None,
         strict_mode_config: None,
         metadata: HashMap::new(),
-    }
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -228,7 +228,8 @@ impl Default for QdrantCollectionSettings {
 }
 
 pub fn qdrant_payload_index_requests(spec: &CollectionSpec) -> Vec<CreateFieldIndexCollection> {
-    spec.payload_indexes
+    normalize_collection_spec(spec.clone())
+        .payload_indexes
         .iter()
         .map(|index| CreateFieldIndexCollection {
             collection_name: spec.collection.clone(),
@@ -243,13 +244,14 @@ pub fn qdrant_payload_index_requests(spec: &CollectionSpec) -> Vec<CreateFieldIn
 }
 
 pub fn qdrant_filter(request: &VectorSearchRequest) -> Result<Option<Filter>> {
+    validate_search_filters(request)?;
     let mut conditions = Vec::new();
     for (field, value) in request.filters.iter() {
-        conditions.extend(field_conditions(field, value)?);
+        conditions.extend(qdrant_field_conditions(field, value));
     }
     if let Some(generation) = &request.generation {
         let value = serde_json::Value::from(generation.0.clone());
-        conditions.push(field_condition("source_generation", &value));
+        conditions.push(field_condition(SEARCH_GENERATION_FIELD, &value));
     }
     Ok((!conditions.is_empty()).then_some(Filter {
         should: Vec::new(),
@@ -327,24 +329,23 @@ fn qdrant_sparse_vector(indices: Vec<u32>, values: Vec<f32>) -> QdrantVector {
     }
 }
 
-fn field_conditions(
+pub(crate) fn qdrant_field_conditions(
     field: &str,
     value: &serde_json::Value,
-) -> Result<Vec<qdrant_client::qdrant::Condition>> {
-    validate_filter_value(field, value)?;
+) -> Vec<qdrant_client::qdrant::Condition> {
     let Some(values) = value.as_array() else {
-        return Ok(vec![field_condition(field, value)]);
+        return vec![field_condition(field, value)];
     };
     if values.is_empty() {
-        return Ok(vec![field_condition(
+        return vec![field_condition(
             "__axon_match_none",
             &serde_json::json!("__never__"),
-        )]);
+        )];
     }
     if values.len() == 1 {
-        return Ok(vec![field_condition(field, &values[0])]);
+        return vec![field_condition(field, &values[0])];
     }
-    Ok(vec![qdrant_client::qdrant::Condition {
+    vec![qdrant_client::qdrant::Condition {
         condition_one_of: Some(condition::ConditionOneOf::Filter(Filter {
             should: values
                 .iter()
@@ -354,44 +355,7 @@ fn field_conditions(
             must_not: Vec::new(),
             min_should: None,
         })),
-    }])
-}
-
-fn validate_filter_value(field: &str, value: &serde_json::Value) -> Result<()> {
-    match value {
-        serde_json::Value::String(_) | serde_json::Value::Bool(_) => Ok(()),
-        serde_json::Value::Number(number) if number.as_i64().is_some() => Ok(()),
-        serde_json::Value::Number(_) => Err(ApiError::new(
-            "vector.invalid_filter_value",
-            axon_error::ErrorStage::Retrieving,
-            format!("filter field {field} numeric equality supports signed integers only"),
-        )),
-        serde_json::Value::Array(values) => {
-            for value in values {
-                validate_filter_value(field, value)?;
-            }
-            Ok(())
-        }
-        other => Err(ApiError::new(
-            "vector.invalid_filter_value",
-            axon_error::ErrorStage::Retrieving,
-            format!(
-                "filter field {field} must be a scalar or array of scalars, got {}",
-                filter_value_kind(other)
-            ),
-        )),
-    }
-}
-
-fn filter_value_kind(value: &serde_json::Value) -> &'static str {
-    match value {
-        serde_json::Value::Null => "null",
-        serde_json::Value::Bool(_) => "boolean",
-        serde_json::Value::Number(_) => "number",
-        serde_json::Value::String(_) => "string",
-        serde_json::Value::Array(_) => "array",
-        serde_json::Value::Object(_) => "object",
-    }
+    }]
 }
 
 fn field_condition(field: &str, value: &serde_json::Value) -> qdrant_client::qdrant::Condition {

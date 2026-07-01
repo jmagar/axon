@@ -117,6 +117,8 @@ pub struct CollectionSpec {
 #[serde(deny_unknown_fields)]
 pub struct VectorConfig {
     pub name: String,
+    #[schemars(range(min = 1))]
+    #[schema(minimum = 1)]
     pub dimensions: u32,
     pub distance: VectorDistance,
 }

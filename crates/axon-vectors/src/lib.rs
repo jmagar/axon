@@ -1,8 +1,9 @@
 //! Vector store, payload, and point-batch boundary for the target source pipeline.
 //!
 //! PR9 gives this crate real contract-tested DTO conversion, payload validation,
-//! deterministic fake-store behavior, and Qdrant conversion helpers. Existing
-//! public runtime paths remain in the legacy crates until a later cutover PR.
+//! deterministic fake-store behavior, and test-only Qdrant conversion helpers.
+//! Existing public runtime paths remain in the legacy crates until a later
+//! cutover PR.
 
 pub mod collection;
 pub mod filter;

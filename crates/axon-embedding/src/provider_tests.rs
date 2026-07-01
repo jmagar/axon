@@ -190,6 +190,21 @@ async fn fake_embedding_provider_rejects_raw_invalid_batches() {
 }
 
 #[tokio::test]
+async fn fake_embedding_provider_rejects_provider_and_model_mismatches() {
+    let provider = FakeEmbeddingProvider::new("fake-embedding", 4);
+
+    let mut wrong_provider = batch(JobPriority::Background);
+    wrong_provider.provider_id = ProviderId::new("other-provider");
+    let err = provider.embed(wrong_provider).await.unwrap_err();
+    assert_eq!(err.code.to_string(), "provider.provider_mismatch");
+
+    let mut wrong_model = batch(JobPriority::Background);
+    wrong_model.model = "other-model".to_string();
+    let err = provider.embed(wrong_model).await.unwrap_err();
+    assert_eq!(err.code.to_string(), "provider.model_mismatch");
+}
+
+#[tokio::test]
 async fn fake_embedding_provider_call_records_do_not_expose_mutable_internals() {
     let provider = FakeEmbeddingProvider::new("fake-embedding", 4);
 

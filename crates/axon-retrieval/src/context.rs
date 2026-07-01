@@ -21,13 +21,39 @@ impl ContextBundle {
         byte_budget: u64,
         token_budget: u32,
     ) -> Self {
+        Self::from_items(
+            chunks.into_iter().map(|(chunk_id, text)| (chunk_id, text)),
+            byte_budget,
+            token_budget,
+        )
+    }
+
+    pub(crate) fn from_matches(
+        matches: &[RetrievalMatch],
+        byte_budget: u64,
+        token_budget: u32,
+    ) -> Self {
+        Self::from_items(
+            matches
+                .iter()
+                .map(|item| (item.chunk_id.clone(), item.text.clone())),
+            byte_budget,
+            token_budget,
+        )
+    }
+
+    fn from_items(
+        items: impl IntoIterator<Item = (ChunkId, String)>,
+        byte_budget: u64,
+        token_budget: u32,
+    ) -> Self {
         let mut text_parts = Vec::new();
         let mut chunk_ids = Vec::new();
         let mut bytes_used = 0_u64;
         let mut token_estimate = 0_u32;
         let mut truncated = false;
 
-        for (chunk_id, text) in chunks {
+        for (chunk_id, text) in items {
             let text = defang_chunk_text(&text);
             let separator_bytes = if text_parts.is_empty() { 0 } else { 2 };
             let next_bytes_used = bytes_used + separator_bytes + text.len() as u64;
@@ -39,41 +65,6 @@ impl ContextBundle {
             bytes_used = next_bytes_used;
             token_estimate = next_token_estimate;
             chunk_ids.push(chunk_id);
-            text_parts.push(text);
-        }
-
-        Self {
-            text: text_parts.join("\n\n"),
-            chunk_ids,
-            bytes_used,
-            token_estimate,
-            truncated,
-        }
-    }
-
-    pub(crate) fn from_matches(
-        matches: &[RetrievalMatch],
-        byte_budget: u64,
-        token_budget: u32,
-    ) -> Self {
-        let mut text_parts = Vec::new();
-        let mut chunk_ids = Vec::new();
-        let mut bytes_used = 0_u64;
-        let mut token_estimate = 0_u32;
-        let mut truncated = false;
-
-        for item in matches {
-            let text = defang_chunk_text(&item.text);
-            let separator_bytes = if text_parts.is_empty() { 0 } else { 2 };
-            let next_bytes_used = bytes_used + separator_bytes + text.len() as u64;
-            let next_token_estimate = estimate_tokens(next_bytes_used);
-            if next_bytes_used > byte_budget || next_token_estimate > token_budget {
-                truncated = true;
-                break;
-            }
-            bytes_used = next_bytes_used;
-            token_estimate = next_token_estimate;
-            chunk_ids.push(item.chunk_id.clone());
             text_parts.push(text);
         }
 

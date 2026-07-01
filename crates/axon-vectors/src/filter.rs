@@ -5,6 +5,8 @@ use serde_json::Value;
 
 pub const SOURCE_ID: &str = "source_id";
 pub const SOURCE_GENERATION: &str = "source_generation";
+pub const COMMITTED_GENERATION: &str = "committed_generation";
+pub const SEARCH_GENERATION_FIELD: &str = COMMITTED_GENERATION;
 pub const DOCUMENT_ID: &str = "document_id";
 pub const CHUNK_ID: &str = "chunk_id";
 pub const VECTOR_NAMESPACE: &str = "vector_namespace";
@@ -15,7 +17,7 @@ type Result<T> = std::result::Result<T, ApiError>;
 
 pub fn matches_search_filters(point: &VectorPoint, request: &VectorSearchRequest) -> bool {
     if let Some(generation) = &request.generation
-        && !payload_matches_str(&point.payload, SOURCE_GENERATION, &generation.0)
+        && !payload_matches_str(&point.payload, SEARCH_GENERATION_FIELD, &generation.0)
     {
         return false;
     }
@@ -27,9 +29,13 @@ pub fn matches_search_filters(point: &VectorPoint, request: &VectorSearchRequest
 
 pub fn validate_delete_selector(selector: &VectorDeleteSelector) -> Result<()> {
     if let VectorDeleteSelector::Filter { filter, .. } = selector {
-        validate_json_filter(filter)?;
+        validate_json_filter(filter, axon_error::ErrorStage::Cleaning)?;
     }
     Ok(())
+}
+
+pub fn validate_search_filters(request: &VectorSearchRequest) -> Result<()> {
+    validate_filter_map(&request.filters, axon_error::ErrorStage::Retrieving)
 }
 
 pub fn matches_delete_selector(point: &VectorPoint, selector: &VectorDeleteSelector) -> bool {
@@ -115,49 +121,70 @@ fn matches_json_filter(payload: &MetadataMap, filter: &Value) -> bool {
         .all(|(field, expected)| payload_matches_value(payload, field, expected))
 }
 
-fn validate_json_filter(filter: &Value) -> Result<()> {
+fn validate_json_filter(filter: &Value, stage: axon_error::ErrorStage) -> Result<()> {
     let Some(object) = filter.as_object() else {
-        return Err(invalid_delete_selector(
+        return Err(invalid_filter(
+            stage,
             "filter selector must be a JSON object",
         ));
     };
     for (field, expected) in object {
         if matches!(field.as_str(), "must" | "should" | "must_not" | "filter") {
-            return Err(invalid_delete_selector(format!(
-                "filter selector uses unsupported query operator `{field}`; use direct payload field equality"
-            )));
+            return Err(invalid_filter(
+                stage,
+                format!(
+                    "filter selector uses unsupported query operator `{field}`; use direct payload field equality"
+                ),
+            ));
         }
-        validate_filter_value(field, expected)?;
+        validate_filter_value(field, expected, stage)?;
     }
     Ok(())
 }
 
-fn validate_filter_value(field: &str, expected: &Value) -> Result<()> {
+fn validate_filter_map(filters: &MetadataMap, stage: axon_error::ErrorStage) -> Result<()> {
+    for (field, expected) in filters.iter() {
+        validate_filter_value(field, expected, stage)?;
+    }
+    Ok(())
+}
+
+fn validate_filter_value(
+    field: &str,
+    expected: &Value,
+    stage: axon_error::ErrorStage,
+) -> Result<()> {
     match expected {
         Value::String(_) | Value::Bool(_) => Ok(()),
         Value::Number(number) if number.as_i64().is_some() => Ok(()),
-        Value::Number(_) => Err(invalid_delete_selector(format!(
-            "filter selector field `{field}` numeric equality supports signed integers only"
-        ))),
+        Value::Number(_) => Err(invalid_filter(
+            stage,
+            format!(
+                "filter selector field `{field}` numeric equality supports signed integers only"
+            ),
+        )),
         Value::Array(values) => {
             for value in values {
-                validate_filter_value(field, value)?;
+                validate_filter_value(field, value, stage)?;
             }
             Ok(())
         }
-        other => Err(invalid_delete_selector(format!(
-            "filter selector field `{field}` must be a scalar or array of scalars, got {}",
-            value_kind(other)
-        ))),
+        other => Err(invalid_filter(
+            stage,
+            format!(
+                "filter selector field `{field}` must be a scalar or array of scalars, got {}",
+                value_kind(other)
+            ),
+        )),
     }
 }
 
-fn invalid_delete_selector(message: impl Into<String>) -> ApiError {
-    ApiError::new(
-        "vector.invalid_delete_selector",
-        axon_error::ErrorStage::Cleaning,
-        message,
-    )
+fn invalid_filter(stage: axon_error::ErrorStage, message: impl Into<String>) -> ApiError {
+    let code = match stage {
+        axon_error::ErrorStage::Cleaning => "vector.invalid_delete_selector",
+        _ => "vector.invalid_filter_value",
+    };
+    ApiError::new(code, stage, message)
 }
 
 fn value_kind(value: &Value) -> &'static str {
@@ -196,10 +223,4 @@ fn value_matches_string_value(actual: &Value, expected: &Value) -> bool {
 
 fn value_matches_str(actual: &Value, expected: &str) -> bool {
     actual.as_str() == Some(expected)
-        || actual
-            .as_i64()
-            .is_some_and(|value| value.to_string() == expected)
-        || actual
-            .as_u64()
-            .is_some_and(|value| value.to_string() == expected)
 }

@@ -68,7 +68,7 @@ impl Citation {
                 )
             })?
             .to_string();
-        let range = payload_range(item);
+        let range = payload_range(item)?;
         if !has_locator(&range) {
             return Err(ApiError::new(
                 "retrieval.missing_source_range",
@@ -90,23 +90,44 @@ impl Citation {
     }
 }
 
-fn payload_range(item: &VectorSearchMatch) -> SourceRange {
-    let source_range = item
-        .payload
-        .get("source_range")
-        .and_then(source_range_from_value);
+fn payload_range(item: &VectorSearchMatch) -> Result<SourceRange, ApiError> {
+    let source_range = source_range_from_payload(item, "source_range")?;
     let chunk_locator_range = item
         .payload
         .get("chunk_locator")
         .and_then(|value| value.as_object())
         .and_then(|value| value.get("range"))
-        .and_then(source_range_from_value);
+        .map(|value| source_range_from_value(value, "retrieval.invalid_chunk_locator_range", item))
+        .transpose()?;
 
-    merge_ranges(source_range, chunk_locator_range)
+    Ok(merge_ranges(source_range, chunk_locator_range))
 }
 
-fn source_range_from_value(value: &Value) -> Option<SourceRange> {
-    serde_json::from_value(value.clone()).ok()
+fn source_range_from_payload(
+    item: &VectorSearchMatch,
+    field: &str,
+) -> Result<Option<SourceRange>, ApiError> {
+    item.payload
+        .get(field)
+        .map(|value| source_range_from_value(value, "retrieval.invalid_source_range", item))
+        .transpose()
+}
+
+fn source_range_from_value(
+    value: &Value,
+    code: &str,
+    item: &VectorSearchMatch,
+) -> Result<SourceRange, ApiError> {
+    serde_json::from_value(value.clone()).map_err(|err| {
+        ApiError::new(
+            code,
+            ErrorStage::Retrieving,
+            format!(
+                "vector match {} has malformed source range: {err}",
+                item.point_id.0
+            ),
+        )
+    })
 }
 
 fn merge_ranges(source: Option<SourceRange>, locator: Option<SourceRange>) -> SourceRange {
