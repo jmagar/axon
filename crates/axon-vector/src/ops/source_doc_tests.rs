@@ -1,5 +1,5 @@
 use super::{
-    SourceDocument, SourceOrigin, prepare_source_document,
+    LedgerPayload, SourceDocument, SourceOrigin, prepare_source_document,
     structured_payload_from_vertical_summary, target_vector_payload_for_chunk,
 };
 use crate::ops::input::chunk_markdown_with_offsets;
@@ -261,6 +261,39 @@ async fn target_payload_bridge_scrubs_non_home_absolute_local_paths() {
         })),
     )
     .expect("source doc");
+
+    let prepared = prepare_source_document(source).await.expect("prepared doc");
+    let payload = target_vector_payload_for_chunk(&prepared, 0, "axon").expect("target payload");
+    let serialized = serde_json::to_string(&payload).unwrap();
+
+    assert!(!serialized.contains("/tmp/axon"));
+    assert_eq!(payload["source_item_key"], "file://local/lib.rs");
+}
+
+#[tokio::test]
+async fn target_payload_bridge_scrubs_ledger_item_key_local_paths() {
+    let ledger = LedgerPayload::try_new(
+        "src_local".to_string(),
+        "local_code",
+        3,
+        "/tmp/axon/src/lib.rs".to_string(),
+        1,
+    )
+    .expect("ledger");
+    let source = SourceDocument::try_new_file(
+        SourceOrigin::LocalFile,
+        "file:///tmp/axon/src/lib.rs".to_string(),
+        "/tmp/axon/src/lib.rs".to_string(),
+        "rs".to_string(),
+        "pub fn ledger_temp_local() {}\n".repeat(80),
+        "local_code",
+        Some("/tmp/axon/src/lib.rs".to_string()),
+        Some(serde_json::json!({
+            "code_language": "rust"
+        })),
+    )
+    .expect("source doc")
+    .with_ledger_payload(ledger);
 
     let prepared = prepare_source_document(source).await.expect("prepared doc");
     let payload = target_vector_payload_for_chunk(&prepared, 0, "axon").expect("target payload");

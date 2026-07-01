@@ -27,7 +27,7 @@ pub(in crate::ops) fn target_vector_payload_for_chunk(
     let source_item_key = doc
         .ledger_payload
         .as_ref()
-        .map(|ledger| ledger.item_key().to_string())
+        .map(|ledger| target_safe_uri(ledger.item_key()))
         .unwrap_or_else(|| target_safe_uri(&doc.url));
     let chunk_id = chunk_extra
         .and_then(|extra| extra.get("prepared_chunk_id"))
