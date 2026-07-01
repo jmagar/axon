@@ -251,3 +251,25 @@ fn resolver_uses_authority_record_confidence() {
 
     assert_eq!(resolved.confidence, 0.42);
 }
+
+#[test]
+fn resolver_rejects_inconsistent_authority_records() {
+    let resolver = SourceResolver::new(
+        InMemoryAuthorityRegistry::from_records(vec![
+            AuthorityRecord::new(
+                "auth_bad_docs",
+                "local://lp_bad",
+                SourceKind::Web,
+                AuthorityLevel::Official,
+            )
+            .with_alias("bad-docs"),
+        ]),
+        AdapterRegistry::target_defaults(),
+    );
+
+    let err = resolver
+        .resolve(&SourceRequest::new("bad-docs"))
+        .expect_err("inconsistent authority record fails");
+
+    assert_eq!(err.code.0, "source.authority.invalid");
+}

@@ -15,6 +15,8 @@ pub struct AdapterDefinition {
     pub execution_affinity: ExecutionAffinity,
     pub provider_requirements: Vec<ProviderRequirement>,
     pub credential_requirements: Vec<CredentialRequirement>,
+    pub option_schema_id: String,
+    pub allowed_option_keys: Vec<String>,
     pub chunking_hints: Vec<ChunkHint>,
     pub parser_hints: Vec<ParserHint>,
     pub watch_supported: bool,
@@ -28,9 +30,10 @@ impl AdapterDefinition {
         source_kind: SourceKind,
         default_scope: SourceScope,
     ) -> Self {
+        let name = name.into();
         Self {
             adapter: AdapterRef {
-                name: name.into(),
+                name: name.clone(),
                 version: version.into(),
             },
             source_kind,
@@ -40,6 +43,8 @@ impl AdapterDefinition {
             execution_affinity: ExecutionAffinity::Worker,
             provider_requirements: Vec::new(),
             credential_requirements: Vec::new(),
+            option_schema_id: format!("adapter:{name}:options:v1"),
+            allowed_option_keys: Vec::new(),
             chunking_hints: Vec::new(),
             parser_hints: Vec::new(),
             watch_supported: matches!(source_kind, SourceKind::Local | SourceKind::Web),

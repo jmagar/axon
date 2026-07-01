@@ -71,7 +71,7 @@ impl SourceRouter {
             credential_requirements: adapter.credential_requirements.clone(),
             execution_affinity: execution_affinity(adapter),
             safety_class: adapter.safety_class,
-            option_schema_id: format!("adapter:{}:options:v1", adapter.adapter.name),
+            option_schema_id: adapter.option_schema_id.clone(),
             validated_options: AdapterOptions {
                 values: request.options.values.clone(),
             },
@@ -161,13 +161,16 @@ impl SourceRouter {
         policy: RouteSecurityPolicy,
     ) -> Result<(), ApiError> {
         for key in request.options.values.keys() {
-            return Err(ApiError::new(
-                "route.options.unsupported",
-                ErrorStage::Routing,
-                "unsupported route option for selected adapter",
-            )
-            .with_context("adapter", adapter.adapter.name.clone())
-            .with_context("option", key.clone()));
+            if !adapter.allowed_option_keys.contains(key) {
+                return Err(ApiError::new(
+                    "route.options.unsupported",
+                    ErrorStage::Routing,
+                    "unsupported route option for selected adapter schema",
+                )
+                .with_context("adapter", adapter.adapter.name.clone())
+                .with_context("option_schema_id", adapter.option_schema_id.clone())
+                .with_context("option", key.clone()));
+            }
         }
 
         if adapter.safety_class == SafetyClass::ToolExecution && !policy.allow_tool_execution {
