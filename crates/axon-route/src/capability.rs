@@ -1,7 +1,7 @@
 //! Adapter declarations consumed by the router.
 
 use axon_api::{
-    AdapterRef, ChunkHint, CredentialRequirement, ExecutionAffinity, ParserHint,
+    AdapterRef, ChunkHint, CredentialKind, CredentialRequirement, ExecutionAffinity, ParserHint,
     ProviderRequirement, SafetyClass, SourceKind, SourceScope,
 };
 
@@ -58,6 +58,16 @@ impl AdapterDefinition {
         self.safety_class = safety_class;
         self
     }
+
+    pub fn with_credential(mut self, credential_kind: CredentialKind, reason: &str) -> Self {
+        self.credential_requirements.push(CredentialRequirement {
+            credential_kind,
+            secret_ref: None,
+            required: true,
+            reason: reason.to_string(),
+        });
+        self
+    }
 }
 
 fn safety_class(source_kind: SourceKind) -> SafetyClass {
@@ -81,7 +91,8 @@ impl AdapterRegistry {
 
     pub fn target_defaults() -> Self {
         Self::from_adapters(vec![
-            AdapterDefinition::new("cli", "1", SourceKind::CliTool, SourceScope::Tool),
+            AdapterDefinition::new("cli", "1", SourceKind::CliTool, SourceScope::Tool)
+                .with_safety_class(SafetyClass::ToolExecution),
             AdapterDefinition::new("crates", "1", SourceKind::Registry, SourceScope::Package)
                 .with_scope(SourceScope::Version),
             AdapterDefinition::new("docker", "1", SourceKind::Registry, SourceScope::Package)
@@ -108,15 +119,21 @@ impl AdapterRegistry {
                 .with_scope(SourceScope::File)
                 .with_scope(SourceScope::Workspace)
                 .with_safety_class(SafetyClass::LocalFilesystem),
-            AdapterDefinition::new("mcp", "1", SourceKind::McpTool, SourceScope::Tool),
+            AdapterDefinition::new("mcp", "1", SourceKind::McpTool, SourceScope::Tool)
+                .with_safety_class(SafetyClass::ToolExecution),
             AdapterDefinition::new("npm", "1", SourceKind::Registry, SourceScope::Package)
                 .with_scope(SourceScope::Version),
             AdapterDefinition::new("pypi", "1", SourceKind::Registry, SourceScope::Package)
                 .with_scope(SourceScope::Version),
             AdapterDefinition::new("reddit", "1", SourceKind::Reddit, SourceScope::Subreddit)
                 .with_scope(SourceScope::Thread)
-                .with_scope(SourceScope::Comment),
+                .with_scope(SourceScope::Comment)
+                .with_credential(
+                    CredentialKind::ApiKey,
+                    "Reddit API credentials are required before acquisition",
+                ),
             AdapterDefinition::new("session", "1", SourceKind::Session, SourceScope::Thread),
+            AdapterDefinition::new("upload", "1", SourceKind::Upload, SourceScope::File),
             AdapterDefinition::new("web", "1", SourceKind::Web, SourceScope::Site)
                 .with_scope(SourceScope::Page)
                 .with_scope(SourceScope::Docs)

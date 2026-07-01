@@ -2,7 +2,7 @@
 
 use axon_api::{
     AdapterOptions, ChunkHint, ChunkProfile, ExecutionAffinity, ParserHint, ProviderRequirement,
-    ResolvedSource, RoutePlan, SourceKind, SourceRequest,
+    ResolvedSource, RoutePlan, SafetyClass, SourceKind, SourceRequest,
 };
 use axon_error::{ApiError, ErrorStage};
 
@@ -37,6 +37,7 @@ impl SourceRouter {
             .with_context("adapter", adapter.adapter.name.clone())
             .with_context("scope", format!("{scope:?}")));
         }
+        self.validate_options(request, adapter)?;
 
         Ok(RoutePlan {
             source,
@@ -96,6 +97,43 @@ impl SourceRouter {
                 )
             })
     }
+
+    fn validate_options(
+        &self,
+        request: &SourceRequest,
+        adapter: &AdapterDefinition,
+    ) -> Result<(), ApiError> {
+        for key in request.options.values.keys() {
+            if key != "allow_tool_execution" {
+                return Err(ApiError::new(
+                    "route.options.unsupported",
+                    ErrorStage::Routing,
+                    "unsupported route option for selected adapter",
+                )
+                .with_context("adapter", adapter.adapter.name.clone())
+                .with_context("option", key.clone()));
+            }
+        }
+
+        if adapter.safety_class == SafetyClass::ToolExecution {
+            let allowed = request
+                .options
+                .values
+                .get("allow_tool_execution")
+                .and_then(|value| value.as_bool())
+                == Some(true);
+            if !allowed {
+                return Err(ApiError::new(
+                    "route.tool_execution.denied",
+                    ErrorStage::Routing,
+                    "tool execution sources require explicit allow_tool_execution=true",
+                )
+                .with_context("adapter", adapter.adapter.name.clone()));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 fn execution_affinity(adapter: &AdapterDefinition) -> ExecutionAffinity {
@@ -118,7 +156,7 @@ fn chunking_hints(source_kind: SourceKind) -> Vec<ChunkHint> {
         SourceKind::Git | SourceKind::Local => ChunkProfile::CodeAst,
         SourceKind::Session => ChunkProfile::Session,
         SourceKind::Youtube => ChunkProfile::Transcript,
-        SourceKind::Registry | SourceKind::McpTool | SourceKind::CliTool => {
+        SourceKind::Registry | SourceKind::McpTool | SourceKind::CliTool | SourceKind::Upload => {
             ChunkProfile::Structured
         }
         _ => ChunkProfile::Markdown,

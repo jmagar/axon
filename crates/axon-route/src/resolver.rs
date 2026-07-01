@@ -28,6 +28,7 @@ impl SourceResolver {
     pub fn resolve(&self, request: &SourceRequest) -> Result<ResolvedSource, ApiError> {
         let mut warnings = Vec::new();
         let canonical = self.resolve_canonical(request, &mut warnings)?;
+        warnings.extend(canonical.warnings.clone());
         let candidates = self.candidates_for(&canonical);
         let authority = self.authority_for(&request.source);
         let confidence = if authority == AuthorityLevel::Official {
@@ -80,6 +81,7 @@ impl SourceResolver {
                     adapter_hint: None,
                     display_name: request.source.clone(),
                     reason: format!("matched authority {}", record.authority_id),
+                    warnings: Vec::new(),
                 })
             }
             None => canonical::canonicalize(&request.source, request.scope).ok_or_else(|| {

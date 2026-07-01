@@ -1,7 +1,8 @@
 //! Lexical source normalization and source-family detection.
 
-use axon_api::{SourceKind, SourceScope};
-use url::Url;
+use axon_api::{Severity, SourceKind, SourceScope, SourceWarning};
+use std::path::{Component, Path, PathBuf};
+use url::{Url, form_urlencoded};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CanonicalSource {
@@ -11,6 +12,7 @@ pub struct CanonicalSource {
     pub adapter_hint: Option<String>,
     pub display_name: String,
     pub reason: String,
+    pub warnings: Vec<SourceWarning>,
 }
 
 pub fn canonicalize(raw: &str, requested_scope: Option<SourceScope>) -> Option<CanonicalSource> {
@@ -19,6 +21,7 @@ pub fn canonicalize(raw: &str, requested_scope: Option<SourceScope>) -> Option<C
         .or_else(|| canonical_mcp(source))
         .or_else(|| canonical_cli(source))
         .or_else(|| canonical_session(source))
+        .or_else(|| canonical_upload(source))
         .or_else(|| canonical_feed(source))
         .or_else(|| canonical_reddit(source))
         .or_else(|| canonical_youtube(source))
@@ -38,8 +41,9 @@ fn canonical_local(raw: &str, requested_scope: Option<SourceScope>) -> Option<Ca
     {
         return None;
     }
-    let key = crate::source_id::local_project_key(raw);
-    let display_name = raw
+    let normalized = normalize_local_path(raw);
+    let key = crate::source_id::local_project_key(&normalized);
+    let display_name = normalized
         .trim_end_matches('/')
         .rsplit('/')
         .next()
@@ -53,6 +57,7 @@ fn canonical_local(raw: &str, requested_scope: Option<SourceScope>) -> Option<Ca
         adapter_hint: Some("local".to_string()),
         display_name,
         reason: "resolved as local filesystem source".to_string(),
+        warnings: Vec::new(),
     })
 }
 
@@ -92,6 +97,21 @@ fn canonical_session(raw: &str) -> Option<CanonicalSource> {
         "session",
         session_id,
         "resolved as AI session source",
+    ))
+}
+
+fn canonical_upload(raw: &str) -> Option<CanonicalSource> {
+    let artifact = raw.strip_prefix("upload:")?.trim();
+    if artifact.is_empty() {
+        return None;
+    }
+    Some(basic(
+        format!("upload://{artifact}"),
+        SourceKind::Upload,
+        SourceScope::File,
+        "upload",
+        artifact,
+        "resolved as upload/artifact source",
     ))
 }
 
@@ -189,14 +209,21 @@ fn canonical_github(raw: &str) -> Option<CanonicalSource> {
     if parts.len() < 2 || parts[0].contains('.') || parts[0].is_empty() || parts[1].is_empty() {
         return None;
     }
-    Some(basic(
+    let mut source = basic(
         format!("github://{}/{}", parts[0], trim_git_suffix(parts[1])),
         SourceKind::Git,
         SourceScope::Repo,
         "github",
         parts[1],
         "resolved as GitHub repository source",
-    ))
+    );
+    if path == raw {
+        source.warnings.push(warning(
+            "source.inferred.github_shorthand",
+            "source interpreted as GitHub owner/repo shorthand",
+        ));
+    }
+    Some(source)
 }
 
 fn canonical_gitlab(raw: &str) -> Option<CanonicalSource> {
@@ -251,14 +278,28 @@ fn canonical_generic_git(raw: &str) -> Option<CanonicalSource> {
 
 fn canonical_web(raw: &str) -> Option<CanonicalSource> {
     let url = normalized_url(raw)?;
-    Some(basic(
-        format!("https://{}{}", url.host_str()?, clean_path(&url)),
+    let query = normalized_query(&url);
+    let mut source = basic(
+        format!(
+            "https://{}{}{}",
+            url.host_str()?,
+            clean_path(&url),
+            query.query
+        ),
         SourceKind::Web,
         SourceScope::Site,
         "web",
         url.host_str()?,
         "resolved as web source",
-    ))
+    );
+    source.warnings.extend(query.warnings);
+    if !raw.contains("://") {
+        source.warnings.push(warning(
+            "source.inferred.scheme",
+            "source did not include a URL scheme; https was inferred",
+        ));
+    }
+    Some(source)
 }
 
 fn normalized_url(raw: &str) -> Option<Url> {
@@ -286,6 +327,113 @@ fn clean_path(url: &Url) -> String {
     } else {
         path.trim_end_matches('/').to_string()
     }
+}
+
+struct QueryNormalization {
+    query: String,
+    warnings: Vec<SourceWarning>,
+}
+
+fn normalized_query(url: &Url) -> QueryNormalization {
+    let mut kept = Vec::new();
+    let mut redacted = false;
+    for (key, value) in url.query_pairs() {
+        let key = key.to_string();
+        let value = value.to_string();
+        if is_tracking_param(&key) {
+            continue;
+        }
+        if is_sensitive_param(&key) {
+            redacted = true;
+            kept.push((key, "REDACTED".to_string()));
+        } else {
+            kept.push((key, value));
+        }
+    }
+    kept.sort();
+
+    let query = if kept.is_empty() {
+        String::new()
+    } else {
+        let mut serializer = form_urlencoded::Serializer::new(String::new());
+        for (key, value) in kept {
+            serializer.append_pair(&key, &value);
+        }
+        format!("?{}", serializer.finish())
+    };
+
+    let warnings = if redacted {
+        vec![warning(
+            "source.query.sensitive_redacted",
+            "sensitive query parameter values were redacted in canonical URI",
+        )]
+    } else {
+        Vec::new()
+    };
+
+    QueryNormalization { query, warnings }
+}
+
+fn is_tracking_param(key: &str) -> bool {
+    let key = key.to_ascii_lowercase();
+    key.starts_with("utm_")
+        || matches!(
+            key.as_str(),
+            "fbclid" | "gclid" | "msclkid" | "mc_cid" | "mc_eid" | "igshid"
+        )
+}
+
+fn is_sensitive_param(key: &str) -> bool {
+    let key = key.to_ascii_lowercase();
+    key.contains("token")
+        || key.contains("secret")
+        || key.contains("password")
+        || key == "key"
+        || key == "api_key"
+        || key == "apikey"
+        || key == "auth"
+        || key == "authorization"
+}
+
+fn normalize_local_path(raw: &str) -> String {
+    let expanded = expand_home(raw.trim());
+    match std::fs::canonicalize(&expanded) {
+        Ok(path) => path.to_string_lossy().into_owned(),
+        Err(_) => normalize_path_components(&expanded),
+    }
+}
+
+fn expand_home(raw: &str) -> PathBuf {
+    if raw == "~" {
+        return home_dir();
+    }
+    if let Some(rest) = raw.strip_prefix("~/") {
+        return home_dir().join(rest);
+    }
+    PathBuf::from(raw)
+}
+
+fn home_dir() -> PathBuf {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("~"))
+}
+
+fn normalize_path_components(path: &Path) -> String {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            other => normalized.push(other.as_os_str()),
+        }
+    }
+    normalized
+        .to_string_lossy()
+        .trim_end_matches('/')
+        .to_string()
 }
 
 fn repo_path(url: &Url) -> Option<String> {
@@ -334,5 +482,16 @@ fn basic(
         adapter_hint: Some(adapter.to_string()),
         display_name: display_name.to_string(),
         reason: reason.to_string(),
+        warnings: Vec::new(),
+    }
+}
+
+fn warning(code: &str, message: &str) -> SourceWarning {
+    SourceWarning {
+        code: code.to_string(),
+        severity: Severity::Info,
+        message: message.to_string(),
+        source_item_key: None,
+        retryable: false,
     }
 }

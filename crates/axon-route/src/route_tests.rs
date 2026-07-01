@@ -183,6 +183,36 @@ fn resolver_uses_equivalent_canonical_uri_for_noisy_web_urls() {
 }
 
 #[test]
+fn resolver_preserves_meaningful_query_params_and_redacts_sensitive_params() {
+    let resolver = resolver_with_authority();
+    let search = resolver
+        .resolve(&SourceRequest::new(
+            "https://example.com/search?utm_source=newsletter&q=rust&page=2",
+        ))
+        .expect("search URL resolves");
+    let sensitive = resolver
+        .resolve(&SourceRequest::new(
+            "https://example.com/search?token=abc&q=rust&password=secret",
+        ))
+        .expect("sensitive URL resolves");
+
+    assert_eq!(
+        search.canonical_uri,
+        "https://example.com/search?page=2&q=rust"
+    );
+    assert_eq!(
+        sensitive.canonical_uri,
+        "https://example.com/search?password=REDACTED&q=rust&token=REDACTED"
+    );
+    assert!(
+        sensitive
+            .warnings
+            .iter()
+            .any(|warning| warning.code == "source.query.sensitive_redacted")
+    );
+}
+
+#[test]
 fn resolver_keeps_local_absolute_paths_out_of_public_identity() {
     let resolver = resolver_with_authority();
     let request = SourceRequest::local_path("/home/jmagar/workspace/axon/crates/axon-route", true);
@@ -194,6 +224,67 @@ fn resolver_keeps_local_absolute_paths_out_of_public_identity() {
     assert!(resolved.canonical_uri.starts_with("local://lp_"));
     assert!(!resolved.canonical_uri.contains("/home/jmagar"));
     assert!(resolved.display_name.contains("axon-route"));
+}
+
+#[test]
+fn resolver_keys_equivalent_local_path_spellings_together() {
+    let resolver = resolver_with_authority();
+    let plain = resolver
+        .resolve(&SourceRequest::local_path(
+            "/home/jmagar/workspace/axon/crates/axon-route",
+            true,
+        ))
+        .expect("plain path resolves");
+    let trailing = resolver
+        .resolve(&SourceRequest::local_path(
+            "/home/jmagar/workspace/axon/crates/axon-route/",
+            true,
+        ))
+        .expect("trailing path resolves");
+
+    assert_eq!(plain.canonical_uri, trailing.canonical_uri);
+    assert_eq!(plain.source_id, trailing.source_id);
+}
+
+#[test]
+fn resolver_normalizes_upload_sources() {
+    let resolver = resolver_with_authority();
+    let resolved = resolver
+        .resolve(&SourceRequest::new("upload:artifact_123"))
+        .expect("upload source resolves");
+
+    assert_eq!(resolved.source_kind, SourceKind::Upload);
+    assert_eq!(resolved.canonical_uri, "upload://artifact_123");
+    assert_eq!(resolved.default_scope, SourceScope::File);
+    assert_eq!(resolved.candidate_adapters[0].adapter.name, "upload");
+}
+
+#[test]
+fn resolver_warns_when_source_shape_is_inferred() {
+    let resolver = resolver_with_authority();
+    let domain = resolver
+        .resolve(&SourceRequest::new("example.com/docs"))
+        .expect("scheme-less docs domain resolves");
+    let shorthand = resolver
+        .resolve(&SourceRequest::new("jmagar/axon"))
+        .expect("github shorthand resolves");
+
+    assert!(domain.confidence < 0.9);
+    assert!(shorthand.confidence < 0.9);
+    assert!(!domain.reason.is_empty());
+    assert!(!shorthand.reason.is_empty());
+    assert!(
+        domain
+            .warnings
+            .iter()
+            .any(|warning| warning.code == "source.inferred.scheme")
+    );
+    assert!(
+        shorthand
+            .warnings
+            .iter()
+            .any(|warning| warning.code == "source.inferred.github_shorthand")
+    );
 }
 
 #[test]
@@ -214,6 +305,7 @@ fn target_registry_declares_expected_route_time_adapters() {
         ("pypi", SourceKind::Registry, SourceScope::Package),
         ("reddit", SourceKind::Reddit, SourceScope::Subreddit),
         ("session", SourceKind::Session, SourceScope::Thread),
+        ("upload", SourceKind::Upload, SourceScope::File),
         ("web", SourceKind::Web, SourceScope::Site),
         ("youtube", SourceKind::Youtube, SourceScope::Video),
     ];
@@ -277,6 +369,77 @@ fn router_rejects_adapter_that_does_not_support_source_kind() {
 
     assert_eq!(err.code.0, "route.adapter.unsupported_source");
     assert_eq!(err.stage, axon_error::ErrorStage::Routing);
+}
+
+#[test]
+fn router_rejects_unknown_route_options() {
+    let resolver = resolver_with_authority();
+    let router = SourceRouter::new(AdapterRegistry::target_defaults());
+    let mut request = SourceRequest::new("example.com");
+    request
+        .options
+        .values
+        .insert("definitely_not_valid".to_string(), true.into());
+    let resolved = resolver.resolve(&request).expect("source resolves");
+
+    let err = router
+        .route(&request, resolved)
+        .expect_err("unknown route option fails");
+
+    assert_eq!(err.code.0, "route.options.unsupported");
+    assert_eq!(err.stage, axon_error::ErrorStage::Routing);
+}
+
+#[test]
+fn router_requires_explicit_tool_execution_allowance() {
+    let resolver = resolver_with_authority();
+    let router = SourceRouter::new(AdapterRegistry::target_defaults());
+    let request = SourceRequest::new("mcp:context7/resolve-library-id");
+    let resolved = resolver.resolve(&request).expect("mcp source resolves");
+
+    let err = router
+        .route(&request, resolved)
+        .expect_err("tool execution needs explicit opt-in");
+
+    assert_eq!(err.code.0, "route.tool_execution.denied");
+    assert_eq!(err.stage, axon_error::ErrorStage::Routing);
+}
+
+#[test]
+fn router_reports_credentials_required_by_adapter() {
+    let resolver = resolver_with_authority();
+    let router = SourceRouter::new(AdapterRegistry::target_defaults());
+    let request = SourceRequest::new("r/rust");
+    let resolved = resolver.resolve(&request).expect("reddit source resolves");
+
+    let route = router.route(&request, resolved).expect("reddit routes");
+
+    assert_eq!(route.adapter.name, "reddit");
+    assert!(
+        route
+            .credential_requirements
+            .iter()
+            .any(|requirement| requirement.required)
+    );
+}
+
+#[test]
+fn router_allows_tool_execution_with_explicit_option() {
+    let resolver = resolver_with_authority();
+    let router = SourceRouter::new(AdapterRegistry::target_defaults());
+    let mut request = SourceRequest::new("cli:repomix --help");
+    request
+        .options
+        .values
+        .insert("allow_tool_execution".to_string(), true.into());
+    let resolved = resolver.resolve(&request).expect("cli source resolves");
+
+    let route = router
+        .route(&request, resolved)
+        .expect("cli route resolves");
+
+    assert_eq!(route.adapter.name, "cli");
+    assert_eq!(route.safety_class, SafetyClass::ToolExecution);
 }
 
 #[test]
