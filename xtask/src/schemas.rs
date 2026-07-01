@@ -1,7 +1,7 @@
 mod adapters;
 mod artifact;
 mod families;
-mod registry;
+pub mod registry;
 mod schema_json;
 mod source_input;
 
