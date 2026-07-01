@@ -22,7 +22,7 @@ fn request() -> RetrievalRequest {
         collection: "axon-test".to_string(),
         limit: 3,
         source_id: Some(SourceId::new("src-docs")),
-        generation: Some(SourceGenerationId::new("gen-7")),
+        generation: Some(SourceGenerationId::new("7")),
         visibility: Visibility::Internal,
         namespace_filters: vec!["docs".to_string(), "guides".to_string()],
         byte_budget: 80,
@@ -38,7 +38,7 @@ fn retrieval_plan_preserves_source_id_generation_visibility_and_namespace_filter
 
     assert_eq!(plan.collection, "axon-test");
     assert_eq!(plan.source_id, Some(SourceId::new("src-docs")));
-    assert_eq!(plan.generation, Some(SourceGenerationId::new("gen-7")));
+    assert_eq!(plan.generation, Some(SourceGenerationId::new("7")));
     assert_eq!(plan.visibility, Visibility::Internal);
     assert_eq!(plan.namespace_filters, vec!["docs", "guides"]);
     assert_eq!(plan.limit, 3);
@@ -151,6 +151,39 @@ async fn retrieval_applies_all_namespace_filters() {
                     &[1.0, 0.0, 0.0, 0.0],
                     "Summary chunk body",
                     "summary",
+                ),
+                point_with_filters(
+                    "point-other-source",
+                    "chunk-other-source",
+                    &[1.0, 0.0, 0.0, 0.0],
+                    PointFilters {
+                        source_id: "src-other",
+                        generation: 7,
+                        visibility: "internal",
+                        namespace: "docs",
+                    },
+                ),
+                point_with_filters(
+                    "point-other-generation",
+                    "chunk-other-generation",
+                    &[1.0, 0.0, 0.0, 0.0],
+                    PointFilters {
+                        source_id: "src-docs",
+                        generation: 8,
+                        visibility: "internal",
+                        namespace: "docs",
+                    },
+                ),
+                point_with_filters(
+                    "point-other-visibility",
+                    "chunk-other-visibility",
+                    &[1.0, 0.0, 0.0, 0.0],
+                    PointFilters {
+                        source_id: "src-docs",
+                        generation: 7,
+                        visibility: "public",
+                        namespace: "docs",
+                    },
                 ),
             ],
         })
@@ -350,26 +383,60 @@ fn point_in_namespace(
     point_id: &str,
     chunk_id: &str,
     vector: &[f32],
-    text: &str,
+    _text: &str,
     namespace: &str,
 ) -> VectorPoint {
+    point_with_filters(
+        point_id,
+        chunk_id,
+        vector,
+        PointFilters {
+            source_id: "src-docs",
+            generation: 7,
+            visibility: "internal",
+            namespace,
+        },
+    )
+}
+
+struct PointFilters<'a> {
+    source_id: &'a str,
+    generation: i64,
+    visibility: &'a str,
+    namespace: &'a str,
+}
+
+fn point_with_filters(
+    point_id: &str,
+    chunk_id: &str,
+    vector: &[f32],
+    filters: PointFilters<'_>,
+) -> VectorPoint {
     let mut payload = MetadataMap::new();
-    payload.insert("source_id".to_string(), json!("src-docs"));
-    payload.insert("source_generation".to_string(), json!("gen-7"));
+    payload.insert("payload_contract_version".to_string(), json!("2026-07-01"));
+    payload.insert("collection".to_string(), json!("axon-test"));
+    payload.insert("source_family".to_string(), json!("web"));
+    payload.insert("source_id".to_string(), json!(filters.source_id));
+    payload.insert("source_generation".to_string(), json!(filters.generation));
+    payload.insert(
+        "committed_generation".to_string(),
+        json!(filters.generation),
+    );
     payload.insert("document_id".to_string(), json!(format!("doc-{chunk_id}")));
+    payload.insert("chunk_id".to_string(), json!(chunk_id));
     payload.insert(
         "chunk_locator".to_string(),
         json!({
             "canonical_uri": format!("https://example.com/{chunk_id}"),
+            "path": format!("/{chunk_id}"),
+            "heading_path": [],
+            "symbol": null,
             "range": {
                 "line_start": 1,
                 "line_end": 3,
             }
         }),
     );
-    payload.insert("visibility".to_string(), json!("internal"));
-    payload.insert("vector_namespace".to_string(), json!(namespace));
-    payload.insert("text".to_string(), json!(text));
     payload.insert(
         "source_range".to_string(),
         json!({
@@ -377,6 +444,20 @@ fn point_in_namespace(
             "line_end": 3,
         }),
     );
+    payload.insert("visibility".to_string(), json!(filters.visibility));
+    payload.insert("redaction_status".to_string(), json!("clean"));
+    payload.insert(
+        "job_id".to_string(),
+        json!("00000000-0000-0000-0000-000000000099"),
+    );
+    payload.insert("document_status".to_string(), json!("prepared"));
+    payload.insert("embedding_model".to_string(), json!("fake-embedding"));
+    payload.insert("embedding_dimensions".to_string(), json!(4));
+    payload.insert("embedding_provider".to_string(), json!("fake-embedding"));
+    payload.insert("embedding_profile".to_string(), json!("test"));
+    payload.insert("embedded_at".to_string(), json!("2026-07-01T00:00:00Z"));
+    payload.insert("vector_namespace".to_string(), json!(filters.namespace));
+    payload.insert("content_kind".to_string(), json!("markdown"));
 
     VectorPoint {
         point_id: VectorPointId::new(point_id),

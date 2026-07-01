@@ -17,3 +17,7 @@ pub const CRATE_NAME: &str = "axon-embedding";
 #[cfg(test)]
 #[path = "provider_tests.rs"]
 mod provider_tests;
+
+#[cfg(test)]
+#[path = "reservation_compat_tests.rs"]
+mod reservation_compat_tests;

@@ -53,7 +53,7 @@ fn forbidden_string_value(value: &str) -> bool {
         .any(|fragment| normalized.contains(fragment))
         || raw_dotenv_assignment(value)
         || contains_bare_secret_token(value)
-        || absolute_home_path(&normalized)
+        || absolute_local_path(value)
         || raw_html_blob(&normalized)
         || normalized.contains("adapter_response")
 }
@@ -111,8 +111,22 @@ fn is_token_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-')
 }
 
-fn absolute_home_path(normalized: &str) -> bool {
+fn absolute_local_path(value: &str) -> bool {
+    let normalized = value.to_ascii_lowercase();
+    let trimmed = value.trim();
     normalized.contains("/home/")
+        || normalized.contains("/users/")
+        || normalized.contains("/tmp/")
+        || normalized.contains("/mnt/")
+        || normalized.contains("/var/")
+        || normalized.contains("/etc/")
+        || normalized.contains("/root/")
+        || trimmed.starts_with('~')
+        || trimmed.starts_with("\\\\")
+        || (trimmed.len() >= 3
+            && trimmed.as_bytes()[0].is_ascii_alphabetic()
+            && trimmed.as_bytes()[1] == b':'
+            && matches!(trimmed.as_bytes()[2], b'\\' | b'/'))
 }
 
 fn raw_html_blob(normalized: &str) -> bool {

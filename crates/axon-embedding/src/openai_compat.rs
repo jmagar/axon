@@ -44,10 +44,11 @@ impl EmbeddingProvider for OpenAiCompatEmbeddingProvider {
     }
 
     async fn capabilities(&self) -> Result<ProviderCapability> {
+        let last_error = not_wired_error("openai-compat", "OpenAI-compatible");
         Ok(embedding_provider_capability(ProviderCapabilityConfig {
             provider_id: ProviderId::new("openai-compat"),
             implementation: "openai-compat".to_string(),
-            health: HealthStatus::Healthy,
+            health: HealthStatus::Unavailable,
             limits: ProviderLimits {
                 max_batch_size: Some(self.config.max_batch_inputs),
                 timeout_ms: Some(self.config.timeout.as_millis() as u64),
@@ -59,9 +60,9 @@ impl EmbeddingProvider for OpenAiCompatEmbeddingProvider {
                 "http_shell".to_string(),
             ],
             cooldown_until: None,
-            last_error: None,
+            last_error: Some(last_error),
             reservation_policy: embedding_reservation_policy(false, QueuePolicy::Fifo, 0),
-            reservation_state: embedding_reservation_state(1),
+            reservation_state: embedding_reservation_state(0),
             cost_class: ProviderCostClass::Unknown,
             degraded_modes: Vec::new(),
             fake_overrides_supported: false,

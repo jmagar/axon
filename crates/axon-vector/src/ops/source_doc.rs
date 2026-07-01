@@ -10,7 +10,7 @@ use axon_core::logging::log_warn;
 mod document_bridge;
 mod ledger;
 mod support;
-#[cfg(test)]
+#[allow(dead_code)]
 mod target_payload;
 
 use document_bridge::prepare_atomic_source;

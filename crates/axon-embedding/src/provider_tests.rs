@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use fake::{FakeEmbeddingMode, FakeEmbeddingProvider};
 use provider::EmbeddingProvider;
-use reservation::{ProviderReservationConfig, ProviderReservationManager, ProviderReservations};
+use reservation::{ProviderReservationConfig, ProviderReservationManager};
 use std::time::Duration;
 
 fn batch(priority: JobPriority) -> EmbeddingBatch {
@@ -170,6 +170,26 @@ async fn fake_embedding_provider_rejects_zero_dimensions() {
 }
 
 #[tokio::test]
+async fn fake_embedding_provider_rejects_raw_invalid_batches() {
+    let provider = FakeEmbeddingProvider::new("fake-embedding", 4);
+
+    let mut empty = batch(JobPriority::Background);
+    empty.items.clear();
+    let err = provider.embed(empty).await.unwrap_err();
+    assert_eq!(err.code.to_string(), "embedding.batch_empty");
+
+    let mut blank = batch(JobPriority::Background);
+    blank.items[0].text = "  \n".to_string();
+    let err = provider.embed(blank).await.unwrap_err();
+    assert_eq!(err.code.to_string(), "embedding.blank_text");
+
+    let mut duplicate = batch(JobPriority::Background);
+    duplicate.items.push(duplicate.items[0].clone());
+    let err = provider.embed(duplicate).await.unwrap_err();
+    assert_eq!(err.code.to_string(), "embedding.duplicate_chunk_id");
+}
+
+#[tokio::test]
 async fn fake_embedding_provider_call_records_do_not_expose_mutable_internals() {
     let provider = FakeEmbeddingProvider::new("fake-embedding", 4);
 
@@ -231,6 +251,12 @@ async fn tei_adapter_config_is_reflected_in_capabilities_without_network_calls()
     let embedding = capability.embedding.unwrap();
 
     assert_eq!(capability.provider_id, ProviderId::new("tei"));
+    assert_eq!(capability.health, HealthStatus::Unavailable);
+    assert_eq!(
+        capability.last_error.unwrap().code.to_string(),
+        "provider.not_wired"
+    );
+    assert_eq!(capability.reservation_state.available_units, 0);
     assert_eq!(capability.limits.timeout_ms, Some(30_000));
     assert_eq!(embedding.model_id, "qwen3-embedding");
     assert_eq!(embedding.dimensions, 1024);
@@ -262,6 +288,12 @@ async fn openai_compat_adapter_config_is_reflected_in_capabilities_without_netwo
     let embedding = capability.embedding.unwrap();
 
     assert_eq!(capability.provider_id, ProviderId::new("openai-compat"));
+    assert_eq!(capability.health, HealthStatus::Unavailable);
+    assert_eq!(
+        capability.last_error.unwrap().code.to_string(),
+        "provider.not_wired"
+    );
+    assert_eq!(capability.reservation_state.available_units, 0);
     assert_eq!(capability.limits.timeout_ms, Some(45_000));
     assert_eq!(embedding.model_id, "text-embedding-3-large");
     assert_eq!(embedding.dimensions, 3072);
@@ -445,44 +477,4 @@ async fn reservation_drop_releases_capacity_synchronously() {
         .reserve(JobPriority::Interactive, 1)
         .await
         .unwrap();
-}
-
-#[tokio::test]
-async fn compatibility_provider_reservations_keep_legacy_per_provider_api() {
-    let reservations = ProviderReservations::new(2, 1);
-
-    let held = reservations
-        .reserve(
-            ProviderId::new("fake-embedding"),
-            JobPriority::Interactive,
-            1,
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(held.provider_id(), &ProviderId::new("fake-embedding"));
-    assert_eq!(reservations.snapshot().await.active, 1);
-}
-
-#[tokio::test]
-async fn compatibility_provider_reservations_share_capacity_across_provider_ids() {
-    let reservations = ProviderReservations::new(2, 0);
-
-    let _first = reservations
-        .reserve(ProviderId::new("fake-a"), JobPriority::Interactive, 1)
-        .await
-        .unwrap();
-    let _second = reservations
-        .reserve(ProviderId::new("fake-b"), JobPriority::Interactive, 1)
-        .await
-        .unwrap();
-
-    let denied = reservations
-        .reserve(ProviderId::new("fake-c"), JobPriority::Interactive, 1)
-        .await
-        .unwrap_err();
-
-    assert_eq!(denied.code.to_string(), "provider.capacity_exhausted");
-    assert_eq!(denied.provider_id, Some("fake-c".to_string()));
-    assert_eq!(reservations.snapshot().await.available_units, 0);
 }

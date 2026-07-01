@@ -45,10 +45,11 @@ impl EmbeddingProvider for TeiEmbeddingProvider {
     }
 
     async fn capabilities(&self) -> Result<ProviderCapability> {
+        let last_error = not_wired_error("tei", "TEI");
         Ok(embedding_provider_capability(ProviderCapabilityConfig {
             provider_id: ProviderId::new("tei"),
             implementation: "tei".to_string(),
-            health: HealthStatus::Healthy,
+            health: HealthStatus::Unavailable,
             limits: ProviderLimits {
                 max_batch_size: Some(self.config.max_batch_inputs),
                 timeout_ms: Some(self.config.timeout.as_millis() as u64),
@@ -56,9 +57,9 @@ impl EmbeddingProvider for TeiEmbeddingProvider {
             },
             features: vec!["dense_embeddings".to_string(), "http_shell".to_string()],
             cooldown_until: None,
-            last_error: None,
+            last_error: Some(last_error),
             reservation_policy: embedding_reservation_policy(false, QueuePolicy::Fifo, 0),
-            reservation_state: embedding_reservation_state(1),
+            reservation_state: embedding_reservation_state(0),
             cost_class: ProviderCostClass::Internal,
             degraded_modes: Vec::new(),
             fake_overrides_supported: false,

@@ -7,9 +7,21 @@
   "committed_generation": 11,
   "document_id": "doc-session",
   "chunk_id": "chunk-session-1",
-  "chunk_locator": "session://codex/turn/4",
-  "source_range": { "turn": 4 },
-  "visibility": "private",
+  "chunk_locator": {
+    "canonical_uri": "session://codex/turn/4",
+    "path": "session://codex/turn/4",
+    "heading_path": [],
+    "symbol": null,
+    "range": {
+      "line_start": 1,
+      "line_end": 2
+    }
+  },
+  "source_range": {
+    "line_start": 1,
+    "line_end": 2
+  },
+  "visibility": "sensitive",
   "redaction_status": "redacted",
   "job_id": "00000000-0000-0000-0000-000000000003",
   "document_status": "ready",

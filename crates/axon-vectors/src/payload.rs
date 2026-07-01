@@ -40,6 +40,9 @@ pub enum VectorPayloadValidationError {
     InvalidVisibility {
         value: String,
     },
+    InvalidFieldShape {
+        field: String,
+    },
 }
 
 impl fmt::Display for VectorPayloadValidationError {
@@ -66,6 +69,9 @@ impl fmt::Display for VectorPayloadValidationError {
             }
             Self::InvalidVisibility { value } => {
                 write!(f, "invalid vector payload visibility `{value}`")
+            }
+            Self::InvalidFieldShape { field } => {
+                write!(f, "invalid vector payload field shape `{field}`")
             }
         }
     }
@@ -99,42 +105,7 @@ impl SourceSpecificFieldRegistry {
 }
 
 pub fn source_specific_field_registry() -> SourceSpecificFieldRegistry {
-    SourceSpecificFieldRegistry::new([
-        (
-            "code",
-            &[
-                "code_language",
-                "code_symbol_name",
-                "code_symbol_kind",
-                "code_file_type",
-            ][..],
-        ),
-        (
-            "web",
-            &["web_title", "web_domain", "web_status_code", "web_depth"][..],
-        ),
-        (
-            "package",
-            &["package_ecosystem", "package_name", "package_version"][..],
-        ),
-        (
-            "session",
-            &[
-                "session_id",
-                "session_turn_index",
-                "session_tool_name",
-                "session_skill_name",
-            ][..],
-        ),
-        (
-            "graph",
-            &["graph_node_ids", "graph_edge_ids", "graph_confidence"][..],
-        ),
-        (
-            "memory",
-            &["memory_id", "memory_importance", "memory_status"][..],
-        ),
-    ])
+    SourceSpecificFieldRegistry::new(VECTOR_SOURCE_FAMILY_FIELDS.iter().copied())
 }
 
 impl VectorPayload {
@@ -150,6 +121,7 @@ impl VectorPayload {
         validate_forbidden_fields(&metadata)?;
         validate_generations(&metadata)?;
         validate_visibility(&metadata)?;
+        validate_shapes(&metadata)?;
         validate_known_fields(&metadata, registry)?;
         Ok(Self { metadata })
     }
@@ -219,11 +191,90 @@ fn validate_visibility(metadata: &MetadataMap) -> Result<(), VectorPayloadValida
         .get("visibility")
         .and_then(|value| value.as_str())
         .unwrap_or_default();
-    if matches!(value, "public" | "internal" | "private") {
+    if VECTOR_VISIBILITY_VALUES.contains(&value) {
         Ok(())
     } else {
         Err(VectorPayloadValidationError::InvalidVisibility {
             value: value.to_string(),
+        })
+    }
+}
+
+fn validate_shapes(metadata: &MetadataMap) -> Result<(), VectorPayloadValidationError> {
+    for field in [
+        "payload_contract_version",
+        "collection",
+        "source_id",
+        "document_id",
+        "chunk_id",
+        "job_id",
+        "document_status",
+        "embedding_model",
+        "embedding_provider",
+        "embedding_profile",
+        "embedded_at",
+    ] {
+        require_non_empty_string(metadata, field)?;
+    }
+    require_positive_integer(metadata, "embedding_dimensions")?;
+
+    let locator = metadata
+        .get("chunk_locator")
+        .and_then(|value| value.as_object())
+        .ok_or_else(|| VectorPayloadValidationError::InvalidFieldShape {
+            field: "chunk_locator".to_string(),
+        })?;
+    let canonical_uri = locator
+        .get("canonical_uri")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .trim();
+    if canonical_uri.is_empty() {
+        return Err(VectorPayloadValidationError::InvalidFieldShape {
+            field: "chunk_locator.canonical_uri".to_string(),
+        });
+    }
+    if !metadata
+        .get("source_range")
+        .is_some_and(|value| value.as_object().is_some())
+    {
+        return Err(VectorPayloadValidationError::InvalidFieldShape {
+            field: "source_range".to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn require_non_empty_string(
+    metadata: &MetadataMap,
+    field: &str,
+) -> Result<(), VectorPayloadValidationError> {
+    if metadata
+        .get(field)
+        .and_then(|value| value.as_str())
+        .is_some_and(|value| !value.trim().is_empty())
+    {
+        Ok(())
+    } else {
+        Err(VectorPayloadValidationError::InvalidFieldShape {
+            field: field.to_string(),
+        })
+    }
+}
+
+fn require_positive_integer(
+    metadata: &MetadataMap,
+    field: &str,
+) -> Result<(), VectorPayloadValidationError> {
+    if metadata
+        .get(field)
+        .and_then(|value| value.as_i64())
+        .is_some_and(|value| value > 0)
+    {
+        Ok(())
+    } else {
+        Err(VectorPayloadValidationError::InvalidFieldShape {
+            field: field.to_string(),
         })
     }
 }
@@ -251,7 +302,7 @@ fn validate_known_fields(
     Ok(())
 }
 
-const REQUIRED_FIELDS: &[&str] = &[
+pub const VECTOR_REQUIRED_FIELDS: &[&str] = &[
     "payload_contract_version",
     "collection",
     "source_id",
@@ -272,7 +323,50 @@ const REQUIRED_FIELDS: &[&str] = &[
     "committed_generation",
 ];
 
-const SHARED_FIELDS: &[&str] = &[
+pub const VECTOR_VISIBILITY_VALUES: &[&str] =
+    &["public", "internal", "sensitive", "redacted", "derived"];
+
+pub const VECTOR_SOURCE_FAMILIES: &[&str] =
+    &["code", "web", "package", "session", "graph", "memory"];
+
+pub const VECTOR_SOURCE_FAMILY_FIELDS: &[(&str, &[&str])] = &[
+    (
+        "code",
+        &[
+            "code_language",
+            "code_symbol_name",
+            "code_symbol_kind",
+            "code_file_type",
+        ],
+    ),
+    (
+        "web",
+        &["web_title", "web_domain", "web_status_code", "web_depth"],
+    ),
+    (
+        "package",
+        &["package_ecosystem", "package_name", "package_version"],
+    ),
+    (
+        "session",
+        &[
+            "session_id",
+            "session_turn_index",
+            "session_tool_name",
+            "session_skill_name",
+        ],
+    ),
+    (
+        "graph",
+        &["graph_node_ids", "graph_edge_ids", "graph_confidence"],
+    ),
+    (
+        "memory",
+        &["memory_id", "memory_importance", "memory_status"],
+    ),
+];
+
+pub const VECTOR_SHARED_FIELDS: &[&str] = &[
     "payload_contract_version",
     "collection",
     "source_family",
@@ -284,8 +378,10 @@ const SHARED_FIELDS: &[&str] = &[
     "chunk_id",
     "chunk_key",
     "content_hash",
+    "content_kind",
     "chunk_locator",
     "source_range",
+    "vector_namespace",
     "visibility",
     "redaction_status",
     "job_id",
@@ -296,3 +392,6 @@ const SHARED_FIELDS: &[&str] = &[
     "embedding_profile",
     "embedded_at",
 ];
+
+const REQUIRED_FIELDS: &[&str] = VECTOR_REQUIRED_FIELDS;
+const SHARED_FIELDS: &[&str] = VECTOR_SHARED_FIELDS;

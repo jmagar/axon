@@ -93,6 +93,84 @@ fn point_ids_are_stable_and_include_embedding_model() {
 }
 
 #[test]
+fn point_ids_include_collection_namespace_document_chunk_model_and_generation() {
+    let document = test_prepared_document();
+    let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
+    let baseline = VectorPointBatchBuilder::new(
+        test_collection_spec(3),
+        document.clone(),
+        embeddings.clone(),
+    )
+    .build()
+    .unwrap()
+    .points
+    .remove(0)
+    .point_id;
+
+    let mut other_collection = test_collection_spec(3);
+    other_collection.collection = "other-collection".to_string();
+    assert_ne!(
+        baseline,
+        VectorPointBatchBuilder::new(other_collection, document.clone(), embeddings.clone())
+            .build()
+            .unwrap()
+            .points[0]
+            .point_id
+    );
+
+    let mut other_namespace = test_collection_spec(3);
+    other_namespace.dense.name = "dense-code".to_string();
+    assert_ne!(
+        baseline,
+        VectorPointBatchBuilder::new(other_namespace, document.clone(), embeddings.clone())
+            .build()
+            .unwrap()
+            .points[0]
+            .point_id
+    );
+
+    let mut other_document = document.clone();
+    other_document.document_id = DocumentId::new("doc-other");
+    assert_ne!(
+        baseline,
+        VectorPointBatchBuilder::new(test_collection_spec(3), other_document, embeddings.clone())
+            .build()
+            .unwrap()
+            .points[0]
+            .point_id
+    );
+
+    let mut other_chunk = document.clone();
+    other_chunk.chunks[0].chunk_id = ChunkId::new("chunk-other");
+    let other_chunk_embeddings = test_embedding_result_for(&other_chunk, "text-embedding-test", 3);
+    assert_ne!(
+        baseline,
+        VectorPointBatchBuilder::new(test_collection_spec(3), other_chunk, other_chunk_embeddings)
+            .build()
+            .unwrap()
+            .points[0]
+            .point_id
+    );
+
+    let mut other_generation = document;
+    other_generation.generation = SourceGenerationId::new("8");
+    let other_generation_embeddings =
+        test_embedding_result_for(&other_generation, "text-embedding-test", 3);
+    assert_ne!(
+        baseline,
+        VectorPointBatchBuilder::new(
+            test_collection_spec(3),
+            other_generation,
+            other_generation_embeddings
+        )
+        .build()
+        .unwrap()
+        .points[0]
+            .point_id
+    );
+}
+
+#[test]
 fn dimensions_mismatch_fails() {
     let document = test_prepared_document();
     let embeddings = test_embedding_result_with_vectors(

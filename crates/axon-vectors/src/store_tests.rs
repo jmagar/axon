@@ -115,14 +115,49 @@ fn payload(
             ("committed_generation".to_string(), json!(generation)),
             ("document_id".to_string(), json!(document_id)),
             ("chunk_id".to_string(), json!(chunk_id)),
+            (
+                "chunk_locator".to_string(),
+                json!({
+                    "canonical_uri": url,
+                    "path": url,
+                    "heading_path": [],
+                    "symbol": null,
+                    "range": source_range(),
+                }),
+            ),
+            ("source_range".to_string(), source_range()),
             ("vector_namespace".to_string(), json!(namespace)),
             ("visibility".to_string(), json!(visibility)),
+            ("redaction_status".to_string(), json!("clean")),
+            (
+                "job_id".to_string(),
+                json!("00000000-0000-0000-0000-000000000000"),
+            ),
+            ("document_status".to_string(), json!("prepared")),
+            ("embedding_model".to_string(), json!("fake-embedding")),
+            ("embedding_dimensions".to_string(), json!(3)),
+            ("embedding_provider".to_string(), json!("fake-vector")),
+            ("embedding_profile".to_string(), json!("test")),
+            ("embedded_at".to_string(), json!("2026-07-01T00:00:00Z")),
+            ("payload_contract_version".to_string(), json!("2026-07-01")),
+            ("collection".to_string(), json!("axon-test")),
+            ("source_family".to_string(), json!("web")),
             ("content_kind".to_string(), json!(content_kind)),
-            ("url".to_string(), json!(url)),
+            ("web_title".to_string(), json!("Fixture")),
+            ("web_domain".to_string(), json!("example.com")),
+            ("web_status_code".to_string(), json!(200)),
+            ("web_depth".to_string(), json!(1)),
         ]
         .into_iter()
         .collect(),
     )
+}
+
+fn source_range() -> serde_json::Value {
+    json!({
+        "line_start": 1,
+        "line_end": 2
+    })
 }
 
 fn search(filters: MetadataMap) -> VectorSearchRequest {
@@ -279,6 +314,20 @@ async fn fake_vector_store_rejects_upsert_without_matching_collection() {
     store.ensure_collection(spec).await.unwrap();
     let err = store.upsert(batch()).await.unwrap_err();
     assert_eq!(err.code.to_string(), "vector.dimension_mismatch");
+}
+
+#[tokio::test]
+async fn fake_vector_store_rejects_invalid_payloads_before_insert() {
+    let store = FakeVectorStore::new("fake-vector");
+    store.ensure_collection(collection()).await.unwrap();
+    let mut invalid = batch();
+    invalid.points[0].payload.remove("chunk_locator");
+
+    let err = store.upsert(invalid).await.unwrap_err();
+
+    assert_eq!(err.code.to_string(), "vector.invalid_payload");
+    let result = store.search(search(MetadataMap::new())).await.unwrap();
+    assert!(result.results.is_empty());
 }
 
 #[tokio::test]
@@ -440,27 +489,4 @@ async fn fake_vector_store_returns_deterministic_failure_modes_and_records_calls
     assert_eq!(err.code.to_string(), "provider.fatal");
     assert!(!err.retryable);
     assert_eq!(fatal.calls().await, vec!["search"]);
-}
-
-#[tokio::test]
-async fn fake_vector_store_can_simulate_partial_failure_and_slow_write() {
-    let partial = FakeVectorStore::new("fake-vector").with_mode(FakeVectorMode::PartialFailure);
-    partial.ensure_collection(collection()).await.unwrap();
-    let err = partial.upsert(batch()).await.unwrap_err();
-    assert_eq!(err.code.to_string(), "provider.partial_failure");
-    assert_eq!(
-        partial
-            .search(search(MetadataMap::new()))
-            .await
-            .unwrap()
-            .results
-            .len(),
-        1
-    );
-
-    let slow = FakeVectorStore::new("fake-vector").with_mode(FakeVectorMode::SlowWrite);
-    slow.ensure_collection(collection()).await.unwrap();
-    let written = slow.upsert(batch()).await.unwrap();
-    assert_eq!(written.points_written, 3);
-    assert_eq!(slow.calls().await, vec!["ensure_collection", "upsert"]);
 }

@@ -145,12 +145,7 @@ fn match_from_vector(item: &VectorSearchMatch) -> Result<RetrievalMatch, ApiErro
         source_id: citation.source_id.clone(),
         score: item.score,
         canonical_uri: citation.canonical_uri.clone(),
-        text: item
-            .payload
-            .get("text")
-            .and_then(|value| value.as_str())
-            .unwrap_or_default()
-            .to_string(),
+        text: item.text.clone().unwrap_or_default(),
         citation,
     })
 }

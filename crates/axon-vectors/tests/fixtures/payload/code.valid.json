@@ -7,8 +7,20 @@
   "committed_generation": 7,
   "document_id": "doc-code",
   "chunk_id": "chunk-code-1",
-  "chunk_locator": "src/lib.rs#L10-L20",
-  "source_range": { "start": 10, "end": 20 },
+  "chunk_locator": {
+    "canonical_uri": "src/lib.rs#L10-L20",
+    "path": "src/lib.rs#L10-L20",
+    "heading_path": [],
+    "symbol": null,
+    "range": {
+      "line_start": 1,
+      "line_end": 2
+    }
+  },
+  "source_range": {
+    "line_start": 1,
+    "line_end": 2
+  },
   "visibility": "internal",
   "redaction_status": "redacted",
   "job_id": "00000000-0000-0000-0000-000000000001",

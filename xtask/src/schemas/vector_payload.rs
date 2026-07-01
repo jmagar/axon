@@ -1,14 +1,17 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use anyhow::{Context, Result, bail};
-use regex::Regex;
+use anyhow::Result;
 use serde_json::{Map, Value, json};
 
 use super::super::artifact::SchemaArtifact;
 use super::super::rel;
 use super::super::schema_json::{json_string, schema_defs};
 use super::super::source_input::{SourceInput, source_inputs};
+use axon_vectors::payload::{
+    VECTOR_REQUIRED_FIELDS, VECTOR_SHARED_FIELDS, VECTOR_SOURCE_FAMILIES,
+    VECTOR_SOURCE_FAMILY_FIELDS, VECTOR_VISIBILITY_VALUES,
+};
 
 pub fn vector_payload_artifacts(root: &Path) -> Result<Vec<SchemaArtifact>> {
     let registry = VectorPayloadRegistry::load(root)?;
@@ -49,44 +52,25 @@ struct SourceFamilySpec {
 }
 
 impl VectorPayloadRegistry {
-    fn load(root: &Path) -> Result<Self> {
-        let source = std::fs::read_to_string(root.join("crates/axon-vectors/src/payload.rs"))
-            .context("failed to read crates/axon-vectors/src/payload.rs")?;
+    fn load(_root: &Path) -> Result<Self> {
         Ok(Self {
-            required_fields: parse_string_const_array(&source, "REQUIRED_FIELDS")?,
-            shared_fields: parse_string_const_array(&source, "SHARED_FIELDS")?,
-            source_families: parse_source_families(&source)?,
-        })
-    }
-}
-
-fn parse_string_const_array(source: &str, const_name: &str) -> Result<Vec<String>> {
-    let re = Regex::new(&format!(
-        r#"(?s)const\s+{const_name}:\s*&\[\s*&str\s*\]\s*=\s*&\[(.*?)\];"#
-    ))?;
-    let Some(captures) = re.captures(source) else {
-        bail!("missing {const_name} in crates/axon-vectors/src/payload.rs");
-    };
-    let field_re = Regex::new(r#""([^"]+)""#)?;
-    Ok(field_re
-        .captures_iter(&captures[1])
-        .map(|capture| capture[1].to_string())
-        .collect())
-}
-
-fn parse_source_families(source: &str) -> Result<Vec<SourceFamilySpec>> {
-    let family_re = Regex::new(r#"(?s)\(\s*"([^"]+)"\s*,\s*&\[(.*?)\]\[\.\.\]\s*,\s*\)"#)?;
-    let field_re = Regex::new(r#""([^"]+)""#)?;
-    Ok(family_re
-        .captures_iter(source)
-        .map(|capture| SourceFamilySpec {
-            name: capture[1].to_string(),
-            fields: field_re
-                .captures_iter(&capture[2])
-                .map(|field| field[1].to_string())
+            required_fields: VECTOR_REQUIRED_FIELDS
+                .iter()
+                .map(|field| (*field).to_string())
+                .collect(),
+            shared_fields: VECTOR_SHARED_FIELDS
+                .iter()
+                .map(|field| (*field).to_string())
+                .collect(),
+            source_families: VECTOR_SOURCE_FAMILY_FIELDS
+                .iter()
+                .map(|(name, fields)| SourceFamilySpec {
+                    name: (*name).to_string(),
+                    fields: fields.iter().map(|field| (*field).to_string()).collect(),
+                })
                 .collect(),
         })
-        .collect())
+    }
 }
 
 fn schema_bundle(inputs: &[SourceInput], registry: &VectorPayloadRegistry) -> Value {
@@ -155,7 +139,7 @@ fn shared_field_schema(field: &str) -> Value {
         "source_family" => {
             json!({
                 "type": "string",
-                "enum": ["code", "graph", "memory", "package", "session", "web"],
+                "enum": VECTOR_SOURCE_FAMILIES,
                 "x-qdrant-index": "keyword"
             })
         }
@@ -166,7 +150,7 @@ fn shared_field_schema(field: &str) -> Value {
         "source_range" => json!({ "$ref": "#/$defs/SourceRange" }),
         "visibility" => json!({
             "type": "string",
-            "enum": ["public", "internal", "private"],
+            "enum": VECTOR_VISIBILITY_VALUES,
             "x-qdrant-index": "keyword"
         }),
         "redaction_status" => json!({ "type": "string", "x-qdrant-index": "keyword" }),
@@ -258,7 +242,7 @@ fn payload_examples(registry: &VectorPayloadRegistry) -> Vec<Value> {
 
 fn required_example_value(field: &str, family: &str) -> Value {
     match field {
-        "payload_contract_version" => json!(1),
+        "payload_contract_version" => json!("2026-07-01"),
         "collection" => json!("axon"),
         "source_id" => json!(format!("src-{family}")),
         "source_generation" | "committed_generation" => json!(7),

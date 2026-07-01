@@ -10,6 +10,7 @@ use tokio::sync::Mutex;
 
 use crate::collection::{check_collection_drift, normalize_collection_spec};
 use crate::filter::{matches_delete_selector, matches_search_filters, selector_collection};
+use crate::payload::VectorPayloadBuilder;
 
 pub type Result<T> = std::result::Result<T, ApiError>;
 
@@ -195,6 +196,15 @@ impl VectorStore for FakeVectorStore {
                     ),
                 ));
             }
+            VectorPayloadBuilder::new(point.payload.clone())
+                .build()
+                .map_err(|err| {
+                    ApiError::new(
+                        "vector.invalid_payload",
+                        axon_error::ErrorStage::Upserting,
+                        err.to_string(),
+                    )
+                })?;
         }
         let collection = state.points.entry(batch.collection.clone()).or_default();
         let points_attempted = batch.points.len() as u64;

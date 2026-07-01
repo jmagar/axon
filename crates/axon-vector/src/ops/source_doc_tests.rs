@@ -238,8 +238,15 @@ async fn target_payload_bridge_does_not_copy_absolute_local_paths() {
     let serialized = serde_json::to_string(&payload).unwrap();
 
     assert!(!serialized.contains("/home/jmagar"));
+    assert!(payload["chunk_locator"].is_object());
     assert!(
-        payload["chunk_locator"]
+        payload["chunk_locator"]["canonical_uri"]
+            .as_str()
+            .unwrap()
+            .starts_with("file://")
+    );
+    assert!(
+        payload["chunk_locator"]["path"]
             .as_str()
             .unwrap()
             .starts_with("file://")

@@ -75,8 +75,8 @@ Vector payload docs are paired with the DTO definitions in `docs/reference/api/s
 | Path | SHA-256 |
 |---|---|
 | `crates/axon-api/src/source/vector.rs` | `sha256:a11af79bc5e6e71efef79e4ead255fe3f265e09ace9d0c26df269aeaa97b8645` |
-| `crates/axon-vectors/src/payload.rs` | `sha256:81bd9cd72a6ced1fd144153fefbc8b86bf3e1d85f54be3c9fc4c4b46ff14c95b` |
-| `crates/axon-vectors/src/point.rs` | `sha256:d87a196cd846726b504625c5025b16e80a7d4133e6273ea5a748a442e1273be9` |
+| `crates/axon-vectors/src/payload.rs` | `sha256:0b2a62d2a54f7089343d58d5b3aa91eea018390c864e643dc725778a5522da64` |
+| `crates/axon-vectors/src/point.rs` | `sha256:55aa05b226b190b1455d17d1535f77e0847ce881d12dc754bf4170f8ed7d99b0` |
 | `docs/pipeline-unification/schemas/vector-payload-schema.md` | `sha256:ef84517d66acc0e35fe0b432df3cee52fc07e6643006003eca0ec0c29a5cde7f` |
 | `docs/pipeline-unification/sources/chunking-contract.md` | `sha256:c05b4d85b293af0200445e89adf99db1db55d3cf2e7d003fa38844efb682d8d8` |
 | `docs/pipeline-unification/sources/metadata-payload.md` | `sha256:debc62b438633191ee4b56a7597828d49752b322d4dffc3ca786a08cc2d3a0f2` |

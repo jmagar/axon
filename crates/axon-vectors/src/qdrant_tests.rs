@@ -79,7 +79,7 @@ fn source_generation_and_document_filters_convert_to_qdrant_filters() {
         metadata: MetadataMap::new(),
     };
 
-    let filter = qdrant_filter(&request).unwrap();
+    let filter = qdrant_filter(&request).unwrap().unwrap();
     assert_eq!(filter.must.len(), 3);
     let keys = filter
         .must
@@ -117,7 +117,27 @@ fn source_generation_and_document_filters_convert_to_qdrant_filters() {
 
     request.filters.clear();
     request.generation = None;
-    assert!(qdrant_filter(&request).is_none());
+    assert!(qdrant_filter(&request).unwrap().is_none());
+}
+
+#[test]
+fn non_numeric_generation_filter_is_rejected_before_qdrant_conversion() {
+    let request = VectorSearchRequest {
+        collection: "axon-test".to_string(),
+        query: "docs".to_string(),
+        limit: 10,
+        dense_vector: None,
+        sparse_vector: None,
+        filters: MetadataMap::new(),
+        hybrid: None,
+        generation: Some(SourceGenerationId::new("gen-7")),
+        graph_refs: Vec::new(),
+        metadata: MetadataMap::new(),
+    };
+
+    let err = qdrant_filter(&request).unwrap_err();
+
+    assert_eq!(err.code.to_string(), "vector.invalid_generation");
 }
 
 #[test]
@@ -139,7 +159,7 @@ fn array_filter_values_convert_to_qdrant_should_groups() {
         metadata: MetadataMap::new(),
     };
 
-    let filter = qdrant_filter(&request).unwrap();
+    let filter = qdrant_filter(&request).unwrap().unwrap();
     assert_eq!(filter.must.len(), 1);
     let condition::ConditionOneOf::Filter(namespace_filter) =
         filter.must[0].condition_one_of.as_ref().unwrap()
@@ -193,7 +213,7 @@ fn empty_array_filter_values_convert_to_match_none_qdrant_filter() {
         metadata: MetadataMap::new(),
     };
 
-    let filter = qdrant_filter(&request).unwrap();
+    let filter = qdrant_filter(&request).unwrap().unwrap();
     assert_eq!(filter.must.len(), 1);
     let condition::ConditionOneOf::Field(field) = filter.must[0].condition_one_of.as_ref().unwrap()
     else {
@@ -250,14 +270,15 @@ fn vector_point_batch_converts_to_qdrant_points_without_dropping_payload_fields(
     };
     assert_eq!(dense.data, batch.points[0].vector);
     assert!(first.payload.contains_key("source_id"));
-    assert!(first.payload.contains_key("source_generation"));
-    assert!(first.payload.contains_key("chunk_locator"));
-    assert!(first.payload.contains_key("web_title"));
+    for key in batch.points[0].payload.keys() {
+        assert!(first.payload.contains_key(key), "{key} was dropped");
+    }
 }
 
 #[tokio::test]
 async fn qdrant_vector_store_live_calls_return_not_wired_errors() {
-    let store = QdrantVectorStore::new("http://127.0.0.1:6334", "target-qdrant");
+    let raw_url = "http://token:secret@127.0.0.1:6334/path?api_key=hunter2";
+    let store = QdrantVectorStore::new(raw_url, "target-qdrant");
 
     let err = store
         .ensure_collection(test_collection_spec(3))
@@ -265,9 +286,26 @@ async fn qdrant_vector_store_live_calls_return_not_wired_errors() {
         .unwrap_err();
     assert_eq!(err.code.to_string(), "vector.not_wired");
     assert_eq!(err.provider_id.as_deref(), Some("target-qdrant"));
+    assert_eq!(
+        err.details.get("endpoint").map(String::as_str),
+        Some("configured")
+    );
+    assert!(!err.details.values().any(|value| value.contains(raw_url)));
+    assert!(!err.details.values().any(|value| value.contains("hunter2")));
 
     let capability = store.capabilities().await.unwrap();
     assert_eq!(capability.provider_kind, ProviderKind::Vector);
     assert_eq!(capability.health, HealthStatus::Unavailable);
+    let last_error = capability.last_error.as_ref().unwrap();
+    assert_eq!(
+        last_error.details.get("endpoint").map(String::as_str),
+        Some("configured")
+    );
+    assert!(
+        !last_error
+            .details
+            .values()
+            .any(|value| value.contains(raw_url))
+    );
     assert!(capability.vector_store.unwrap().dense);
 }

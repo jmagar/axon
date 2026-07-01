@@ -2,8 +2,8 @@ use axon_api::source::MetadataMap;
 use serde_json::Value;
 
 use crate::payload::{
-    SourceSpecificFieldRegistry, VectorPayload, VectorPayloadBuilder, VectorPayloadValidationError,
-    source_specific_field_registry,
+    SourceSpecificFieldRegistry, VECTOR_VISIBILITY_VALUES, VectorPayload, VectorPayloadBuilder,
+    VectorPayloadValidationError, source_specific_field_registry,
 };
 
 fn fixture(name: &str) -> MetadataMap {
@@ -146,7 +146,7 @@ fn invalid_payload_fixtures_report_the_expected_validation_error() {
         (
             "forbidden_home_credential_path_value.invalid.json",
             VectorPayloadValidationError::ForbiddenValue {
-                field: "chunk_locator".to_string(),
+                field: "chunk_locator.canonical_uri".to_string(),
             },
         ),
         (
@@ -176,7 +176,7 @@ fn invalid_payload_fixtures_report_the_expected_validation_error() {
         (
             "forbidden_absolute_home_path_value.invalid.json",
             VectorPayloadValidationError::ForbiddenValue {
-                field: "chunk_locator".to_string(),
+                field: "chunk_locator.canonical_uri".to_string(),
             },
         ),
     ];
@@ -227,6 +227,72 @@ fn payload_builder_runs_the_same_validation_as_direct_payload_construction() {
         err,
         VectorPayloadValidationError::InvalidVisibility {
             value: "world".to_string()
+        }
+    );
+}
+
+#[test]
+fn visibility_values_match_the_canonical_vector_payload_enum() {
+    for visibility in VECTOR_VISIBILITY_VALUES {
+        let mut metadata = fixture("web.valid.json");
+        metadata.insert("visibility".to_string(), serde_json::json!(visibility));
+
+        VectorPayload::try_from_metadata(metadata)
+            .unwrap_or_else(|err| panic!("{visibility} should validate: {err:?}"));
+    }
+
+    let mut private = fixture("web.valid.json");
+    private.insert("visibility".to_string(), serde_json::json!("private"));
+    let err = VectorPayload::try_from_metadata(private)
+        .unwrap_err_or_else(|payload| panic!("private visibility validated: {payload:?}"));
+    assert_eq!(
+        err,
+        VectorPayloadValidationError::InvalidVisibility {
+            value: "private".to_string()
+        }
+    );
+}
+
+#[test]
+fn typed_payload_fields_reject_legacy_string_shapes() {
+    let mut metadata = fixture("web.valid.json");
+    metadata.insert(
+        "chunk_locator".to_string(),
+        serde_json::json!("https://example.com/docs#intro"),
+    );
+
+    let err = VectorPayload::try_from_metadata(metadata)
+        .unwrap_err_or_else(|payload| panic!("string chunk locator validated: {payload:?}"));
+
+    assert_eq!(
+        err,
+        VectorPayloadValidationError::InvalidFieldShape {
+            field: "chunk_locator".to_string()
+        }
+    );
+}
+
+#[test]
+fn typed_chunk_locator_values_reject_local_paths() {
+    let mut metadata = fixture("web.valid.json");
+    metadata.insert(
+        "chunk_locator".to_string(),
+        serde_json::json!({
+            "canonical_uri": "/tmp/axon/secret.rs",
+            "path": "/tmp/axon/secret.rs",
+            "heading_path": [],
+            "symbol": null,
+            "range": { "line_start": 1, "line_end": 2 }
+        }),
+    );
+
+    let err = VectorPayload::try_from_metadata(metadata)
+        .unwrap_err_or_else(|payload| panic!("local path locator validated: {payload:?}"));
+
+    assert_eq!(
+        err,
+        VectorPayloadValidationError::ForbiddenValue {
+            field: "chunk_locator.canonical_uri".to_string()
         }
     );
 }

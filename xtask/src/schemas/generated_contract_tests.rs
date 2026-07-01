@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use regex::Regex;
+use axon_vectors::payload::{VECTOR_REQUIRED_FIELDS, VECTOR_VISIBILITY_VALUES};
 
 use super::{fixture_repo, generate};
 
@@ -9,32 +9,10 @@ fn generated_json(root: &Path, path: &str) -> serde_json::Value {
     serde_json::from_str(&content).unwrap()
 }
 
-fn workspace_file(path: &str) -> String {
-    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    std::fs::read_to_string(repo_root.join(path))
-        .unwrap_or_else(|err| panic!("read workspace file {path}: {err}"))
-}
-
 fn payload_required_fields_from_source() -> Vec<String> {
-    parse_string_const_array(
-        &workspace_file("crates/axon-vectors/src/payload.rs"),
-        "REQUIRED_FIELDS",
-    )
-}
-
-fn parse_string_const_array(source: &str, const_name: &str) -> Vec<String> {
-    let re = Regex::new(&format!(
-        r#"(?s)const\s+{const_name}:\s*&\[\s*&str\s*\]\s*=\s*&\[(.*?)\];"#
-    ))
-    .unwrap();
-    let body = re
-        .captures(source)
-        .unwrap_or_else(|| panic!("missing {const_name} in source"))[1]
-        .to_string();
-    let field_re = Regex::new(r#""([^"]+)""#).unwrap();
-    field_re
-        .captures_iter(&body)
-        .map(|capture| capture[1].to_string())
+    VECTOR_REQUIRED_FIELDS
+        .iter()
+        .map(|field| (*field).to_string())
         .collect()
 }
 
@@ -182,6 +160,10 @@ fn generated_vector_payload_schema_includes_registered_required_fields() {
     let expected = payload_required_fields_from_source();
 
     assert_eq!(required, expected);
+    assert_eq!(
+        value["properties"]["visibility"]["enum"],
+        serde_json::json!(VECTOR_VISIBILITY_VALUES)
+    );
 }
 
 #[test]

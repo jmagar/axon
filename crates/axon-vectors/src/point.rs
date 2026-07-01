@@ -219,7 +219,7 @@ fn build_payload(
 ) -> Result<MetadataMap, VectorPointBatchBuildError> {
     let mut metadata = document.metadata.clone();
     metadata.0.extend(chunk.metadata.0.clone());
-    metadata.insert("payload_contract_version".to_string(), json!(1));
+    metadata.insert("payload_contract_version".to_string(), json!("2026-07-01"));
     metadata.insert("collection".to_string(), json!(collection.collection));
     metadata.insert("source_id".to_string(), json!(document.source_id.0));
     metadata.insert("source_generation".to_string(), json!(source_generation));
@@ -234,8 +234,8 @@ fn build_payload(
         "source_range".to_string(),
         source_range_json(&chunk.source_range),
     );
-    metadata.insert("visibility".to_string(), json!("internal"));
-    metadata.insert("redaction_status".to_string(), json!("clean"));
+    insert_default_string(&mut metadata, "visibility", "internal");
+    insert_default_string(&mut metadata, "redaction_status", "clean");
     metadata.insert(
         "job_id".to_string(),
         json!(embeddings.batch_id.0.to_string()),
@@ -246,12 +246,12 @@ fn build_payload(
         "embedding_dimensions".to_string(),
         json!(collection.dense.dimensions),
     );
-    metadata.insert("embedding_provider".to_string(), json!("unspecified"));
+    insert_default_string(&mut metadata, "embedding_provider", "unspecified");
     metadata.insert(
         "embedding_profile".to_string(),
         json!(document.chunking_profile),
     );
-    metadata.insert("embedded_at".to_string(), json!("1970-01-01T00:00:00Z"));
+    insert_default_string(&mut metadata, "embedded_at", "1970-01-01T00:00:00Z");
 
     VectorPayloadBuilder::new(metadata)
         .build()
@@ -260,6 +260,16 @@ fn build_payload(
             chunk_id: chunk.chunk_id.clone(),
             source,
         })
+}
+
+fn insert_default_string(metadata: &mut MetadataMap, field: &str, value: &str) {
+    if !metadata
+        .get(field)
+        .and_then(|existing| existing.as_str())
+        .is_some_and(|existing| !existing.trim().is_empty())
+    {
+        metadata.insert(field.to_string(), json!(value));
+    }
 }
 
 fn parse_generation(generation: &SourceGenerationId) -> Result<i64, VectorPointBatchBuildError> {

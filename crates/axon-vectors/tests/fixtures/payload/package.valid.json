@@ -7,8 +7,20 @@
   "committed_generation": 5,
   "document_id": "doc-package",
   "chunk_id": "chunk-package-1",
-  "chunk_locator": "package://crates/axon-vectors/0.1.0",
-  "source_range": { "section": "readme" },
+  "chunk_locator": {
+    "canonical_uri": "package://crates/axon-vectors/0.1.0",
+    "path": "package://crates/axon-vectors/0.1.0",
+    "heading_path": [],
+    "symbol": null,
+    "range": {
+      "line_start": 1,
+      "line_end": 2
+    }
+  },
+  "source_range": {
+    "line_start": 1,
+    "line_end": 2
+  },
   "visibility": "public",
   "redaction_status": "clean",
   "job_id": "00000000-0000-0000-0000-000000000005",

@@ -94,6 +94,10 @@ pub fn embedding_reservation_state(capacity: u32) -> ReservationStateSnapshot {
         available_units: capacity,
         oldest_queued_ms: None,
         priority_breakdown: Default::default(),
-        states: vec![ReservationState::Granted],
+        states: if capacity == 0 {
+            vec![ReservationState::Failed]
+        } else {
+            vec![ReservationState::Granted]
+        },
     }
 }

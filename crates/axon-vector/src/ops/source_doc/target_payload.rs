@@ -67,9 +67,18 @@ pub(in crate::ops) fn target_vector_payload_for_chunk(
         format!("legacy-vector:{}", target_safe_uri(&doc.url)).into(),
     );
     payload.insert("chunk_id".to_string(), chunk_id.into());
-    payload.insert("chunk_key".to_string(), chunk_key.into());
+    payload.insert("chunk_key".to_string(), chunk_key.clone().into());
     payload.insert("content_hash".to_string(), content_hash.into());
-    payload.insert("chunk_locator".to_string(), chunk_locator.into());
+    payload.insert(
+        "chunk_locator".to_string(),
+        serde_json::json!({
+            "canonical_uri": chunk_locator,
+            "path": chunk_key,
+            "heading_path": [],
+            "symbol": Value::Null,
+            "range": source_range.clone(),
+        }),
+    );
     payload.insert("source_range".to_string(), source_range);
     payload.insert("visibility".to_string(), "internal".into());
     payload.insert("redaction_status".to_string(), "clean".into());
@@ -79,7 +88,7 @@ pub(in crate::ops) fn target_vector_payload_for_chunk(
     );
     payload.insert("document_status".to_string(), "prepared".into());
     payload.insert("embedding_model".to_string(), "legacy-vector-bridge".into());
-    payload.insert("embedding_dimensions".to_string(), 0.into());
+    payload.insert("embedding_dimensions".to_string(), 1.into());
     payload.insert("embedding_provider".to_string(), "legacy-vector".into());
     payload.insert("embedding_profile".to_string(), doc.content_type.into());
     payload.insert("embedded_at".to_string(), "1970-01-01T00:00:00Z".into());

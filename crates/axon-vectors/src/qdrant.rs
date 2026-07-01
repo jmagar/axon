@@ -39,7 +39,7 @@ impl QdrantVectorStore {
             "target Qdrant vector store is not wired to the live runtime yet",
         )
         .with_provider_id(&self.provider_id.0)
-        .with_context("url", self.url.clone())
+        .with_context("endpoint", "configured")
     }
 }
 
@@ -182,7 +182,7 @@ pub fn qdrant_payload_index_requests(spec: &CollectionSpec) -> Vec<CreateFieldIn
         .collect()
 }
 
-pub fn qdrant_filter(request: &VectorSearchRequest) -> Option<Filter> {
+pub fn qdrant_filter(request: &VectorSearchRequest) -> Result<Option<Filter>> {
     let mut conditions = request
         .filters
         .iter()
@@ -193,15 +193,21 @@ pub fn qdrant_filter(request: &VectorSearchRequest) -> Option<Filter> {
             .0
             .parse::<i64>()
             .map(serde_json::Value::from)
-            .unwrap_or_else(|_| serde_json::Value::String(generation.0.clone()));
+            .map_err(|_| {
+                ApiError::new(
+                    "vector.invalid_generation",
+                    axon_error::ErrorStage::Retrieving,
+                    "source_generation filters must be numeric",
+                )
+            })?;
         conditions.push(field_condition("source_generation", &value));
     }
-    (!conditions.is_empty()).then_some(Filter {
+    Ok((!conditions.is_empty()).then_some(Filter {
         should: Vec::new(),
         must: conditions,
         must_not: Vec::new(),
         min_should: None,
-    })
+    }))
 }
 
 pub fn qdrant_upsert_points(spec: &CollectionSpec, batch: &VectorPointBatch) -> Vec<PointStruct> {

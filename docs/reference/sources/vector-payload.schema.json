@@ -321,6 +321,9 @@
       "type": "string",
       "x-qdrant-index": "keyword"
     },
+    "content_kind": {
+      "type": "string"
+    },
     "document_id": {
       "type": "string",
       "x-qdrant-index": "keyword"
@@ -413,11 +416,11 @@
     "source_family": {
       "enum": [
         "code",
-        "graph",
-        "memory",
+        "web",
         "package",
         "session",
-        "web"
+        "graph",
+        "memory"
       ],
       "type": "string",
       "x-qdrant-index": "keyword"
@@ -438,11 +441,16 @@
     "source_range": {
       "$ref": "#/$defs/SourceRange"
     },
+    "vector_namespace": {
+      "type": "string"
+    },
     "visibility": {
       "enum": [
         "public",
         "internal",
-        "private"
+        "sensitive",
+        "redacted",
+        "derived"
       ],
       "type": "string",
       "x-qdrant-index": "keyword"
@@ -540,7 +548,7 @@
         "embedding_profile": "default",
         "embedding_provider": "tei",
         "job_id": "job-code",
-        "payload_contract_version": 1,
+        "payload_contract_version": "2026-07-01",
         "redaction_status": "clean",
         "source_family": "code",
         "source_generation": 7,
@@ -606,7 +614,7 @@
         "embedding_profile": "default",
         "embedding_provider": "tei",
         "job_id": "job-web",
-        "payload_contract_version": 1,
+        "payload_contract_version": "2026-07-01",
         "redaction_status": "clean",
         "source_family": "web",
         "source_generation": 7,
@@ -679,7 +687,7 @@
         "package_ecosystem": "cargo",
         "package_name": "axon",
         "package_version": "6.2.1",
-        "payload_contract_version": 1,
+        "payload_contract_version": "2026-07-01",
         "redaction_status": "clean",
         "source_family": "package",
         "source_generation": 7,
@@ -745,7 +753,7 @@
         "embedding_profile": "default",
         "embedding_provider": "tei",
         "job_id": "job-session",
-        "payload_contract_version": 1,
+        "payload_contract_version": "2026-07-01",
         "redaction_status": "clean",
         "session_id": "session-session",
         "session_skill_name": "test-driven-development",
@@ -823,7 +831,7 @@
           "node-b"
         ],
         "job_id": "job-graph",
-        "payload_contract_version": 1,
+        "payload_contract_version": "2026-07-01",
         "redaction_status": "clean",
         "source_family": "graph",
         "source_generation": 7,
@@ -892,7 +900,7 @@
         "memory_id": "memory-memory",
         "memory_importance": 5,
         "memory_status": "active",
-        "payload_contract_version": 1,
+        "payload_contract_version": "2026-07-01",
         "redaction_status": "clean",
         "source_family": "memory",
         "source_generation": 7,
@@ -992,12 +1000,12 @@
         "path": "crates/axon-api/src/source/vector.rs"
       },
       {
-        "checksum": "sha256:81bd9cd72a6ced1fd144153fefbc8b86bf3e1d85f54be3c9fc4c4b46ff14c95b",
+        "checksum": "sha256:0b2a62d2a54f7089343d58d5b3aa91eea018390c864e643dc725778a5522da64",
         "kind": "rust_module",
         "path": "crates/axon-vectors/src/payload.rs"
       },
       {
-        "checksum": "sha256:d87a196cd846726b504625c5025b16e80a7d4133e6273ea5a748a442e1273be9",
+        "checksum": "sha256:55aa05b226b190b1455d17d1535f77e0847ce881d12dc754bf4170f8ed7d99b0",
         "kind": "rust_module",
         "path": "crates/axon-vectors/src/point.rs"
       },

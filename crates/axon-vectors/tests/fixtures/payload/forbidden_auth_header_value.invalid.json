@@ -7,8 +7,19 @@
   "committed_generation": 3,
   "document_id": "doc-web",
   "chunk_id": "chunk-web-1",
-  "chunk_locator": "https://example.com/docs#intro",
-  "source_range": { "selector": "#intro" },
+  "chunk_locator": {
+    "canonical_uri": "https://example.com/docs#intro",
+    "path": "https://example.com/docs#intro",
+    "heading_path": [],
+    "symbol": null,
+    "range": {
+      "line_start": 1,
+      "line_end": 2
+    }
+  },
+  "source_range": {
+    "selector": "#intro"
+  },
   "visibility": "public",
   "redaction_status": "clean",
   "job_id": "00000000-0000-0000-0000-000000000010",

@@ -7,9 +7,21 @@
   "committed_generation": 2,
   "document_id": "doc-memory",
   "chunk_id": "chunk-memory-1",
-  "chunk_locator": "memory://notes/42",
-  "source_range": { "paragraph": 1 },
-  "visibility": "private",
+  "chunk_locator": {
+    "canonical_uri": "memory://notes/42",
+    "path": "memory://notes/42",
+    "heading_path": [],
+    "symbol": null,
+    "range": {
+      "line_start": 1,
+      "line_end": 2
+    }
+  },
+  "source_range": {
+    "line_start": 1,
+    "line_end": 2
+  },
+  "visibility": "sensitive",
   "redaction_status": "clean",
   "job_id": "00000000-0000-0000-0000-000000000004",
   "document_status": "ready",
@@ -19,6 +31,6 @@
   "embedding_profile": "document",
   "embedded_at": "2026-07-01T12:00:00Z",
   "memory_id": "mem-42",
-  "memory_importance": 0.82,
+  "memory_importance": 5,
   "memory_status": "active"
 }

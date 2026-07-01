@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use axon_api::source::*;
 use tokio::sync::Mutex;
 
+use crate::batch::validate_batch;
 use crate::capability::{
     EmbeddingCapabilityConfig, ProviderCapabilityConfig, embedding_capability,
     embedding_provider_capability, embedding_reservation_policy, embedding_reservation_state,
@@ -94,6 +95,7 @@ impl FakeEmbeddingProvider {
 #[async_trait]
 impl EmbeddingProvider for FakeEmbeddingProvider {
     async fn embed(&self, batch: EmbeddingBatch) -> Result<EmbeddingResult> {
+        validate_batch(&batch)?;
         if self.dimensions == 0 {
             return Err(self.error(
                 "provider.invalid_dimensions",
