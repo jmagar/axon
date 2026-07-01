@@ -115,6 +115,7 @@ fn payload(
             ("committed_generation".to_string(), json!(generation)),
             ("document_id".to_string(), json!(document_id)),
             ("chunk_id".to_string(), json!(chunk_id)),
+            ("chunk_text".to_string(), json!(format!("{chunk_id} body"))),
             (
                 "chunk_locator".to_string(),
                 json!({
@@ -206,7 +207,11 @@ async fn fake_vector_store_reports_capabilities_and_records_calls() {
 
     let capability = store.capabilities().await.unwrap();
     assert_eq!(capability.provider_kind, ProviderKind::Vector);
-    assert!(capability.vector_store.unwrap().dense);
+    let vector_store = capability.vector_store.unwrap();
+    assert!(vector_store.dense);
+    assert!(vector_store.sparse);
+    assert!(vector_store.hybrid);
+    assert!(vector_store.delete_by_filter);
 
     store.ensure_collection(collection()).await.unwrap();
     store.upsert(batch()).await.unwrap();

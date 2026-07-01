@@ -7,7 +7,6 @@
   "committed_generation": 3,
   "document_id": "doc-web",
   "chunk_id": "chunk-web-1",
-  "chunk_text": "fixture chunk text",
   "chunk_locator": {
     "canonical_uri": "https://example.com/docs#intro",
     "path": "https://example.com/docs#intro",
@@ -19,18 +18,19 @@
     }
   },
   "source_range": {
-    "selector": "#intro"
+    "line_start": 1,
+    "line_end": 2
   },
   "visibility": "public",
   "redaction_status": "clean",
-  "job_id": "00000000-0000-0000-0000-000000000014",
+  "job_id": "00000000-0000-0000-0000-000000000002",
   "document_status": "ready",
   "embedding_model": "text-embedding-test",
   "embedding_dimensions": 1024,
   "embedding_provider": "tei",
   "embedding_profile": "document",
   "embedded_at": "2026-07-01T12:00:00Z",
-  "web_title": "<!doctype html><html><body>raw page</body></html>",
+  "web_title": "Example Docs",
   "web_domain": "example.com",
   "web_status_code": 200,
   "web_depth": 1

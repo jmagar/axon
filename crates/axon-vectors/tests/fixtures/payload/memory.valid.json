@@ -7,6 +7,7 @@
   "committed_generation": 2,
   "document_id": "doc-memory",
   "chunk_id": "chunk-memory-1",
+  "chunk_text": "fixture chunk text",
   "chunk_locator": {
     "canonical_uri": "memory://notes/42",
     "path": "memory://notes/42",

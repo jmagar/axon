@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use axon_vectors::payload::{VECTOR_REQUIRED_FIELDS, VECTOR_VISIBILITY_VALUES};
+use jsonschema::validator_for;
 
 use super::{fixture_repo, generate};
 
@@ -164,6 +165,47 @@ fn generated_vector_payload_schema_includes_registered_required_fields() {
         value["properties"]["visibility"]["enum"],
         serde_json::json!(VECTOR_VISIBILITY_VALUES)
     );
+    assert_eq!(
+        value["properties"]["payload_contract_version"]["type"],
+        serde_json::json!("string")
+    );
+    assert!(value["$defs"]["SourceRange"].get("anyOf").is_some());
+    assert!(
+        value["allOf"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|conditional| conditional["if"]["properties"]["source_family"]["const"] == "web")
+    );
+}
+
+#[test]
+fn generated_vector_payload_schema_rejects_runtime_invalid_family_and_range_shapes() {
+    let tmp = fixture_repo();
+    generate(tmp.path()).unwrap();
+
+    let value = generated_json(
+        tmp.path(),
+        "docs/reference/sources/vector-payload.schema.json",
+    );
+    let validator = validator_for(&value).unwrap();
+    let mut payload = value["x-axon"]["examples"][0].clone();
+    payload["payload_contract_version"] = serde_json::json!(20260701);
+    assert!(validator.validate(&payload).is_err());
+
+    let mut payload = value["x-axon"]["examples"][0].clone();
+    payload["source_range"] = serde_json::json!({});
+    assert!(validator.validate(&payload).is_err());
+
+    let mut payload = value["x-axon"]["examples"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|example| example["source_family"] == "web")
+        .unwrap()
+        .clone();
+    payload["code_language"] = serde_json::json!("rust");
+    assert!(validator.validate(&payload).is_err());
 }
 
 #[test]

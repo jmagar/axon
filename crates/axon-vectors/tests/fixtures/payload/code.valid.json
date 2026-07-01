@@ -7,6 +7,7 @@
   "committed_generation": 7,
   "document_id": "doc-code",
   "chunk_id": "chunk-code-1",
+  "chunk_text": "fixture chunk text",
   "chunk_locator": {
     "canonical_uri": "src/lib.rs#L10-L20",
     "path": "src/lib.rs#L10-L20",

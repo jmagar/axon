@@ -77,12 +77,12 @@ fn schema_bundle(inputs: &[SourceInput], registry: &VectorPayloadRegistry) -> Va
         "required": registry.required_fields,
         "properties": schema_properties(registry),
         "additionalProperties": false,
-        "$defs": schema_defs(
+        "allOf": source_family_conditionals(registry),
+        "$defs": vector_payload_schema_defs(
             &[
                 ("ChunkLocator", schemars::schema_for!(axon_api::source::ChunkLocator).into()),
                 ("SourceRange", schemars::schema_for!(axon_api::source::SourceRange).into()),
             ],
-            None,
         ),
         "x-axon": {
             "contract_version": "2026-06-30",
@@ -96,6 +96,91 @@ fn schema_bundle(inputs: &[SourceInput], registry: &VectorPayloadRegistry) -> Va
             "api_dtos": VECTOR_API_DTOS
         }
     })
+}
+
+fn source_family_conditionals(registry: &VectorPayloadRegistry) -> Value {
+    Value::Array(
+        registry
+            .source_families
+            .iter()
+            .map(|(family, allowed_fields)| {
+                let forbidden = registry
+                    .source_families
+                    .iter()
+                    .flat_map(|(_, fields)| fields.iter().copied())
+                    .filter(|field| !allowed_fields.contains(field))
+                    .map(|field| json!({ "required": [field] }))
+                    .collect::<Vec<_>>();
+                json!({
+                    "if": {
+                        "properties": { "source_family": { "const": family } },
+                        "required": ["source_family"]
+                    },
+                    "then": {
+                        "not": { "anyOf": forbidden }
+                    }
+                })
+            })
+            .collect(),
+    )
+}
+
+fn vector_payload_schema_defs(schemas: &[(&str, Value)]) -> Value {
+    let mut defs = schema_defs(schemas, None);
+    require_source_range_anchor(&mut defs, "SourceRange");
+    require_source_range_anchor(&mut defs, "ChunkLocator_SourceRange");
+    defs
+}
+
+fn require_source_range_anchor(defs: &mut Value, name: &str) {
+    let Some(schema) = defs.get_mut(name).and_then(Value::as_object_mut) else {
+        return;
+    };
+    schema.insert(
+        "anyOf".to_string(),
+        Value::Array(
+            source_range_anchor_fields()
+                .map(|(field, schema)| {
+                    json!({
+                        "required": [field],
+                        "properties": {
+                            field: schema
+                        }
+                    })
+                })
+                .collect(),
+        ),
+    );
+}
+
+fn source_range_anchor_fields() -> impl Iterator<Item = (&'static str, Value)> {
+    [
+        ("line_start", non_null_schema()),
+        ("line_end", non_null_schema()),
+        ("byte_start", non_null_schema()),
+        ("byte_end", non_null_schema()),
+        ("char_start", non_null_schema()),
+        ("char_end", non_null_schema()),
+        ("time_start_ms", non_null_schema()),
+        ("time_end_ms", non_null_schema()),
+        ("dom_selector", non_empty_string_schema()),
+        ("json_pointer", non_empty_string_schema()),
+        ("yaml_path", non_empty_string_schema()),
+        ("xml_xpath", non_empty_string_schema()),
+        ("csv_row", non_null_schema()),
+        ("session_turn_id", non_empty_string_schema()),
+        ("turn_start", non_empty_string_schema()),
+        ("turn_end", non_empty_string_schema()),
+    ]
+    .into_iter()
+}
+
+fn non_null_schema() -> Value {
+    json!({ "not": { "type": "null" } })
+}
+
+fn non_empty_string_schema() -> Value {
+    json!({ "type": "string", "minLength": 1 })
 }
 
 fn schema_properties(registry: &VectorPayloadRegistry) -> Value {
@@ -113,9 +198,7 @@ fn schema_properties(registry: &VectorPayloadRegistry) -> Value {
 
 fn shared_field_schema(field: &str) -> Value {
     match field {
-        "payload_contract_version" => {
-            json!({ "type": ["string", "integer"], "x-qdrant-index": "keyword" })
-        }
+        "payload_contract_version" => json!({ "type": "string", "x-qdrant-index": "keyword" }),
         "collection" | "source_id" | "source_item_key" | "document_id" | "chunk_id"
         | "chunk_key" | "content_hash" | "job_id" | "document_status" | "embedding_model"
         | "embedding_provider" | "embedding_profile" => {

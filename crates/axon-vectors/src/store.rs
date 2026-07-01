@@ -272,16 +272,34 @@ impl VectorStore for FakeVectorStore {
         if let Some(err) = self.mode_error_for(axon_error::ErrorStage::Retrieving) {
             return Err(err);
         }
-        let query_vector = request.dense_vector.clone().unwrap_or_default();
-        let mut results = state
+        let query_vector = request.dense_vector.as_deref().unwrap_or_default();
+        let query_sparse = request.sparse_vector.as_ref();
+        let limit = request.limit as usize;
+        let mut scored = state
             .points
             .get(&request.collection)
             .into_iter()
             .flat_map(|points| points.values())
             .filter(|point| matches_search_filters(point, &request))
-            .map(|point| VectorSearchMatch {
+            .map(|point| {
+                (
+                    point,
+                    dot_score(query_vector, &point.vector)
+                        + sparse_dot_score(query_sparse, point.sparse_vector.as_ref()),
+                )
+            })
+            .collect::<Vec<_>>();
+        scored.sort_by(|(left_point, left_score), (right_point, right_score)| {
+            right_score
+                .total_cmp(left_score)
+                .then(left_point.point_id.0.cmp(&right_point.point_id.0))
+        });
+        scored.truncate(limit);
+        let results = scored
+            .into_iter()
+            .map(|(point, score)| VectorSearchMatch {
                 point_id: point.point_id.clone(),
-                score: dot_score(&query_vector, &point.vector),
+                score,
                 chunk_id: Some(point.chunk_id.clone()),
                 document_id: payload_string(&point.payload, "document_id").map(DocumentId::new),
                 source_id: payload_string(&point.payload, "source_id").map(SourceId::new),
@@ -289,13 +307,7 @@ impl VectorStore for FakeVectorStore {
                 text: payload_string(&point.payload, "chunk_text"),
                 payload: point.payload.clone(),
             })
-            .collect::<Vec<_>>();
-        results.sort_by(|a, b| {
-            b.score
-                .total_cmp(&a.score)
-                .then(a.point_id.0.cmp(&b.point_id.0))
-        });
-        results.truncate(request.limit as usize);
+            .collect();
         Ok(VectorSearchResult {
             collection: request.collection,
             results,
@@ -346,8 +358,8 @@ impl VectorStore for FakeVectorStore {
             llm: None,
             vector_store: Some(VectorStoreCapability {
                 dense: true,
-                sparse: false,
-                hybrid: false,
+                sparse: true,
+                hybrid: true,
                 payload_filters: true,
                 payload_indexes: self
                     .state
@@ -363,7 +375,7 @@ impl VectorStore for FakeVectorStore {
                             .collect()
                     })
                     .unwrap_or_default(),
-                delete_by_filter: false,
+                delete_by_filter: true,
                 collection_aliases: false,
                 consistency: VectorConsistency::Strong,
             }),
@@ -394,6 +406,26 @@ fn dot_score(left: &[f32], right: &[f32]) -> f64 {
     left.iter()
         .zip(right.iter())
         .map(|(left, right)| f64::from(*left) * f64::from(*right))
+        .sum()
+}
+
+fn sparse_dot_score(query: Option<&SparseVector>, point: Option<&SparseVector>) -> f64 {
+    let (Some(query), Some(point)) = (query, point) else {
+        return 0.0;
+    };
+    query
+        .indices
+        .iter()
+        .zip(query.values.iter())
+        .map(|(query_index, query_value)| {
+            point
+                .indices
+                .iter()
+                .position(|point_index| point_index == query_index)
+                .and_then(|position| point.values.get(position))
+                .map(|point_value| f64::from(*query_value) * f64::from(*point_value))
+                .unwrap_or(0.0)
+        })
         .sum()
 }
 

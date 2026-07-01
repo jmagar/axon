@@ -1,4 +1,4 @@
-use axon_api::source::{MetadataMap, VectorPointBatch, VectorSearchRequest};
+use axon_api::source::{ChunkId, MetadataMap, SparseVector, VectorPointBatch, VectorSearchRequest};
 use serde_json::json;
 
 use crate::point::VectorPointBatchBuilder;
@@ -65,4 +65,43 @@ async fn fake_vector_store_invalid_payload_errors_do_not_echo_raw_discriminators
 
     assert_eq!(err.code.to_string(), "vector.invalid_payload");
     assert!(!err.message.contains(raw_visibility));
+}
+
+#[tokio::test]
+async fn fake_vector_store_scores_sparse_vectors_and_applies_limit_before_payload_clone() {
+    let store = FakeVectorStore::new("fake-vector");
+    store
+        .ensure_collection(test_collection_spec(3))
+        .await
+        .unwrap();
+    let mut batch = batch();
+    batch.points[0].sparse_vector = Some(SparseVector {
+        chunk_id: batch.points[0].chunk_id.clone(),
+        indices: vec![1, 7],
+        values: vec![0.9, 0.1],
+    });
+    batch.points[1].sparse_vector = Some(SparseVector {
+        chunk_id: batch.points[1].chunk_id.clone(),
+        indices: vec![1, 7],
+        values: vec![0.1, 0.9],
+    });
+    store.upsert(batch).await.unwrap();
+
+    let mut request = search();
+    request.limit = 1;
+    request.dense_vector = Some(vec![0.0, 0.0, 0.0]);
+    request.sparse_vector = Some(SparseVector {
+        chunk_id: ChunkId::new("query"),
+        indices: vec![7],
+        values: vec![1.0],
+    });
+    request.hybrid = Some(true);
+
+    let result = store.search(request).await.unwrap();
+
+    assert_eq!(result.results.len(), 1);
+    assert_eq!(
+        result.results[0].chunk_id,
+        Some(ChunkId::new("chunk-web-2"))
+    );
 }

@@ -67,6 +67,7 @@ pub(in crate::ops) fn target_vector_payload_for_chunk(
         format!("legacy-vector:{}", target_safe_uri(&doc.url)).into(),
     );
     payload.insert("chunk_id".to_string(), chunk_id.into());
+    payload.insert("chunk_text".to_string(), chunk.clone().into());
     payload.insert("chunk_key".to_string(), chunk_key.clone().into());
     payload.insert("content_hash".to_string(), content_hash.into());
     payload.insert(

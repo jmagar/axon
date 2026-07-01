@@ -84,6 +84,12 @@ fn invalid_payload_fixtures_report_the_expected_validation_error() {
             },
         ),
         (
+            "missing_chunk_text.invalid.json",
+            VectorPayloadValidationError::MissingRequiredField {
+                field: "chunk_text".to_string(),
+            },
+        ),
+        (
             "missing_source_generation.invalid.json",
             VectorPayloadValidationError::MissingRequiredField {
                 field: "source_generation".to_string(),
@@ -278,6 +284,27 @@ fn source_generation_fields_must_be_non_negative_integers() {
         err,
         VectorPayloadValidationError::InvalidGeneration {
             field: "source_generation".to_string()
+        }
+    );
+}
+
+#[test]
+fn source_ranges_must_preserve_start_end_order() {
+    let mut metadata = fixture("web.valid.json");
+    metadata.insert(
+        "source_range".to_string(),
+        serde_json::json!({
+            "line_start": 10,
+            "line_end": 2
+        }),
+    );
+
+    let err = VectorPayload::try_from_metadata(metadata).unwrap_err();
+
+    assert_eq!(
+        err,
+        VectorPayloadValidationError::InvalidFieldShape {
+            field: "source_range.line_start_gt_end".to_string()
         }
     );
 }

@@ -7,6 +7,7 @@
   "committed_generation": 5,
   "document_id": "doc-package",
   "chunk_id": "chunk-package-1",
+  "chunk_text": "fixture chunk text",
   "chunk_locator": {
     "canonical_uri": "package://crates/axon-vectors/0.1.0",
     "path": "package://crates/axon-vectors/0.1.0",

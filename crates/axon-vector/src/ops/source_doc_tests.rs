@@ -206,6 +206,11 @@ async fn file_source_target_payload_bridge_validates_without_legacy_unknown_fiel
             .as_str()
             .is_some_and(|value| value.starts_with("chunk_"))
     );
+    assert!(
+        payload["chunk_text"]
+            .as_str()
+            .is_some_and(|value| value.contains("bridge_payload"))
+    );
     assert!(payload["chunk_key"].as_str().is_some());
     assert!(
         payload["content_hash"]

@@ -275,12 +275,40 @@ fn validate_source_range_shape(
         || non_empty(range.turn_start.as_deref())
         || non_empty(range.turn_end.as_deref())
     {
+        validate_source_range_order(range, field)?;
         Ok(())
     } else {
         Err(VectorPayloadValidationError::InvalidFieldShape {
             field: field.to_string(),
         })
     }
+}
+
+fn validate_source_range_order(
+    range: &SourceRange,
+    field: &str,
+) -> Result<(), VectorPayloadValidationError> {
+    for suffix in [
+        range_starts_after(range.line_start, range.line_end, "line"),
+        range_starts_after(range.byte_start, range.byte_end, "byte"),
+        range_starts_after(range.char_start, range.char_end, "char"),
+        range_starts_after(range.time_start_ms, range.time_end_ms, "time_ms"),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        return Err(VectorPayloadValidationError::InvalidFieldShape {
+            field: format!("{field}.{suffix}"),
+        });
+    }
+    Ok(())
+}
+
+fn range_starts_after<T: Ord>(start: Option<T>, end: Option<T>, prefix: &str) -> Option<String> {
+    start
+        .zip(end)
+        .is_some_and(|(start, end)| start > end)
+        .then(|| format!("{prefix}_start_gt_end"))
 }
 
 fn non_empty(value: Option<&str>) -> bool {
@@ -351,6 +379,7 @@ pub const VECTOR_REQUIRED_FIELDS: &[&str] = &[
     "source_generation",
     "document_id",
     "chunk_id",
+    "chunk_text",
     "chunk_locator",
     "source_range",
     "visibility",

@@ -29,4 +29,5 @@ default = ["openapi-drift"]
 openapi-drift = ["dep:axon-web"]
 
 [dev-dependencies]
+jsonschema = "0.37"
 tempfile = "3"

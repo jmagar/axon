@@ -7,6 +7,7 @@
   "committed_generation": 3,
   "document_id": "doc-web",
   "chunk_id": "chunk-web-1",
+  "chunk_text": "fixture chunk text",
   "chunk_locator": {
     "canonical_uri": "/home/jmagar/workspace/axon/src/lib.rs",
     "path": "/home/jmagar/workspace/axon/src/lib.rs",
