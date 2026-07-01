@@ -411,6 +411,7 @@ dependencies = [
  "axon-api",
  "axon-error",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
