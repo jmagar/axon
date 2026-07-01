@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 
 use async_trait::async_trait;
 use axon_api::source::*;
@@ -46,16 +47,78 @@ pub trait HealthProbe: Send + Sync {
     async fn capabilities(&self) -> Result<ProviderCapability>;
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct FakeCoreBoundaries {
     artifacts: Arc<Mutex<BTreeMap<ArtifactId, ArtifactReadResult>>>,
     artifact_counter: Arc<Mutex<u64>>,
     cache: Arc<Mutex<BTreeMap<DocumentCacheKey, CachedDocument>>>,
+    health: HealthStatus,
+    mode: FakeCoreMode,
+    calls: Arc<StdMutex<Vec<&'static str>>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FakeCoreMode {
+    Success,
+    Timeout,
+    RateLimited,
+    Fatal,
 }
 
 impl FakeCoreBoundaries {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_health(mut self, health: HealthStatus) -> Self {
+        self.health = health;
+        self
+    }
+
+    pub fn with_mode(mut self, mode: FakeCoreMode) -> Self {
+        self.mode = mode;
+        self
+    }
+
+    pub async fn calls(&self) -> Vec<&'static str> {
+        self.calls
+            .lock()
+            .expect("core fake call log mutex poisoned")
+            .clone()
+    }
+
+    fn record(&self, call: &'static str) {
+        self.calls
+            .lock()
+            .expect("core fake call log mutex poisoned")
+            .push(call);
+    }
+
+    fn mode_error(&self, stage: ErrorStage) -> Option<ApiError> {
+        let (code, message) = match self.mode {
+            FakeCoreMode::Success => return None,
+            FakeCoreMode::Timeout => ("provider.timeout", "core provider timed out"),
+            FakeCoreMode::RateLimited => ("provider.rate_limited", "core provider rate limited"),
+            FakeCoreMode::Fatal => ("provider.fatal", "core provider failed fatally"),
+        };
+        let mut error = ApiError::new(code, stage, message);
+        if self.mode == FakeCoreMode::Fatal {
+            error.retryable = false;
+        }
+        Some(error)
+    }
+}
+
+impl Default for FakeCoreBoundaries {
+    fn default() -> Self {
+        Self {
+            artifacts: Arc::new(Mutex::new(BTreeMap::new())),
+            artifact_counter: Arc::new(Mutex::new(0)),
+            cache: Arc::new(Mutex::new(BTreeMap::new())),
+            health: HealthStatus::Healthy,
+            mode: FakeCoreMode::Success,
+            calls: Arc::new(StdMutex::new(Vec::new())),
+        }
     }
 }
 
@@ -187,6 +250,10 @@ impl DocumentCache for FakeCoreBoundaries {
 #[async_trait]
 impl RateLimiter for FakeCoreBoundaries {
     async fn acquire(&self, request: RateLimitRequest) -> Result<RateLimitPermit> {
+        self.record("rate_limit.acquire");
+        if let Some(err) = self.mode_error(ErrorStage::Planning) {
+            return Err(err.with_provider_id(request.provider_id.0.clone()));
+        }
         Ok(RateLimitPermit {
             provider_id: request.provider_id,
             units: request.units,
@@ -194,15 +261,19 @@ impl RateLimiter for FakeCoreBoundaries {
     }
 
     async fn capabilities(&self) -> Result<ProviderCapability> {
-        Ok(provider_capability(ProviderKind::RateLimiter))
+        Ok(provider_capability(ProviderKind::RateLimiter, self.health))
     }
 }
 
 #[async_trait]
 impl HealthProbe for FakeCoreBoundaries {
     async fn probe(&self, _request: HealthProbeRequest) -> Result<HealthReport> {
+        self.record("health.probe");
+        if let Some(err) = self.mode_error(ErrorStage::Observing) {
+            return Err(err);
+        }
         Ok(HealthReport {
-            status: HealthStatus::Healthy,
+            status: self.health,
             generated_at: Timestamp("2026-07-01T00:00:00Z".to_string()),
             providers: Vec::new(),
             warnings: Vec::new(),
@@ -211,7 +282,7 @@ impl HealthProbe for FakeCoreBoundaries {
     }
 
     async fn capabilities(&self) -> Result<ProviderCapability> {
-        Ok(provider_capability(ProviderKind::HealthProbe))
+        Ok(provider_capability(ProviderKind::HealthProbe, self.health))
     }
 }
 
@@ -226,13 +297,13 @@ fn capability(name: &str, owner_crate: &str) -> CapabilityBase {
     }
 }
 
-fn provider_capability(provider_kind: ProviderKind) -> ProviderCapability {
+fn provider_capability(provider_kind: ProviderKind, health: HealthStatus) -> ProviderCapability {
     ProviderCapability {
         provider_id: ProviderId::new(format!("fake_{provider_kind:?}").to_lowercase()),
         provider_kind,
         implementation: "fake".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
-        health: HealthStatus::Healthy,
+        health,
         limits: ProviderLimits::default(),
         features: vec!["fake".to_string()],
         cooldown_until: None,
