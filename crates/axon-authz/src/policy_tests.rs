@@ -66,3 +66,35 @@ async fn fake_credential_provider_resolves_redacted_material() {
     let capability = CredentialProvider::capabilities(&provider).await.unwrap();
     assert_eq!(capability.provider_kind, ProviderKind::Credential);
 }
+
+#[tokio::test]
+async fn fake_credential_provider_reports_health_override() {
+    let provider = FakeCredentialProvider::new().with_health(HealthStatus::Cooling);
+
+    let capability = CredentialProvider::capabilities(&provider).await.unwrap();
+
+    assert_eq!(capability.health, HealthStatus::Cooling);
+}
+
+#[tokio::test]
+async fn fake_credential_provider_returns_failure_modes_and_records_calls() {
+    let provider = FakeCredentialProvider::new().with_mode(FakeCredentialMode::Fatal);
+
+    let err = provider
+        .resolve(CredentialRequest {
+            credential_kind: CredentialKind::ApiKey,
+            secret_ref: SecretRef {
+                provider: "env".to_string(),
+                key: "TOKEN".to_string(),
+                label: "token".to_string(),
+            },
+            scope: Some("github".to_string()),
+            metadata: MetadataMap::new(),
+        })
+        .await
+        .unwrap_err();
+
+    assert_eq!(err.code.to_string(), "provider.fatal");
+    assert!(!err.retryable);
+    assert_eq!(provider.calls().await, vec!["credential.resolve"]);
+}

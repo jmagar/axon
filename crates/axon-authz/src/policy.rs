@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use axon_api::source::*;
+use std::sync::{Arc, Mutex};
 
 use crate::scope_satisfies;
 #[cfg(test)]
@@ -32,18 +33,85 @@ impl ScopeSecurityPolicy {
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct FakeCredentialProvider;
+#[derive(Debug, Clone)]
+pub struct FakeCredentialProvider {
+    health: HealthStatus,
+    mode: FakeCredentialMode,
+    calls: Arc<Mutex<Vec<&'static str>>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FakeCredentialMode {
+    Success,
+    Timeout,
+    RateLimited,
+    Fatal,
+}
 
 impl FakeCredentialProvider {
     pub fn new() -> Self {
-        Self
+        Self::default()
+    }
+
+    pub fn with_health(mut self, health: HealthStatus) -> Self {
+        self.health = health;
+        self
+    }
+
+    pub fn with_mode(mut self, mode: FakeCredentialMode) -> Self {
+        self.mode = mode;
+        self
+    }
+
+    pub async fn calls(&self) -> Vec<&'static str> {
+        self.calls
+            .lock()
+            .expect("credential fake call log mutex poisoned")
+            .clone()
+    }
+
+    fn record(&self, call: &'static str) {
+        self.calls
+            .lock()
+            .expect("credential fake call log mutex poisoned")
+            .push(call);
+    }
+
+    fn mode_error(&self) -> Option<ApiError> {
+        let (code, message) = match self.mode {
+            FakeCredentialMode::Success => return None,
+            FakeCredentialMode::Timeout => ("provider.timeout", "credential provider timed out"),
+            FakeCredentialMode::RateLimited => {
+                ("provider.rate_limited", "credential provider rate limited")
+            }
+            FakeCredentialMode::Fatal => ("provider.fatal", "credential provider failed fatally"),
+        };
+        let mut error = ApiError::new(code, axon_error::ErrorStage::Authorizing, message)
+            .with_provider_id("fake-credential-provider");
+        if self.mode == FakeCredentialMode::Fatal {
+            error.retryable = false;
+        }
+        Some(error)
+    }
+}
+
+impl Default for FakeCredentialProvider {
+    fn default() -> Self {
+        Self {
+            health: HealthStatus::Healthy,
+            mode: FakeCredentialMode::Success,
+            calls: Arc::new(Mutex::new(Vec::new())),
+        }
     }
 }
 
 #[async_trait]
 impl CredentialProvider for FakeCredentialProvider {
     async fn resolve(&self, request: CredentialRequest) -> Result<CredentialMaterial> {
+        self.record("credential.resolve");
+        if let Some(err) = self.mode_error() {
+            return Err(err);
+        }
         Ok(CredentialMaterial {
             secret_ref: request.secret_ref,
             credential_kind: request.credential_kind,
@@ -60,6 +128,7 @@ impl CredentialProvider for FakeCredentialProvider {
             "fake",
             vec!["resolve".to_string()],
             true,
+            self.health,
         ))
     }
 }
@@ -88,6 +157,7 @@ impl SecurityPolicy for ScopeSecurityPolicy {
             "scope",
             vec!["source_authorization".to_string()],
             false,
+            HealthStatus::Healthy,
         ))
     }
 }
@@ -98,13 +168,14 @@ fn provider_capability(
     implementation: &str,
     features: Vec<String>,
     fake_overrides_supported: bool,
+    health: HealthStatus,
 ) -> ProviderCapability {
     ProviderCapability {
         provider_id: ProviderId::new(provider_id),
         provider_kind,
         implementation: implementation.to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
-        health: HealthStatus::Healthy,
+        health,
         limits: ProviderLimits::default(),
         features,
         cooldown_until: None,
