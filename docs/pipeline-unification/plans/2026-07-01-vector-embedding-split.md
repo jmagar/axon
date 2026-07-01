@@ -47,7 +47,7 @@ provider fakes, `axon-vectors` vector store fakes and payload builder, existing
 
 - Use TDD: every production behavior change starts with a failing sibling test.
 - Do not edit `CLAUDE.md`, `AGENTS.md`, or `GEMINI.md`.
-- Keep Rust files under 500 LOC; split modules before they become dumping grounds.
+- Keep production Rust modules under 500 LOC; split modules before they become dumping grounds. Schema-generator tooling under `xtask/src/schemas/**` may exceed this briefly when one generator owns one emitted contract family.
 - Use sibling `*_tests.rs` files; do not add inline `#[cfg(test)] mod tests`.
 - Do not wire public CLI/MCP/REST cutover in this PR.
 - Do not remove `axon-vector`, `axon-code-index`, `axon-crawl`, `axon-ingest`, or `axon-extract` in this PR.

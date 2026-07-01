@@ -2,8 +2,8 @@ use axon_api::source::MetadataMap;
 use serde_json::Value;
 
 use crate::payload::{
-    SourceSpecificFieldRegistry, VECTOR_REQUIRED_FIELDS, VECTOR_VISIBILITY_VALUES, VectorPayload,
-    VectorPayloadValidationError, source_specific_field_registry,
+    VECTOR_REDACTION_STATUS_VALUES, VECTOR_REQUIRED_FIELDS, VECTOR_VISIBILITY_VALUES,
+    VectorPayload, VectorPayloadValidationError, source_family_allows_field,
 };
 
 fn fixture(name: &str) -> MetadataMap {
@@ -46,32 +46,30 @@ fn valid_payload_fixtures_pass_required_field_and_registry_validation() {
 
 #[test]
 fn initial_source_specific_registry_allows_only_declared_family_fields() {
-    let registry = source_specific_field_registry();
+    assert!(source_family_allows_field("code", "code_language"));
+    assert!(source_family_allows_field("code", "code_symbol_name"));
+    assert!(source_family_allows_field("code", "code_symbol_kind"));
+    assert!(source_family_allows_field("code", "code_file_type"));
+    assert!(source_family_allows_field("web", "web_title"));
+    assert!(source_family_allows_field("web", "web_domain"));
+    assert!(source_family_allows_field("web", "web_status_code"));
+    assert!(source_family_allows_field("web", "web_depth"));
+    assert!(source_family_allows_field("package", "package_ecosystem"));
+    assert!(source_family_allows_field("package", "package_name"));
+    assert!(source_family_allows_field("package", "package_version"));
+    assert!(source_family_allows_field("session", "session_id"));
+    assert!(source_family_allows_field("session", "session_turn_index"));
+    assert!(source_family_allows_field("session", "session_tool_name"));
+    assert!(source_family_allows_field("session", "session_skill_name"));
+    assert!(source_family_allows_field("graph", "graph_node_ids"));
+    assert!(source_family_allows_field("graph", "graph_edge_ids"));
+    assert!(source_family_allows_field("graph", "graph_confidence"));
+    assert!(source_family_allows_field("memory", "memory_id"));
+    assert!(source_family_allows_field("memory", "memory_importance"));
+    assert!(source_family_allows_field("memory", "memory_status"));
 
-    assert!(registry.allows("code", "code_language"));
-    assert!(registry.allows("code", "code_symbol_name"));
-    assert!(registry.allows("code", "code_symbol_kind"));
-    assert!(registry.allows("code", "code_file_type"));
-    assert!(registry.allows("web", "web_title"));
-    assert!(registry.allows("web", "web_domain"));
-    assert!(registry.allows("web", "web_status_code"));
-    assert!(registry.allows("web", "web_depth"));
-    assert!(registry.allows("package", "package_ecosystem"));
-    assert!(registry.allows("package", "package_name"));
-    assert!(registry.allows("package", "package_version"));
-    assert!(registry.allows("session", "session_id"));
-    assert!(registry.allows("session", "session_turn_index"));
-    assert!(registry.allows("session", "session_tool_name"));
-    assert!(registry.allows("session", "session_skill_name"));
-    assert!(registry.allows("graph", "graph_node_ids"));
-    assert!(registry.allows("graph", "graph_edge_ids"));
-    assert!(registry.allows("graph", "graph_confidence"));
-    assert!(registry.allows("memory", "memory_id"));
-    assert!(registry.allows("memory", "memory_importance"));
-    assert!(registry.allows("memory", "memory_status"));
-
-    assert!(!registry.allows("web", "web_canonical_url"));
-    assert!(!registry.allows("code", "web_title"));
+    assert!(!source_family_allows_field("web", "web_canonical_url"));
+    assert!(!source_family_allows_field("code", "web_title"));
 }
 
 #[test]
@@ -174,18 +172,6 @@ fn invalid_payload_fixtures_report_the_expected_validation_error() {
 }
 
 #[test]
-fn custom_registry_entries_can_admit_new_source_specific_fields() {
-    let registry =
-        SourceSpecificFieldRegistry::new([("web", &["web_title", "web_canonical_url"][..])]);
-    let payload = VectorPayload::try_from_metadata_with_registry(
-        fixture("unknown_source_field.invalid.json"),
-        &registry,
-    );
-
-    assert!(payload.is_ok());
-}
-
-#[test]
 fn visibility_values_match_the_canonical_vector_payload_enum() {
     for visibility in VECTOR_VISIBILITY_VALUES {
         let mut metadata = fixture("web.valid.json");
@@ -199,6 +185,57 @@ fn visibility_values_match_the_canonical_vector_payload_enum() {
     private.insert("visibility".to_string(), serde_json::json!("private"));
     let err = VectorPayload::try_from_metadata(private).unwrap_err();
     assert_eq!(err, VectorPayloadValidationError::InvalidVisibility);
+}
+
+#[test]
+fn redaction_status_values_match_the_canonical_vector_payload_enum() {
+    for status in VECTOR_REDACTION_STATUS_VALUES {
+        let mut metadata = fixture("web.valid.json");
+        metadata.insert("redaction_status".to_string(), serde_json::json!(status));
+
+        VectorPayload::try_from_metadata(metadata)
+            .unwrap_or_else(|err| panic!("{status} should validate: {err:?}"));
+    }
+
+    let mut unknown = fixture("web.valid.json");
+    unknown.insert("redaction_status".to_string(), serde_json::json!("unknown"));
+    let err = VectorPayload::try_from_metadata(unknown).unwrap_err();
+    assert_eq!(err, VectorPayloadValidationError::InvalidRedactionStatus);
+}
+
+#[test]
+fn http_urls_with_local_path_words_do_not_trigger_local_path_redaction() {
+    let mut metadata = fixture("web.valid.json");
+    metadata.insert(
+        "chunk_locator".to_string(),
+        serde_json::json!({
+            "canonical_uri": "https://docs.example.com/users/home/setup",
+            "path": "/users/home/setup",
+            "heading_path": ["Users", "Home"],
+            "symbol": null,
+            "range": { "line_start": 1, "line_end": 2 }
+        }),
+    );
+
+    VectorPayload::try_from_metadata(metadata).unwrap();
+}
+
+#[test]
+fn chunk_text_rejects_secret_like_body_values() {
+    let mut metadata = fixture("web.valid.json");
+    metadata.insert(
+        "chunk_text".to_string(),
+        serde_json::json!("Use Authorization: Bearer secret-token in this request"),
+    );
+
+    let err = VectorPayload::try_from_metadata(metadata).unwrap_err();
+
+    assert_eq!(
+        err,
+        VectorPayloadValidationError::ForbiddenValue {
+            field: "chunk_text".to_string()
+        }
+    );
 }
 
 #[test]

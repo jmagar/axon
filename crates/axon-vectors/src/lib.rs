@@ -15,6 +15,7 @@ pub mod query;
 mod sparse;
 pub mod store;
 pub mod testing;
+mod validation;
 
 pub const CRATE_NAME: &str = "axon-vectors";
 

@@ -10,8 +10,8 @@ use super::super::schema_json::{json_string, schema_defs};
 use super::super::source_input::{SourceInput, source_inputs};
 use axon_vectors::payload::{
     BARE_SECRET_TOKEN_PREFIXES, FORBIDDEN_FIELD_FRAGMENTS, FORBIDDEN_VALUE_FRAGMENTS,
-    VECTOR_REQUIRED_FIELDS, VECTOR_SHARED_FIELDS, VECTOR_SOURCE_FAMILIES,
-    VECTOR_SOURCE_FAMILY_FIELDS, VECTOR_VISIBILITY_VALUES,
+    VECTOR_REDACTION_STATUS_VALUES, VECTOR_REQUIRED_FIELDS, VECTOR_SHARED_FIELDS,
+    VECTOR_SOURCE_FAMILIES, VECTOR_SOURCE_FAMILY_FIELDS, VECTOR_VISIBILITY_VALUES,
 };
 
 const VECTOR_API_DTOS: &[&str] = &[
@@ -32,7 +32,7 @@ const VECTOR_API_DTOS: &[&str] = &[
 ];
 
 pub fn vector_payload_artifacts(root: &Path) -> Result<Vec<SchemaArtifact>> {
-    let registry = VectorPayloadRegistry::load(root)?;
+    let registry = StaticVectorPayloadContract::from_constants();
     let inputs = source_inputs(
         root,
         &[
@@ -58,23 +58,23 @@ pub fn vector_payload_artifacts(root: &Path) -> Result<Vec<SchemaArtifact>> {
     ])
 }
 
-struct VectorPayloadRegistry {
+struct StaticVectorPayloadContract {
     required_fields: &'static [&'static str],
     shared_fields: &'static [&'static str],
     source_families: &'static [(&'static str, &'static [&'static str])],
 }
 
-impl VectorPayloadRegistry {
-    fn load(_root: &Path) -> Result<Self> {
-        Ok(Self {
+impl StaticVectorPayloadContract {
+    fn from_constants() -> Self {
+        Self {
             required_fields: VECTOR_REQUIRED_FIELDS,
             shared_fields: VECTOR_SHARED_FIELDS,
             source_families: VECTOR_SOURCE_FAMILY_FIELDS,
-        })
+        }
     }
 }
 
-fn schema_bundle(inputs: &[SourceInput], registry: &VectorPayloadRegistry) -> Value {
+fn schema_bundle(inputs: &[SourceInput], registry: &StaticVectorPayloadContract) -> Value {
     json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "https://axon.local/schemas/sources/vector-payload.schema.json",
@@ -106,7 +106,7 @@ fn schema_bundle(inputs: &[SourceInput], registry: &VectorPayloadRegistry) -> Va
     })
 }
 
-fn source_family_conditionals(registry: &VectorPayloadRegistry) -> Value {
+fn source_family_conditionals(registry: &StaticVectorPayloadContract) -> Value {
     Value::Array(
         registry
             .source_families
@@ -183,7 +183,7 @@ fn non_empty_string_schema() -> Value {
     json!({ "type": "string", "minLength": 1 })
 }
 
-fn schema_properties(registry: &VectorPayloadRegistry) -> Value {
+fn schema_properties(registry: &StaticVectorPayloadContract) -> Value {
     let mut properties = Map::new();
     for field in registry.shared_fields {
         properties.insert((*field).to_string(), shared_field_schema(field));
@@ -231,7 +231,12 @@ fn shared_field_schema(field: &str) -> Value {
             "x-qdrant-index": "keyword"
         }),
         "redaction_status" => {
-            json!({ "type": "string", "minLength": 1, "x-qdrant-index": "keyword" })
+            json!({
+                "type": "string",
+                "minLength": 1,
+                "enum": VECTOR_REDACTION_STATUS_VALUES,
+                "x-qdrant-index": "keyword"
+            })
         }
         "embedded_at" => json!({ "type": "string", "minLength": 1, "format": "date-time" }),
         _ => json!({ "type": "string", "minLength": 1 }),
@@ -241,7 +246,20 @@ fn shared_field_schema(field: &str) -> Value {
 fn redaction_guardrails() -> Value {
     json!({
         "scope": "metadata_and_locator_fields",
-        "body_text_fields_excluded": ["chunk_text"],
+        "body_text_field_policy": {
+            "field": "chunk_text",
+            "allowed_without_metadata_rejection": [
+                "ordinary document HTML snippets",
+                "ordinary local path examples"
+            ],
+            "still_rejected": [
+                "auth headers",
+                "cookies",
+                "dotenv-style assignments",
+                "bare secret tokens",
+                "adapter response markers"
+            ]
+        },
         "forbidden_field_fragments": FORBIDDEN_FIELD_FRAGMENTS,
         "forbidden_value_fragments": FORBIDDEN_VALUE_FRAGMENTS,
         "bare_secret_token_prefixes": BARE_SECRET_TOKEN_PREFIXES,
@@ -267,7 +285,7 @@ fn source_specific_field_schema(field: &str) -> Value {
     }
 }
 
-fn registry_families_json(registry: &VectorPayloadRegistry) -> Vec<Value> {
+fn registry_families_json(registry: &StaticVectorPayloadContract) -> Vec<Value> {
     registry
         .source_families
         .iter()
@@ -302,7 +320,7 @@ fn index_plan() -> Value {
     })
 }
 
-fn payload_examples(registry: &VectorPayloadRegistry) -> Vec<Value> {
+fn payload_examples(registry: &StaticVectorPayloadContract) -> Vec<Value> {
     registry
         .source_families
         .iter()
@@ -412,7 +430,7 @@ fn source_range_example() -> Value {
     })
 }
 
-fn markdown(inputs: &[SourceInput], registry: &VectorPayloadRegistry) -> String {
+fn markdown(inputs: &[SourceInput], registry: &StaticVectorPayloadContract) -> String {
     let mut out = String::from(
         "# vector-payload Schema Reference\n\nGenerated by `cargo xtask schemas vector-payload`.\n\n",
     );
@@ -425,7 +443,7 @@ fn markdown(inputs: &[SourceInput], registry: &VectorPayloadRegistry) -> String 
     }
 
     out.push_str("\n## Redaction Guardrails\n\n");
-    out.push_str("Payload validation applies metadata and locator guardrails before vector writes. `chunk_text` is treated as document body text and is not rejected merely for containing examples such as local paths, dotenv assignments, or HTML snippets.\n\n");
+    out.push_str("Payload validation applies metadata and locator guardrails before vector writes. `chunk_text` is treated as document body text and is not rejected merely for containing examples such as local paths or HTML snippets, but auth headers, cookies, dotenv-style assignments, bare secret tokens, and adapter response markers still fail closed.\n\n");
     out.push_str("| Category | Values |\n|---|---|\n");
     out.push_str(&format!(
         "| Forbidden field fragments | `{}` |\n",

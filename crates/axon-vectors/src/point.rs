@@ -1,6 +1,6 @@
 //! Vector point batch construction.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fmt;
 
 use axon_api::source::*;
@@ -163,11 +163,15 @@ impl VectorPointBatchBuilder {
 
         validate_embedding_provenance(&self.document, &self.embeddings)?;
         let chunks = chunks_by_id(&self.document)?;
-        let vectors = vectors_by_chunk_id(&self.embeddings, &chunks, expected_dimensions)?;
+        let batch_id = self.embeddings.batch_id.clone();
+        let provider_id = self.embeddings.provider_id.clone();
+        let model = self.embeddings.model.clone();
+        let mut vectors =
+            vectors_by_chunk_id(self.embeddings.vectors, &chunks, expected_dimensions)?;
         let mut points = Vec::with_capacity(self.document.chunks.len());
 
         for chunk in &self.document.chunks {
-            let vector = vectors.get(&chunk.chunk_id).ok_or_else(|| {
+            let vector = vectors.remove(&chunk.chunk_id).ok_or_else(|| {
                 VectorPointBatchBuildError::MissingEmbeddingChunk {
                     chunk_id: chunk.chunk_id.clone(),
                 }
@@ -176,7 +180,9 @@ impl VectorPointBatchBuilder {
                 &self.collection,
                 &self.document,
                 chunk,
-                &self.embeddings,
+                &batch_id,
+                &provider_id,
+                &model,
                 &self.context,
             )?;
             points.push(VectorPoint {
@@ -188,17 +194,17 @@ impl VectorPointBatchBuilder {
                     &self.document.generation,
                 ),
                 chunk_id: chunk.chunk_id.clone(),
-                vector: vector.values.clone(),
+                vector: vector.values,
                 sparse_vector: None,
                 payload,
             });
         }
 
         Ok(VectorPointBatch {
-            batch_id: self.embeddings.batch_id,
+            batch_id,
             collection: self.collection.collection,
             points,
-            model: self.embeddings.model,
+            model,
             dimensions: expected_dimensions,
             sparse_vectors: None,
             payload_indexes: self.collection.payload_indexes,
@@ -210,16 +216,14 @@ fn validate_embedding_provenance(
     document: &PreparedDocument,
     embeddings: &EmbeddingResult,
 ) -> Result<(), VectorPointBatchBuildError> {
-    let Some(batch_id) = document
+    if let Some(batch_id) = document
         .metadata
         .get("embedding_batch_id")
         .and_then(|value| value.as_str())
         .map(parse_embedding_batch_id)
         .transpose()?
-    else {
-        return Ok(());
-    };
-    if embeddings.batch_id != batch_id {
+        && embeddings.batch_id != batch_id
+    {
         return Err(VectorPointBatchBuildError::EmbeddingBatchMismatch {
             expected: batch_id,
             actual: embeddings.batch_id.clone(),
@@ -274,12 +278,12 @@ fn chunks_by_id(
 }
 
 fn vectors_by_chunk_id(
-    embeddings: &EmbeddingResult,
+    vectors: Vec<EmbeddingVector>,
     chunks: &BTreeSet<ChunkId>,
     expected_dimensions: u32,
-) -> Result<BTreeMap<ChunkId, EmbeddingVector>, VectorPointBatchBuildError> {
-    let mut vectors = BTreeMap::new();
-    for vector in &embeddings.vectors {
+) -> Result<std::collections::BTreeMap<ChunkId, EmbeddingVector>, VectorPointBatchBuildError> {
+    let mut indexed = std::collections::BTreeMap::new();
+    for vector in vectors {
         if vector.values.len() as u32 != expected_dimensions {
             return Err(VectorPointBatchBuildError::DimensionMismatch {
                 chunk_id: Some(vector.chunk_id.clone()),
@@ -292,23 +296,21 @@ fn vectors_by_chunk_id(
                 chunk_id: vector.chunk_id.clone(),
             });
         }
-        if vectors
-            .insert(vector.chunk_id.clone(), vector.clone())
-            .is_some()
-        {
-            return Err(VectorPointBatchBuildError::DuplicateChunkId {
-                chunk_id: vector.chunk_id.clone(),
-            });
+        let chunk_id = vector.chunk_id.clone();
+        if indexed.insert(chunk_id.clone(), vector).is_some() {
+            return Err(VectorPointBatchBuildError::DuplicateChunkId { chunk_id });
         }
     }
-    Ok(vectors)
+    Ok(indexed)
 }
 
 fn build_payload(
     collection: &CollectionSpec,
     document: &PreparedDocument,
     chunk: &PreparedChunk,
-    embeddings: &EmbeddingResult,
+    batch_id: &BatchId,
+    provider_id: &ProviderId,
+    model: &str,
     context: &VectorPointBatchBuildContext,
 ) -> Result<MetadataMap, VectorPointBatchBuildError> {
     let mut metadata = document.metadata.clone();
@@ -349,19 +351,16 @@ fn build_payload(
     );
     insert_default_string(&mut metadata, "visibility", "internal");
     insert_default_string(&mut metadata, "redaction_status", "clean");
-    metadata.insert(
-        "job_id".to_string(),
-        json!(embeddings.batch_id.0.to_string()),
-    );
+    metadata.insert("job_id".to_string(), json!(batch_id.0.to_string()));
     metadata.insert("document_status".to_string(), json!("prepared"));
-    metadata.insert("embedding_model".to_string(), json!(embeddings.model));
+    metadata.insert("embedding_model".to_string(), json!(model));
     metadata.insert(
         "embedding_dimensions".to_string(),
         json!(collection.dense.dimensions),
     );
     metadata.insert(
         "embedding_provider".to_string(),
-        json!(embeddings.provider_id.0.clone()),
+        json!(provider_id.0.clone()),
     );
     metadata.insert(
         "embedding_profile".to_string(),

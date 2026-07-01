@@ -1,8 +1,6 @@
 //! Validated vector payload metadata.
 
-use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::sync::LazyLock;
 
 use axon_api::source::{ChunkLocator, MetadataMap, SourceRange};
 
@@ -48,6 +46,7 @@ pub enum VectorPayloadValidationError {
     InvalidContractVersion,
     InvalidSourceFamily,
     InvalidVisibility,
+    InvalidRedactionStatus,
     InvalidFieldShape { field: String },
 }
 
@@ -80,6 +79,7 @@ impl fmt::Display for VectorPayloadValidationError {
             }
             Self::InvalidSourceFamily => write!(f, "invalid vector payload source_family"),
             Self::InvalidVisibility => write!(f, "invalid vector payload visibility"),
+            Self::InvalidRedactionStatus => write!(f, "invalid vector payload redaction_status"),
             Self::InvalidFieldShape { field } => {
                 write!(f, "invalid vector payload field shape `{field}`")
             }
@@ -89,55 +89,17 @@ impl fmt::Display for VectorPayloadValidationError {
 
 impl std::error::Error for VectorPayloadValidationError {}
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SourceSpecificFieldRegistry {
-    fields: BTreeMap<&'static str, BTreeSet<&'static str>>,
-}
-
-impl SourceSpecificFieldRegistry {
-    pub fn new<I>(entries: I) -> Self
-    where
-        I: IntoIterator<Item = (&'static str, &'static [&'static str])>,
-    {
-        Self {
-            fields: entries
-                .into_iter()
-                .map(|(family, fields)| (family, fields.iter().copied().collect()))
-                .collect(),
-        }
-    }
-
-    pub fn allows(&self, source_family: &str, field: &str) -> bool {
-        self.fields
-            .get(source_family)
-            .is_some_and(|fields| fields.contains(field))
-    }
-}
-
-pub fn source_specific_field_registry() -> &'static SourceSpecificFieldRegistry {
-    &DEFAULT_SOURCE_SPECIFIC_FIELD_REGISTRY
-}
-
-static DEFAULT_SOURCE_SPECIFIC_FIELD_REGISTRY: LazyLock<SourceSpecificFieldRegistry> =
-    LazyLock::new(|| SourceSpecificFieldRegistry::new(VECTOR_SOURCE_FAMILY_FIELDS.iter().copied()));
-
 impl VectorPayload {
     pub fn try_from_metadata(metadata: MetadataMap) -> Result<Self, VectorPayloadValidationError> {
-        Self::try_from_metadata_with_registry(metadata, source_specific_field_registry())
-    }
-
-    pub fn try_from_metadata_with_registry(
-        metadata: MetadataMap,
-        registry: &SourceSpecificFieldRegistry,
-    ) -> Result<Self, VectorPayloadValidationError> {
         validate_required_fields(&metadata)?;
         validate_forbidden_fields(&metadata)?;
         validate_generations(&metadata)?;
         validate_contract_version(&metadata)?;
         validate_source_family(&metadata)?;
         validate_visibility(&metadata)?;
+        validate_redaction_status(&metadata)?;
         validate_shapes(&metadata)?;
-        validate_known_fields(&metadata, registry)?;
+        validate_known_fields(&metadata)?;
         Ok(Self { metadata })
     }
 
@@ -221,6 +183,18 @@ fn validate_visibility(metadata: &MetadataMap) -> Result<(), VectorPayloadValida
         Ok(())
     } else {
         Err(VectorPayloadValidationError::InvalidVisibility)
+    }
+}
+
+fn validate_redaction_status(metadata: &MetadataMap) -> Result<(), VectorPayloadValidationError> {
+    let value = metadata
+        .get("redaction_status")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+    if VECTOR_REDACTION_STATUS_VALUES.contains(&value) {
+        Ok(())
+    } else {
+        Err(VectorPayloadValidationError::InvalidRedactionStatus)
     }
 }
 
@@ -372,10 +346,7 @@ fn require_positive_integer(
     }
 }
 
-fn validate_known_fields(
-    metadata: &MetadataMap,
-    registry: &SourceSpecificFieldRegistry,
-) -> Result<(), VectorPayloadValidationError> {
+fn validate_known_fields(metadata: &MetadataMap) -> Result<(), VectorPayloadValidationError> {
     let source_family = metadata
         .get("source_family")
         .and_then(|value| value.as_str())
@@ -384,7 +355,7 @@ fn validate_known_fields(
         if SHARED_FIELDS.contains(&field.as_str()) {
             continue;
         }
-        if registry.allows(source_family, field) {
+        if source_family_allows_field(source_family, field) {
             continue;
         }
         return Err(VectorPayloadValidationError::UnknownSourceSpecificField {
@@ -392,6 +363,13 @@ fn validate_known_fields(
         });
     }
     Ok(())
+}
+
+pub fn source_family_allows_field(source_family: &str, field: &str) -> bool {
+    VECTOR_SOURCE_FAMILY_FIELDS
+        .iter()
+        .find(|(family, _)| *family == source_family)
+        .is_some_and(|(_, fields)| fields.contains(&field))
 }
 
 pub const VECTOR_REQUIRED_FIELDS: &[&str] = &[
@@ -419,6 +397,8 @@ pub const VECTOR_REQUIRED_FIELDS: &[&str] = &[
 
 pub const VECTOR_VISIBILITY_VALUES: &[&str] =
     &["public", "internal", "sensitive", "redacted", "derived"];
+
+pub const VECTOR_REDACTION_STATUS_VALUES: &[&str] = &["clean", "redacted", "failed"];
 
 pub const VECTOR_SOURCE_FAMILIES: &[&str] =
     &["code", "web", "package", "session", "graph", "memory"];

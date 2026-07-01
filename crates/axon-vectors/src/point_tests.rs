@@ -289,7 +289,7 @@ fn payload_validation_runs_before_returning_batch() {
 fn document_body_examples_do_not_trigger_metadata_redaction_guardrails() {
     let mut document = test_prepared_document();
     document.chunks[0].content =
-        "Use /tmp/axon and TOKEN=value in examples, or render <html> snippets.".to_string();
+        "Use /tmp/axon in examples, or render <html> snippets.".to_string();
     let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
 
     let batch = builder(test_collection_spec(3), document, embeddings)
@@ -300,13 +300,49 @@ fn document_body_examples_do_not_trigger_metadata_redaction_guardrails() {
         batch.points[0].payload["chunk_text"]
             .as_str()
             .unwrap()
-            .contains("TOKEN=value")
+            .contains("/tmp/axon")
     );
+}
+
+#[test]
+fn document_body_secret_examples_fail_before_vector_point_build() {
+    let mut document = test_prepared_document();
+    document.chunks[0].content = "TOKEN=value".to_string();
+    let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
+
+    let err = builder(test_collection_spec(3), document, embeddings)
+        .build()
+        .unwrap_err();
+
+    assert!(matches!(
+        err,
+        VectorPointBatchBuildError::Payload {
+            chunk_id,
+            source: crate::payload::VectorPayloadValidationError::ForbiddenValue { field }
+        } if chunk_id == ChunkId::new("chunk-web-1") && field == "chunk_text"
+    ));
 }
 
 #[test]
 fn embedding_result_must_match_document_embedding_provenance() {
     let document = test_prepared_document();
+    let mut embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
+    embeddings.provider_id = ProviderId::new("other-provider");
+
+    let err = builder(test_collection_spec(3), document, embeddings)
+        .build()
+        .unwrap_err();
+
+    assert!(matches!(
+        err,
+        VectorPointBatchBuildError::EmbeddingProviderMismatch { .. }
+    ));
+}
+
+#[test]
+fn embedding_provider_provenance_is_checked_without_batch_id() {
+    let mut document = test_prepared_document();
+    document.metadata.remove("embedding_batch_id");
     let mut embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
     embeddings.provider_id = ProviderId::new("other-provider");
 

@@ -1422,6 +1422,11 @@
       "x-qdrant-index": "keyword"
     },
     "redaction_status": {
+      "enum": [
+        "clean",
+        "redacted",
+        "failed"
+      ],
       "minLength": 1,
       "type": "string",
       "x-qdrant-index": "keyword"
@@ -2054,9 +2059,20 @@
         "xoxp-",
         "glpat-"
       ],
-      "body_text_fields_excluded": [
-        "chunk_text"
-      ],
+      "body_text_field_policy": {
+        "allowed_without_metadata_rejection": [
+          "ordinary document HTML snippets",
+          "ordinary local path examples"
+        ],
+        "field": "chunk_text",
+        "still_rejected": [
+          "auth headers",
+          "cookies",
+          "dotenv-style assignments",
+          "bare secret tokens",
+          "adapter response markers"
+        ]
+      },
       "forbidden_field_fragments": [
         "raw_auth",
         "auth_header",
@@ -2098,12 +2114,12 @@
         "path": "crates/axon-api/src/source/vector.rs"
       },
       {
-        "checksum": "sha256:fb0fd0fb085977872c712500d292ab7aed1b53a6eff9251149af18df2e77a35b",
+        "checksum": "sha256:71f00ddda41a6f4a64f020b0b8c201c6321ea34a245665502bb2ce0f849913fb",
         "kind": "rust_module",
         "path": "crates/axon-vectors/src/payload.rs"
       },
       {
-        "checksum": "sha256:fb7e51a15609d13fbcba8d08238d97dd6a103a5fb5b4c720d12a0598d55ed3e7",
+        "checksum": "sha256:770bcdbdbccdb50bdaafa77c8275d40ecbb06bf100a507c3fef5f2721c43ba46",
         "kind": "rust_module",
         "path": "crates/axon-vectors/src/point.rs"
       },

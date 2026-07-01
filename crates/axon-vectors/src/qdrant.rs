@@ -13,9 +13,8 @@ use qdrant_client::qdrant::{
     r#match, quantization_config, vector, vectors, vectors_config,
 };
 
-use crate::payload::VectorPayload;
-use crate::sparse::{batch_sparse_vectors_by_chunk, validate_sparse_vector};
 use crate::store::{Result, VectorStore};
+use crate::validation::validate_upsert_batch;
 
 #[allow(dead_code)]
 pub const MODULE_NAME: &str = "qdrant";
@@ -264,23 +263,7 @@ pub fn qdrant_upsert_points(
     spec: &CollectionSpec,
     batch: &VectorPointBatch,
 ) -> Result<Vec<PointStruct>> {
-    if (batch.sparse_vectors.is_some()
-        || batch
-            .points
-            .iter()
-            .any(|point| point.sparse_vector.is_some()))
-        && spec.sparse.is_none()
-    {
-        return Err(ApiError::new(
-            "vector.sparse_not_configured",
-            axon_error::ErrorStage::Upserting,
-            format!(
-                "collection {} does not declare a sparse vector namespace",
-                batch.collection
-            ),
-        ));
-    }
-    let batch_sparse = batch_sparse_vectors_by_chunk(batch, axon_error::ErrorStage::Upserting)?;
+    let batch_sparse = validate_upsert_batch(spec, batch, axon_error::ErrorStage::Upserting)?;
     batch
         .points
         .iter()
@@ -296,11 +279,6 @@ pub fn qdrant_upsert_points(
                 .or_else(|| batch_sparse.get(&point.chunk_id.0));
             if let (Some(sparse_spec), Some(sparse_vector)) = (spec.sparse.as_ref(), sparse_vector)
             {
-                validate_sparse_vector(
-                    &point.chunk_id,
-                    sparse_vector,
-                    axon_error::ErrorStage::Upserting,
-                )?;
                 named.insert(
                     sparse_spec.name.clone(),
                     qdrant_sparse_vector(
@@ -309,25 +287,6 @@ pub fn qdrant_upsert_points(
                     ),
                 );
             }
-            if point.vector.len() as u32 != spec.dense.dimensions {
-                return Err(ApiError::new(
-                    "vector.dimension_mismatch",
-                    axon_error::ErrorStage::Upserting,
-                    format!(
-                        "point {} dimensions {} do not match collection dimensions {}",
-                        point.point_id.0,
-                        point.vector.len(),
-                        spec.dense.dimensions
-                    ),
-                ));
-            }
-            VectorPayload::try_from_metadata(point.payload.clone()).map_err(|err| {
-                ApiError::new(
-                    "vector.invalid_payload",
-                    axon_error::ErrorStage::Upserting,
-                    err.to_string(),
-                )
-            })?;
             Ok(PointStruct {
                 id: Some(point.point_id.0.as_str().into()),
                 payload: point

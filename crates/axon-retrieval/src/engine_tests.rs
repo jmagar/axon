@@ -282,6 +282,53 @@ async fn standard_retrieval_access_excludes_sensitive_and_redacted_chunks() {
 }
 
 #[tokio::test]
+async fn standard_retrieval_access_excludes_non_clean_redaction_status() {
+    let store = Arc::new(FakeVectorStore::new("fake-vectors"));
+    store
+        .ensure_collection(test_collection_spec(4))
+        .await
+        .unwrap();
+    let provider = Arc::new(FakeEmbeddingProvider::new("fake-embedding", 4));
+    let mut redacted = point_in_namespace(
+        "point-redaction-status",
+        "chunk-redaction-status",
+        &[1.0, 0.0, 0.0, 0.0],
+        "Redaction status body",
+        "docs",
+    );
+    redacted
+        .payload
+        .insert("redaction_status".to_string(), json!("redacted"));
+    store
+        .upsert(VectorPointBatch {
+            batch_id: BatchId::new(Uuid::from_u128(32)),
+            collection: "axon-test".to_string(),
+            model: "fake-embedding".to_string(),
+            dimensions: 4,
+            sparse_vectors: None,
+            payload_indexes: test_collection_spec(4).payload_indexes,
+            points: vec![
+                point_in_namespace(
+                    "point-clean",
+                    "chunk-clean",
+                    &[1.0, 0.0, 0.0, 0.0],
+                    "Clean chunk body",
+                    "docs",
+                ),
+                redacted,
+            ],
+        })
+        .await
+        .unwrap();
+
+    let engine = RetrievalEngine::new(store, provider, retrieval_config());
+    let result = engine.retrieve(request()).await.unwrap();
+
+    assert!(result.context.text.contains("Clean chunk body"));
+    assert!(!result.context.text.contains("Redaction status body"));
+}
+
+#[tokio::test]
 async fn retrieval_rejects_missing_query_vector_from_embedding_provider() {
     let store = Arc::new(FakeVectorStore::new("fake-vectors"));
     store
@@ -316,6 +363,39 @@ async fn retrieval_rejects_embedding_dimension_mismatch_before_search() {
 }
 
 #[test]
+fn vector_match_text_falls_back_to_chunk_text_payload() {
+    let mut payload = MetadataMap::new();
+    payload.insert("chunk_text".to_string(), json!("payload body"));
+    payload.insert("redaction_status".to_string(), json!("clean"));
+    payload.insert(
+        "chunk_locator".to_string(),
+        json!({
+            "canonical_uri": "https://example.com/docs",
+            "range": { "line_start": 1, "line_end": 2 }
+        }),
+    );
+    payload.insert(
+        "source_range".to_string(),
+        json!({ "line_start": 1, "line_end": 2 }),
+    );
+
+    let item = axon_api::source::VectorSearchMatch {
+        point_id: VectorPointId::new("point"),
+        score: 1.0,
+        chunk_id: Some(ChunkId::new("chunk")),
+        document_id: Some(DocumentId::new("doc")),
+        source_id: Some(SourceId::new("src")),
+        source_item_key: None,
+        text: None,
+        payload,
+    };
+
+    let matched = super::engine::match_from_vector(&item).unwrap();
+
+    assert_eq!(matched.text, "payload body");
+}
+
+#[test]
 fn vector_match_without_text_fails_loudly() {
     let mut payload = MetadataMap::new();
     payload.insert(
@@ -329,6 +409,7 @@ fn vector_match_without_text_fails_loudly() {
         "source_range".to_string(),
         json!({ "line_start": 1, "line_end": 2 }),
     );
+    payload.insert("redaction_status".to_string(), json!("clean"));
     let err = super::engine::match_from_vector(&axon_api::source::VectorSearchMatch {
         point_id: VectorPointId::new("point-empty"),
         score: 0.99,

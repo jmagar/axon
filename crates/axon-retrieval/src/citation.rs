@@ -7,16 +7,16 @@ use serde_json::Value;
 pub const MODULE_NAME: &str = "citation";
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Citation {
-    pub source_id: SourceId,
-    pub document_id: DocumentId,
-    pub chunk_id: ChunkId,
-    pub canonical_uri: String,
-    pub range: SourceRange,
+pub(crate) struct Citation {
+    pub(crate) source_id: SourceId,
+    pub(crate) document_id: DocumentId,
+    pub(crate) chunk_id: ChunkId,
+    pub(crate) canonical_uri: String,
+    pub(crate) range: SourceRange,
 }
 
 impl Citation {
-    pub fn new(
+    pub(crate) fn new(
         source_id: SourceId,
         document_id: DocumentId,
         chunk_id: ChunkId,
@@ -32,7 +32,7 @@ impl Citation {
         }
     }
 
-    pub fn from_vector_match(item: &VectorSearchMatch) -> Result<Self, ApiError> {
+    pub(crate) fn from_vector_match(item: &VectorSearchMatch) -> Result<Self, ApiError> {
         let chunk_id = item.chunk_id.clone().ok_or_else(|| {
             ApiError::new(
                 "retrieval.missing_chunk_id",

@@ -19,27 +19,27 @@ use crate::query::{RetrievalMatch, RetrievalRequest, RetrievalResult};
 pub const MODULE_NAME: &str = "engine";
 
 #[derive(Clone)]
-pub struct RetrievalEngine<S, E> {
+pub(crate) struct RetrievalEngine<S, E> {
     store: Arc<S>,
     embedding_provider: Arc<E>,
     config: RetrievalEngineConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RetrievalEngineConfig {
-    pub embedding_provider_id: ProviderId,
-    pub embedding_model: String,
-    pub embedding_dimensions: u32,
-    pub access: RetrievalAccess,
+pub(crate) struct RetrievalEngineConfig {
+    pub(crate) embedding_provider_id: ProviderId,
+    pub(crate) embedding_model: String,
+    pub(crate) embedding_dimensions: u32,
+    pub(crate) access: RetrievalAccess,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RetrievalAccess {
-    pub allowed_visibility: Vec<Visibility>,
+pub(crate) struct RetrievalAccess {
+    pub(crate) allowed_visibility: Vec<Visibility>,
 }
 
 impl RetrievalAccess {
-    pub fn standard() -> Self {
+    pub(crate) fn standard() -> Self {
         Self {
             allowed_visibility: vec![
                 Visibility::Public,
@@ -51,7 +51,7 @@ impl RetrievalAccess {
 }
 
 impl RetrievalEngineConfig {
-    pub fn new(
+    pub(crate) fn new(
         embedding_provider_id: ProviderId,
         embedding_model: impl Into<String>,
         embedding_dimensions: u32,
@@ -71,7 +71,11 @@ where
     S: VectorStore + 'static,
     E: EmbeddingProvider + 'static,
 {
-    pub fn new(store: Arc<S>, embedding_provider: Arc<E>, config: RetrievalEngineConfig) -> Self {
+    pub(crate) fn new(
+        store: Arc<S>,
+        embedding_provider: Arc<E>,
+        config: RetrievalEngineConfig,
+    ) -> Self {
         Self {
             store,
             embedding_provider,
@@ -79,7 +83,10 @@ where
         }
     }
 
-    pub async fn retrieve(&self, request: RetrievalRequest) -> Result<RetrievalResult, ApiError> {
+    pub(crate) async fn retrieve(
+        &self,
+        request: RetrievalRequest,
+    ) -> Result<RetrievalResult, ApiError> {
         let plan =
             RetrievalPlan::from_request(&request, self.config.access.allowed_visibility.clone());
         let dense_vector = self.embed_query(&request.query).await?;
@@ -204,6 +211,7 @@ fn search_filters(plan: &RetrievalPlan) -> MetadataMap {
                 .collect::<Vec<_>>()
         ),
     );
+    filters.insert("redaction_status".to_string(), serde_json::json!("clean"));
     if let Some(source_id) = &plan.source_id {
         filters.insert("source_id".to_string(), serde_json::json!(source_id.0));
     }
@@ -227,6 +235,7 @@ fn visibility_value(visibility: &Visibility) -> &'static str {
 }
 
 pub(crate) fn match_from_vector(item: &VectorSearchMatch) -> Result<RetrievalMatch, ApiError> {
+    require_clean_redaction_status(item)?;
     let citation = Citation::from_vector_match(item)?;
     Ok(RetrievalMatch {
         chunk_id: citation.chunk_id.clone(),
@@ -250,45 +259,32 @@ pub(crate) fn match_from_vector(item: &VectorSearchMatch) -> Result<RetrievalMat
     })
 }
 
-fn payload_string(payload: &MetadataMap, field: &str) -> Option<String> {
-    payload.get(field)?.as_str().map(ToString::to_string)
+fn require_clean_redaction_status(item: &VectorSearchMatch) -> Result<(), ApiError> {
+    match item
+        .payload
+        .get("redaction_status")
+        .and_then(serde_json::Value::as_str)
+    {
+        Some("clean") => Ok(()),
+        Some(status) => Err(ApiError::new(
+            "retrieval.redaction_status_not_clean",
+            ErrorStage::Retrieving,
+            format!(
+                "vector match {} has redaction_status `{status}`",
+                item.point_id.0
+            ),
+        )),
+        None => Err(ApiError::new(
+            "retrieval.missing_redaction_status",
+            ErrorStage::Retrieving,
+            format!(
+                "vector match {} is missing redaction_status",
+                item.point_id.0
+            ),
+        )),
+    }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use axon_api::source::{DocumentId, SourceId, VectorPointId};
-    use serde_json::json;
-
-    #[test]
-    fn vector_match_text_falls_back_to_chunk_text_payload() {
-        let mut payload = MetadataMap::new();
-        payload.insert("chunk_text".to_string(), json!("payload body"));
-        payload.insert(
-            "chunk_locator".to_string(),
-            json!({
-                "canonical_uri": "https://example.com/docs",
-                "range": { "line_start": 1, "line_end": 2 }
-            }),
-        );
-        payload.insert(
-            "source_range".to_string(),
-            json!({ "line_start": 1, "line_end": 2 }),
-        );
-
-        let item = VectorSearchMatch {
-            point_id: VectorPointId::new("point"),
-            score: 1.0,
-            chunk_id: Some(ChunkId::new("chunk")),
-            document_id: Some(DocumentId::new("doc")),
-            source_id: Some(SourceId::new("src")),
-            source_item_key: None,
-            text: None,
-            payload,
-        };
-
-        let matched = match_from_vector(&item).unwrap();
-
-        assert_eq!(matched.text, "payload body");
-    }
+fn payload_string(payload: &MetadataMap, field: &str) -> Option<String> {
+    payload.get(field)?.as_str().map(ToString::to_string)
 }

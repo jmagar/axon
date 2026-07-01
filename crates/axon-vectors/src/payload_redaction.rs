@@ -15,11 +15,8 @@ pub(crate) fn validate_forbidden_value(
     path: &str,
     value: &Value,
 ) -> Result<(), VectorPayloadValidationError> {
-    if BODY_TEXT_FIELDS.contains(&path) {
-        return Ok(());
-    }
     match value {
-        Value::String(value) if forbidden_string_value(value) => {
+        Value::String(value) if forbidden_string_value(path, value) => {
             Err(VectorPayloadValidationError::ForbiddenValue {
                 field: path.to_string(),
             })
@@ -49,15 +46,28 @@ pub(crate) fn validate_forbidden_value(
     }
 }
 
-fn forbidden_string_value(value: &str) -> bool {
+fn forbidden_string_value(path: &str, value: &str) -> bool {
+    if BODY_TEXT_FIELDS.contains(&path) {
+        return forbidden_body_text_value(value);
+    }
     let normalized = value.to_ascii_lowercase();
     FORBIDDEN_VALUE_FRAGMENTS
         .iter()
         .any(|fragment| normalized.contains(fragment))
         || raw_dotenv_assignment(value)
         || contains_bare_secret_token(value)
-        || absolute_local_path(value)
+        || absolute_local_path(path, value)
         || raw_html_blob(&normalized)
+        || normalized.contains("adapter_response")
+}
+
+fn forbidden_body_text_value(value: &str) -> bool {
+    let normalized = value.to_ascii_lowercase();
+    FORBIDDEN_VALUE_FRAGMENTS
+        .iter()
+        .any(|fragment| normalized.contains(fragment))
+        || raw_dotenv_assignment(value)
+        || contains_bare_secret_token(value)
         || normalized.contains("adapter_response")
 }
 
@@ -114,9 +124,18 @@ fn is_token_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-')
 }
 
-fn absolute_local_path(value: &str) -> bool {
+fn absolute_local_path(path: &str, value: &str) -> bool {
     let normalized = value.to_ascii_lowercase();
     let trimmed = value.trim();
+    if path == "chunk_locator.path" {
+        return false;
+    }
+    if normalized.starts_with("http://")
+        || normalized.starts_with("https://")
+        || normalized.starts_with("local-code://")
+    {
+        return false;
+    }
     normalized.contains("/home/")
         || normalized.contains("/users/")
         || normalized.contains("/tmp/")
