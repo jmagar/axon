@@ -35,6 +35,10 @@ pub use vector::*;
 mod tests;
 
 #[cfg(test)]
+#[path = "source_capability_tests.rs"]
+mod capability_tests;
+
+#[cfg(test)]
 #[path = "source_status_tests.rs"]
 mod status_tests;
 

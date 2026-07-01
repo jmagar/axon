@@ -391,13 +391,53 @@ fn capability_document_uses_closed_provider_enums() {
         providers: vec![ProviderCapability {
             provider_id: ProviderId::from("tei-default"),
             provider_kind: ProviderKind::Embedding,
-            name: "tei".to_string(),
+            implementation: "tei".to_string(),
             version: "0.1.0".to_string(),
             health: HealthStatus::Healthy,
             features: vec!["dense".to_string()],
-            limits: MetadataMap::new(),
-            reservations_supported: true,
-            cooling_supported: true,
+            limits: ProviderLimits {
+                max_concurrency: Some(4),
+                ..ProviderLimits::default()
+            },
+            cooldown_until: None,
+            last_error: None,
+            reservation_policy: ReservationPolicy {
+                supports_reservations: true,
+                queue_policy: QueuePolicy::Priority,
+                interactive_reserve: 1,
+                cooldown_after_failures: 3,
+                cooldown_secs: 60,
+                retry_backoff_ms: Some(250),
+            },
+            reservation_state: ReservationStateSnapshot {
+                queued: 0,
+                active: 0,
+                available_units: 4,
+                oldest_queued_ms: None,
+                priority_breakdown: std::collections::BTreeMap::new(),
+                states: vec![ReservationState::Granted],
+            },
+            cost_class: ProviderCostClass::Internal,
+            degraded_modes: Vec::new(),
+            fake_overrides_supported: true,
+            embedding: Some(EmbeddingProviderCapability {
+                model_id: "Qwen/Qwen3-Embedding-0.6B".to_string(),
+                dimensions: 1024,
+                max_input_tokens: 32_768,
+                max_batch_tokens: 262_144,
+                instruction_support: InstructionSupport::QueryAndDocument,
+                sparse_output: false,
+                batch_limits: BatchLimits {
+                    max_items: 32,
+                    max_tokens: 262_144,
+                    max_bytes: None,
+                },
+            }),
+            llm: None,
+            vector_store: None,
+            fetch: None,
+            render: None,
+            credential: None,
         }],
         stores: StoreCapabilities {
             ledger: None,
@@ -414,5 +454,6 @@ fn capability_document_uses_closed_provider_enums() {
 
     let value = serde_json::to_value(&capability).expect("capability document");
     assert_eq!(value["providers"][0]["provider_kind"], "embedding");
+    assert_eq!(value["providers"][0]["implementation"], "tei");
     assert_eq!(value["adapters"][0]["owner_crate"], "axon-adapters");
 }
