@@ -167,6 +167,18 @@ fn invalid_payload_fixtures_report_the_expected_validation_error() {
                 field: "web_title".to_string(),
             },
         ),
+        (
+            "forbidden_embedded_bare_api_key_value.invalid.json",
+            VectorPayloadValidationError::ForbiddenValue {
+                field: "web_title".to_string(),
+            },
+        ),
+        (
+            "forbidden_absolute_home_path_value.invalid.json",
+            VectorPayloadValidationError::ForbiddenValue {
+                field: "chunk_locator".to_string(),
+            },
+        ),
     ];
 
     for (name, expected) in cases {

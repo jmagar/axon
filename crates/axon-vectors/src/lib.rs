@@ -7,6 +7,7 @@ pub mod collection;
 pub mod filter;
 pub mod health;
 pub mod payload;
+mod payload_redaction;
 pub mod point;
 pub mod qdrant;
 pub mod query;
