@@ -1,3 +1,125 @@
-//! Marker module for the target `axon-route::router` boundary.
+//! Source router boundary.
 
-pub const MODULE_NAME: &str = "router";
+use axon_api::{
+    AdapterOptions, ChunkHint, ChunkProfile, ExecutionAffinity, ParserHint, ProviderRequirement,
+    ResolvedSource, RoutePlan, SourceKind, SourceRequest,
+};
+use axon_error::{ApiError, ErrorStage};
+
+use crate::capability::{AdapterDefinition, AdapterRegistry};
+
+pub type RouteDecision = RoutePlan;
+
+#[derive(Debug, Clone)]
+pub struct SourceRouter {
+    adapters: AdapterRegistry,
+}
+
+impl SourceRouter {
+    pub fn new(adapters: AdapterRegistry) -> Self {
+        Self { adapters }
+    }
+
+    pub fn route(
+        &self,
+        request: &SourceRequest,
+        source: ResolvedSource,
+    ) -> Result<RoutePlan, ApiError> {
+        let scope = request.scope.unwrap_or(source.default_scope);
+        let adapter = request
+            .adapter
+            .as_deref()
+            .and_then(|name| self.adapters.find(name))
+            .or_else(|| {
+                source
+                    .candidate_adapters
+                    .first()
+                    .and_then(|candidate| self.adapters.find(&candidate.adapter.name))
+            })
+            .ok_or_else(|| {
+                ApiError::new(
+                    "route.adapter.missing",
+                    ErrorStage::Routing,
+                    "no adapter supports resolved source",
+                )
+            })?;
+
+        if !adapter.supported_scopes.contains(&scope) {
+            return Err(ApiError::new(
+                "source.scope.unsupported",
+                ErrorStage::Routing,
+                "adapter does not support requested source scope",
+            )
+            .with_context("adapter", adapter.adapter.name.clone())
+            .with_context("scope", format!("{scope:?}")));
+        }
+
+        Ok(RoutePlan {
+            source,
+            adapter: adapter.adapter.clone(),
+            scope,
+            provider_requirements: provider_requirements(adapter),
+            credential_requirements: adapter.credential_requirements.clone(),
+            execution_affinity: execution_affinity(adapter),
+            safety_class: adapter.safety_class,
+            option_schema_id: format!("adapter:{}:options:v1", adapter.adapter.name),
+            validated_options: AdapterOptions {
+                values: request.options.values.clone(),
+            },
+            chunking_hints: chunking_hints(adapter.source_kind),
+            parser_hints: parser_hints(adapter.source_kind),
+            graph_fact_kinds: graph_fact_kinds(adapter.source_kind),
+            watch_supported: adapter.watch_supported,
+            refresh_supported: adapter.refresh_supported,
+        })
+    }
+}
+
+fn execution_affinity(adapter: &AdapterDefinition) -> ExecutionAffinity {
+    if adapter.source_kind == SourceKind::CliTool || adapter.source_kind == SourceKind::McpTool {
+        ExecutionAffinity::ProviderBound
+    } else {
+        adapter.execution_affinity
+    }
+}
+
+fn provider_requirements(adapter: &AdapterDefinition) -> Vec<ProviderRequirement> {
+    if !adapter.provider_requirements.is_empty() {
+        return adapter.provider_requirements.clone();
+    }
+    Vec::new()
+}
+
+fn chunking_hints(source_kind: SourceKind) -> Vec<ChunkHint> {
+    let profile = match source_kind {
+        SourceKind::Git | SourceKind::Local => ChunkProfile::CodeAst,
+        SourceKind::Session => ChunkProfile::Session,
+        SourceKind::Youtube => ChunkProfile::Transcript,
+        SourceKind::Registry | SourceKind::McpTool | SourceKind::CliTool => {
+            ChunkProfile::Structured
+        }
+        _ => ChunkProfile::Markdown,
+    };
+    vec![ChunkHint {
+        profile,
+        reason: "route default chunk profile".to_string(),
+        options: Default::default(),
+    }]
+}
+
+fn parser_hints(source_kind: SourceKind) -> Vec<ParserHint> {
+    vec![ParserHint {
+        parser_id: format!("{source_kind:?}").to_ascii_lowercase(),
+        reason: "route default parser".to_string(),
+        options: Default::default(),
+    }]
+}
+
+fn graph_fact_kinds(source_kind: SourceKind) -> Vec<String> {
+    match source_kind {
+        SourceKind::Git => vec!["repo".to_string(), "package_manifest".to_string()],
+        SourceKind::Registry => vec!["package".to_string()],
+        SourceKind::CliTool | SourceKind::McpTool => vec!["tool".to_string()],
+        _ => vec!["source".to_string()],
+    }
+}

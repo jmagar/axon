@@ -1,3 +1,130 @@
-//! Marker module for the target `axon-route::capability` boundary.
+//! Adapter declarations consumed by the router.
 
-pub const MODULE_NAME: &str = "capability";
+use axon_api::{
+    AdapterRef, ChunkHint, CredentialRequirement, ExecutionAffinity, ParserHint,
+    ProviderRequirement, SafetyClass, SourceKind, SourceScope,
+};
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AdapterDefinition {
+    pub adapter: AdapterRef,
+    pub source_kind: SourceKind,
+    pub default_scope: SourceScope,
+    pub supported_scopes: Vec<SourceScope>,
+    pub safety_class: SafetyClass,
+    pub execution_affinity: ExecutionAffinity,
+    pub provider_requirements: Vec<ProviderRequirement>,
+    pub credential_requirements: Vec<CredentialRequirement>,
+    pub chunking_hints: Vec<ChunkHint>,
+    pub parser_hints: Vec<ParserHint>,
+    pub watch_supported: bool,
+    pub refresh_supported: bool,
+}
+
+impl AdapterDefinition {
+    pub fn new(
+        name: impl Into<String>,
+        version: impl Into<String>,
+        source_kind: SourceKind,
+        default_scope: SourceScope,
+    ) -> Self {
+        Self {
+            adapter: AdapterRef {
+                name: name.into(),
+                version: version.into(),
+            },
+            source_kind,
+            default_scope,
+            supported_scopes: vec![default_scope],
+            safety_class: safety_class(source_kind),
+            execution_affinity: ExecutionAffinity::Worker,
+            provider_requirements: Vec::new(),
+            credential_requirements: Vec::new(),
+            chunking_hints: Vec::new(),
+            parser_hints: Vec::new(),
+            watch_supported: matches!(source_kind, SourceKind::Local | SourceKind::Web),
+            refresh_supported: true,
+        }
+    }
+
+    pub fn with_scope(mut self, scope: SourceScope) -> Self {
+        if !self.supported_scopes.contains(&scope) {
+            self.supported_scopes.push(scope);
+        }
+        self
+    }
+
+    pub fn with_safety_class(mut self, safety_class: SafetyClass) -> Self {
+        self.safety_class = safety_class;
+        self
+    }
+}
+
+fn safety_class(source_kind: SourceKind) -> SafetyClass {
+    match source_kind {
+        SourceKind::Local => SafetyClass::LocalFilesystem,
+        SourceKind::CliTool | SourceKind::McpTool => SafetyClass::ToolExecution,
+        _ => SafetyClass::PublicNetwork,
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct AdapterRegistry {
+    adapters: Vec<AdapterDefinition>,
+}
+
+impl AdapterRegistry {
+    pub fn from_adapters(mut adapters: Vec<AdapterDefinition>) -> Self {
+        adapters.sort_by(|left, right| left.adapter.name.cmp(&right.adapter.name));
+        Self { adapters }
+    }
+
+    pub fn target_defaults() -> Self {
+        Self::from_adapters(vec![
+            AdapterDefinition::new("cli", "1", SourceKind::CliTool, SourceScope::Tool),
+            AdapterDefinition::new("crates", "1", SourceKind::Registry, SourceScope::Package)
+                .with_scope(SourceScope::Version),
+            AdapterDefinition::new("docker", "1", SourceKind::Registry, SourceScope::Package)
+                .with_scope(SourceScope::Version),
+            AdapterDefinition::new("feed", "1", SourceKind::Feed, SourceScope::Feed),
+            AdapterDefinition::new("github", "1", SourceKind::Git, SourceScope::Repo)
+                .with_scope(SourceScope::Branch)
+                .with_scope(SourceScope::Issue)
+                .with_scope(SourceScope::PullRequest)
+                .with_scope(SourceScope::Release),
+            AdapterDefinition::new("local", "1", SourceKind::Local, SourceScope::Directory)
+                .with_scope(SourceScope::File)
+                .with_scope(SourceScope::Workspace)
+                .with_safety_class(SafetyClass::LocalFilesystem),
+            AdapterDefinition::new("mcp", "1", SourceKind::McpTool, SourceScope::Tool),
+            AdapterDefinition::new("npm", "1", SourceKind::Registry, SourceScope::Package)
+                .with_scope(SourceScope::Version),
+            AdapterDefinition::new("pypi", "1", SourceKind::Registry, SourceScope::Package)
+                .with_scope(SourceScope::Version),
+            AdapterDefinition::new("reddit", "1", SourceKind::Reddit, SourceScope::Subreddit)
+                .with_scope(SourceScope::Thread)
+                .with_scope(SourceScope::Comment),
+            AdapterDefinition::new("session", "1", SourceKind::Session, SourceScope::Thread),
+            AdapterDefinition::new("web", "1", SourceKind::Web, SourceScope::Site)
+                .with_scope(SourceScope::Page)
+                .with_scope(SourceScope::Docs)
+                .with_scope(SourceScope::Map),
+            AdapterDefinition::new("youtube", "1", SourceKind::Youtube, SourceScope::Video)
+                .with_scope(SourceScope::Playlist)
+                .with_scope(SourceScope::Channel),
+        ])
+    }
+
+    pub fn adapters_for(&self, source_kind: SourceKind) -> Vec<&AdapterDefinition> {
+        self.adapters
+            .iter()
+            .filter(|adapter| adapter.source_kind == source_kind)
+            .collect()
+    }
+
+    pub fn find(&self, name: &str) -> Option<&AdapterDefinition> {
+        self.adapters
+            .iter()
+            .find(|adapter| adapter.adapter.name == name)
+    }
+}

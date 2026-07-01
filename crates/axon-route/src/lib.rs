@@ -13,4 +13,13 @@ pub mod scope;
 pub mod source_id;
 pub mod testing;
 
+pub use authority::{AuthorityRecord, InMemoryAuthorityRegistry};
+pub use capability::{AdapterDefinition, AdapterRegistry};
+pub use resolver::SourceResolver;
+pub use router::{RouteDecision, SourceRouter};
+
 pub const CRATE_NAME: &str = "axon-route";
+
+#[cfg(test)]
+#[path = "route_tests.rs"]
+mod tests;
