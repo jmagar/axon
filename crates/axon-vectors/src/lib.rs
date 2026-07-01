@@ -23,3 +23,7 @@ mod store_tests;
 #[cfg(test)]
 #[path = "payload_tests.rs"]
 mod payload_tests;
+
+#[cfg(test)]
+#[path = "point_tests.rs"]
+mod point_tests;
