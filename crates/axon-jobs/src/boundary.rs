@@ -6,6 +6,8 @@ use axon_api::source::*;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
+use crate::state_machine::validate_transition;
+
 pub type Result<T> = std::result::Result<T, ApiError>;
 
 #[async_trait]
@@ -64,20 +66,30 @@ impl JobStore for FakeJobWatchStore {
         let created_at = state.timestamp();
         let summary = JobSummary {
             job_id,
-            kind: request.kind,
+            kind: request.job_kind,
+            intent: Some(request.job_intent),
             status: LifecycleStatus::Queued,
             phase: PipelinePhase::Queued,
             created_at: created_at.clone(),
             updated_at: created_at.clone(),
-            source_id: None,
-            watch_id: None,
+            started_at: None,
+            finished_at: None,
+            source_id: request.source_id.clone(),
+            watch_id: request.watch_id.clone(),
+            parent_job_id: request.parent_job_id,
+            root_job_id: request.root_job_id,
+            attempt: 0,
+            priority: request.priority,
             counts: None,
+            current: None,
+            heartbeat: None,
             last_error: None,
+            warnings: Vec::new(),
         };
         state.jobs.insert(job_id, summary);
         Ok(JobDescriptor {
             job_id,
-            kind: request.kind,
+            kind: request.job_kind,
             status: LifecycleStatus::Queued,
             poll: PollDescriptor {
                 status_url: format!("/v1/jobs/{job_id}", job_id = job_id.0),
@@ -100,18 +112,11 @@ impl JobStore for FakeJobWatchStore {
             .jobs
             .get_mut(&status.job_id)
             .ok_or_else(|| missing_job(status.job_id))?;
-        if terminal_status(job.status) && job.status != status.status {
-            return Err(ApiError::new(
-                "job.invalid_transition",
-                ErrorStage::Publishing,
-                format!(
-                    "cannot transition terminal job {} from {:?} to {:?}",
-                    status.job_id.0, job.status, status.status
-                ),
-            ));
-        }
+        validate_transition(status.job_id, job.status, status.status)?;
         job.status = status.status;
         job.phase = status.phase;
+        job.counts = status.counts;
+        job.current = status.current;
         job.last_error = status.error;
         job.updated_at = updated_at;
         Ok(())
@@ -122,6 +127,22 @@ impl JobStore for FakeJobWatchStore {
         if !state.jobs.contains_key(&event.job_id) {
             return Err(missing_job(event.job_id));
         }
+        let expected_sequence = state
+            .events
+            .get(&event.job_id)
+            .and_then(|events| events.last())
+            .map(|event| event.sequence + 1)
+            .unwrap_or(1);
+        if event.sequence != expected_sequence {
+            return Err(ApiError::new(
+                "job_event.sequence_invalid",
+                ErrorStage::Publishing,
+                format!(
+                    "expected event sequence {} for job {}, got {}",
+                    expected_sequence, event.job_id.0, event.sequence
+                ),
+            ));
+        }
         state
             .events
             .entry(event.job_id)
@@ -130,9 +151,12 @@ impl JobStore for FakeJobWatchStore {
                 event_id: event.event_id,
                 sequence: event.sequence,
                 job_id: event.job_id,
+                attempt: event.attempt,
+                stage_id: event.stage_id,
                 phase: event.phase,
                 status: event.status,
                 severity: event.severity,
+                visibility: event.visibility,
                 message: event.message,
                 timestamp: event.timestamp,
                 details: MetadataMap::new(),
@@ -147,7 +171,10 @@ impl JobStore for FakeJobWatchStore {
             .get_mut(&heartbeat.job_id)
             .ok_or_else(|| missing_job(heartbeat.job_id))?;
         job.phase = heartbeat.phase;
-        job.updated_at = heartbeat.timestamp;
+        job.status = heartbeat.status;
+        job.updated_at = heartbeat.heartbeat_at.clone();
+        job.counts = heartbeat.counts.clone();
+        job.heartbeat = Some(heartbeat);
         Ok(())
     }
 
@@ -212,17 +239,19 @@ impl JobStore for FakeJobWatchStore {
         if let Some(severity) = request.severity {
             items.retain(|event| event.severity == severity);
         }
+        if let Some(visibility) = request.visibility {
+            items.retain(|event| event.visibility == visibility);
+        }
         if let Some(since_sequence) = request.since_sequence {
             items.retain(|event| event.sequence > since_sequence);
         }
-        let total = items.len() as u64;
         let limit = request.limit.unwrap_or(100);
         items.truncate(limit as usize);
-        Ok(Page {
-            total: Some(total),
+        Ok(JobEventPage {
+            last_sequence: items.last().map(|event| event.sequence),
             limit,
             next_cursor: None,
-            items,
+            events: items,
         })
     }
 
@@ -422,18 +451,6 @@ fn capability(name: &str) -> CapabilityBase {
         features: vec!["fake".to_string()],
         limits: MetadataMap::new(),
     }
-}
-
-fn terminal_status(status: LifecycleStatus) -> bool {
-    matches!(
-        status,
-        LifecycleStatus::Completed
-            | LifecycleStatus::CompletedDegraded
-            | LifecycleStatus::Failed
-            | LifecycleStatus::Canceled
-            | LifecycleStatus::Expired
-            | LifecycleStatus::Skipped
-    )
 }
 
 impl FakeJobWatchState {
