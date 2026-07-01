@@ -121,6 +121,60 @@ fn source_generation_and_document_filters_convert_to_qdrant_filters() {
 }
 
 #[test]
+fn array_filter_values_convert_to_qdrant_should_groups() {
+    let request = VectorSearchRequest {
+        collection: "axon-test".to_string(),
+        query: "docs".to_string(),
+        limit: 10,
+        dense_vector: None,
+        sparse_vector: None,
+        filters: MetadataMap(
+            [("vector_namespace".to_string(), json!(["docs", "guides"]))]
+                .into_iter()
+                .collect(),
+        ),
+        hybrid: None,
+        generation: None,
+        graph_refs: Vec::new(),
+        metadata: MetadataMap::new(),
+    };
+
+    let filter = qdrant_filter(&request).unwrap();
+    assert_eq!(filter.must.len(), 1);
+    let condition::ConditionOneOf::Filter(namespace_filter) =
+        filter.must[0].condition_one_of.as_ref().unwrap()
+    else {
+        panic!("expected nested OR filter");
+    };
+    let keys = namespace_filter
+        .should
+        .iter()
+        .map(|condition| {
+            let condition::ConditionOneOf::Field(field) =
+                condition.condition_one_of.as_ref().unwrap()
+            else {
+                panic!("expected field condition");
+            };
+            (
+                field.key.as_str(),
+                field
+                    .r#match
+                    .as_ref()
+                    .and_then(|value| value.match_value.as_ref()),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert!(keys.iter().any(|(key, value)| {
+        *key == "vector_namespace"
+            && matches!(value, Some(r#match::MatchValue::Keyword(value)) if value == "docs")
+    }));
+    assert!(keys.iter().any(|(key, value)| {
+        *key == "vector_namespace"
+            && matches!(value, Some(r#match::MatchValue::Keyword(value)) if value == "guides")
+    }));
+}
+
+#[test]
 fn vector_point_batch_converts_to_qdrant_points_without_dropping_payload_fields() {
     let mut spec = test_collection_spec(3);
     spec.dense.name = "dense_docs".to_string();

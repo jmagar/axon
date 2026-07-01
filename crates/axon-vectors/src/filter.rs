@@ -98,6 +98,11 @@ fn payload_matches_str(payload: &MetadataMap, field: &str, expected: &str) -> bo
 }
 
 fn payload_matches_value(payload: &MetadataMap, field: &str, expected: &Value) -> bool {
+    if let Some(expected_values) = expected.as_array() {
+        return expected_values
+            .iter()
+            .any(|expected| payload_matches_value(payload, field, expected));
+    }
     payload
         .get(field)
         .is_some_and(|actual| actual == expected || value_matches_string_value(actual, expected))

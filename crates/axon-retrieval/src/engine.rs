@@ -131,7 +131,7 @@ fn search_filters(plan: &RetrievalPlan) -> MetadataMap {
     if !plan.namespace_filters.is_empty() {
         filters.insert(
             "vector_namespace".to_string(),
-            serde_json::json!(plan.namespace_filters[0]),
+            serde_json::json!(plan.namespace_filters),
         );
     }
     filters

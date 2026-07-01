@@ -186,7 +186,7 @@ pub fn qdrant_filter(request: &VectorSearchRequest) -> Option<Filter> {
     let mut conditions = request
         .filters
         .iter()
-        .map(|(field, value)| field_condition(field, value))
+        .flat_map(|(field, value)| field_conditions(field, value))
         .collect::<Vec<_>>();
     if let Some(generation) = &request.generation {
         let value = generation
@@ -222,6 +222,29 @@ pub fn qdrant_upsert_points(spec: &CollectionSpec, batch: &VectorPointBatch) -> 
             }
         })
         .collect()
+}
+
+fn field_conditions(
+    field: &str,
+    value: &serde_json::Value,
+) -> Vec<qdrant_client::qdrant::Condition> {
+    let Some(values) = value.as_array() else {
+        return vec![field_condition(field, value)];
+    };
+    if values.len() == 1 {
+        return vec![field_condition(field, &values[0])];
+    }
+    vec![qdrant_client::qdrant::Condition {
+        condition_one_of: Some(condition::ConditionOneOf::Filter(Filter {
+            should: values
+                .iter()
+                .map(|value| field_condition(field, value))
+                .collect(),
+            must: Vec::new(),
+            must_not: Vec::new(),
+            min_should: None,
+        })),
+    }]
 }
 
 fn field_condition(field: &str, value: &serde_json::Value) -> qdrant_client::qdrant::Condition {

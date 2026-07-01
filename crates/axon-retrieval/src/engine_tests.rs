@@ -113,6 +113,61 @@ async fn ranking_is_deterministic_with_fixed_fake_vector_search_results() {
     assert_eq!(chunk_ids, vec!["chunk-a", "chunk-b", "chunk-c"]);
 }
 
+#[tokio::test]
+async fn retrieval_applies_all_namespace_filters() {
+    let store = Arc::new(FakeVectorStore::new("fake-vectors"));
+    store
+        .ensure_collection(test_collection_spec(4))
+        .await
+        .unwrap();
+
+    let provider = Arc::new(FakeEmbeddingProvider::new("fake-embedding", 4));
+    store
+        .upsert(VectorPointBatch {
+            batch_id: BatchId::new(Uuid::from_u128(13)),
+            collection: "axon-test".to_string(),
+            model: "fake-embedding".to_string(),
+            dimensions: 4,
+            sparse_vectors: None,
+            payload_indexes: test_collection_spec(4).payload_indexes,
+            points: vec![
+                point_in_namespace(
+                    "point-docs",
+                    "chunk-docs",
+                    &[1.0, 0.0, 0.0, 0.0],
+                    "Docs chunk body",
+                    "docs",
+                ),
+                point_in_namespace(
+                    "point-guides",
+                    "chunk-guides",
+                    &[1.0, 0.0, 0.0, 0.0],
+                    "Guides chunk body",
+                    "guides",
+                ),
+                point_in_namespace(
+                    "point-summary",
+                    "chunk-summary",
+                    &[1.0, 0.0, 0.0, 0.0],
+                    "Summary chunk body",
+                    "summary",
+                ),
+            ],
+        })
+        .await
+        .unwrap();
+
+    let engine = RetrievalEngine::new(store, provider);
+    let result = engine.retrieve(request()).await.unwrap();
+    let chunk_ids = result
+        .matches
+        .iter()
+        .map(|item| item.chunk_id.0.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(chunk_ids, vec!["chunk-docs", "chunk-guides"]);
+}
+
 #[test]
 fn context_assembly_respects_byte_and_token_budget_inputs() {
     let context = ContextBundle::from_chunks(
@@ -288,6 +343,16 @@ fn citation_from_vector_match_rejects_missing_range_locator() {
 }
 
 fn point(point_id: &str, chunk_id: &str, vector: &[f32], text: &str) -> VectorPoint {
+    point_in_namespace(point_id, chunk_id, vector, text, "docs")
+}
+
+fn point_in_namespace(
+    point_id: &str,
+    chunk_id: &str,
+    vector: &[f32],
+    text: &str,
+    namespace: &str,
+) -> VectorPoint {
     let mut payload = MetadataMap::new();
     payload.insert("source_id".to_string(), json!("src-docs"));
     payload.insert("source_generation".to_string(), json!("gen-7"));
@@ -303,7 +368,7 @@ fn point(point_id: &str, chunk_id: &str, vector: &[f32], text: &str) -> VectorPo
         }),
     );
     payload.insert("visibility".to_string(), json!("internal"));
-    payload.insert("vector_namespace".to_string(), json!("docs"));
+    payload.insert("vector_namespace".to_string(), json!(namespace));
     payload.insert("text".to_string(), json!(text));
     payload.insert(
         "source_range".to_string(),
