@@ -17,6 +17,7 @@ pub mod status;
 pub mod store;
 pub(crate) mod tx;
 pub mod unified;
+pub(crate) mod unified_codec;
 pub mod watch;
 pub mod workers;
 
