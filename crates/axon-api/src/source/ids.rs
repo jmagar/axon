@@ -1,13 +1,26 @@
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::ops::{Deref, DerefMut};
 use uuid::Uuid;
 
 macro_rules! string_id {
     ($name:ident) => {
         #[derive(
-            Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+            Debug,
+            Clone,
+            PartialEq,
+            Eq,
+            PartialOrd,
+            Ord,
+            Hash,
+            Serialize,
+            Deserialize,
+            JsonSchema,
+            utoipa::ToSchema,
         )]
+        #[schema(value_type = String)]
         pub struct $name(pub String);
 
         impl $name {
@@ -32,7 +45,19 @@ macro_rules! string_id {
 
 macro_rules! uuid_id {
     ($name:ident) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+        #[derive(
+            Debug,
+            Clone,
+            Copy,
+            PartialEq,
+            Eq,
+            Hash,
+            Serialize,
+            Deserialize,
+            JsonSchema,
+            utoipa::ToSchema,
+        )]
+        #[schema(value_type = String, format = Uuid)]
         pub struct $name(pub Uuid);
 
         impl $name {
@@ -68,5 +93,56 @@ string_id!(GraphNodeId);
 string_id!(GraphEdgeId);
 string_id!(ConfigSnapshotId);
 
-pub type Timestamp = DateTime<Utc>;
-pub type MetadataMap = serde_json::Map<String, serde_json::Value>;
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    utoipa::ToSchema,
+)]
+#[serde(transparent)]
+#[schema(value_type = String, format = DateTime)]
+pub struct Timestamp(pub String);
+
+impl From<DateTime<Utc>> for Timestamp {
+    fn from(value: DateTime<Utc>) -> Self {
+        Self(value.to_rfc3339())
+    }
+}
+
+#[derive(
+    Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema,
+)]
+#[serde(transparent)]
+#[schema(value_type = Object)]
+pub struct MetadataMap(pub BTreeMap<String, serde_json::Value>);
+
+impl MetadataMap {
+    pub fn new() -> Self {
+        Self(BTreeMap::new())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl Deref for MetadataMap {
+    type Target = BTreeMap<String, serde_json::Value>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for MetadataMap {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}

@@ -7,7 +7,7 @@ use super::graph::*;
 use super::ids::*;
 use super::vector::ProviderUsage;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StageResultHeader {
     pub job_id: JobId,
@@ -23,14 +23,14 @@ pub struct StageResultHeader {
     pub error: Option<SourceError>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StageExecutionResult<T> {
     pub header: StageResultHeader,
     pub data: T,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StageCounts {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -47,7 +47,7 @@ pub struct StageCounts {
     pub bytes_done: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SourceManifest {
     pub source_id: SourceId,
@@ -59,7 +59,7 @@ pub struct SourceManifest {
     pub metadata: MetadataMap,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ManifestItem {
     pub source_id: SourceId,
@@ -86,7 +86,7 @@ pub struct ManifestItem {
     pub graph_hints: Vec<GraphCandidate>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SourceManifestDiff {
     pub header: StageResultHeader,
@@ -103,7 +103,7 @@ pub struct SourceManifestDiff {
     pub counts: DiffCounts,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SourceAcquisition {
     pub header: StageResultHeader,
@@ -116,7 +116,7 @@ pub struct SourceAcquisition {
     pub artifacts: Vec<ArtifactRef>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AcquiredSourceItem {
     pub manifest_item: ManifestItem,
@@ -129,7 +129,7 @@ pub struct AcquiredSourceItem {
     pub metadata: MetadataMap,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SourceEnrichment {
     pub header: StageResultHeader,
@@ -144,7 +144,7 @@ pub struct SourceEnrichment {
     pub artifacts: Vec<ArtifactRef>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AuthorizationResult {
     pub header: StageResultHeader,
@@ -154,7 +154,7 @@ pub struct AuthorizationResult {
     pub caller: CallerContext,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct LeaseResult {
     pub header: StageResultHeader,
@@ -164,7 +164,7 @@ pub struct LeaseResult {
     pub expires_at: Timestamp,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ParseResult {
     pub header: StageResultHeader,
@@ -175,7 +175,7 @@ pub struct ParseResult {
     pub parser_version: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GraphWriteResult {
     pub header: StageResultHeader,
@@ -187,7 +187,7 @@ pub struct GraphWriteResult {
     pub warnings: Vec<SourceWarning>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct VectorStoreWriteResult {
     pub header: StageResultHeader,
@@ -198,7 +198,7 @@ pub struct VectorStoreWriteResult {
     pub usage: ProviderUsage,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PublishGenerationResult {
     pub header: StageResultHeader,
@@ -211,7 +211,7 @@ pub struct PublishGenerationResult {
     pub cleanup_debt: Vec<CleanupDebtId>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CleanupDebtResult {
     pub header: StageResultHeader,
@@ -224,14 +224,14 @@ pub struct CleanupDebtResult {
     pub next_retry_at: Option<Timestamp>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ManifestItemFailure {
     pub item: ManifestItem,
     pub error: SourceError,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DiffCounts {
     pub added: u64,

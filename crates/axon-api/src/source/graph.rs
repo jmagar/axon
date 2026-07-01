@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use super::common::SourceRange;
 use super::ids::*;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SourceParseFacts {
     pub document_id: DocumentId,
@@ -18,7 +18,7 @@ pub struct SourceParseFacts {
     pub metadata: MetadataMap,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GraphCandidate {
     pub candidate_id: String,
@@ -36,7 +36,7 @@ pub struct GraphCandidate {
     pub metadata: MetadataMap,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GraphCandidateProducer {
     pub adapter: String,
@@ -45,7 +45,7 @@ pub struct GraphCandidateProducer {
     pub version: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GraphNodeCandidate {
     pub node_kind: String,
@@ -54,7 +54,7 @@ pub struct GraphNodeCandidate {
     pub properties: MetadataMap,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GraphEdgeCandidate {
     pub edge_kind: String,
@@ -63,7 +63,7 @@ pub struct GraphEdgeCandidate {
     pub properties: MetadataMap,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GraphEvidence {
     pub evidence_id: String,
@@ -78,7 +78,7 @@ pub struct GraphEvidence {
     pub metadata: MetadataMap,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GraphRef {
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -5,7 +5,7 @@ use super::common::*;
 use super::enums::*;
 use super::ids::*;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SourceRequest {
     pub source: String,
@@ -93,7 +93,7 @@ impl SourceRequest {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ResolvedSource {
     pub requested_uri: String,
@@ -110,7 +110,7 @@ pub struct ResolvedSource {
     pub warnings: Vec<SourceWarning>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RoutePlan {
     pub source: ResolvedSource,
@@ -129,7 +129,7 @@ pub struct RoutePlan {
     pub refresh_supported: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SourcePlan {
     pub job_id: JobId,
@@ -141,7 +141,7 @@ pub struct SourcePlan {
     pub provider_reservations: Vec<ProviderReservationRequest>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct EffectiveLimits {
     pub request: SourceLimits,
@@ -150,7 +150,7 @@ pub struct EffectiveLimits {
     pub effective: SourceLimits,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ProviderReservationRequest {
     pub provider_kind: ProviderKind,
@@ -159,7 +159,7 @@ pub struct ProviderReservationRequest {
     pub reason: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SourceResult {
     pub job_id: JobId,
@@ -183,7 +183,7 @@ pub struct SourceResult {
     pub errors: Vec<SourceError>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct InlineSourceResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -193,7 +193,7 @@ pub struct InlineSourceResult {
     pub metadata: MetadataMap,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct JobDescriptor {
     pub job_id: JobId,
@@ -204,7 +204,7 @@ pub struct JobDescriptor {
     pub updated_at: Timestamp,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PollDescriptor {
     pub status_url: String,
@@ -213,7 +213,7 @@ pub struct PollDescriptor {
     pub suggested_interval_ms: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct WatchResult {
     pub watch_id: WatchId,
@@ -226,7 +226,7 @@ pub struct WatchResult {
     pub warnings: Vec<SourceWarning>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct LedgerSummary {
     pub source_id: SourceId,
@@ -237,7 +237,7 @@ pub struct LedgerSummary {
     pub counts: SourceCounts,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GraphWriteSummary {
     pub nodes_upserted: u64,

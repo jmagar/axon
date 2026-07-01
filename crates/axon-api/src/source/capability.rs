@@ -5,7 +5,7 @@ use super::common::*;
 use super::enums::*;
 use super::ids::*;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CapabilityBase {
     pub name: String,
@@ -16,25 +16,39 @@ pub struct CapabilityBase {
     pub limits: MetadataMap,
 }
 
-pub type SourceResolverCapability = CapabilityBase;
-pub type SourceRouterCapability = CapabilityBase;
-pub type SourceAdapterCapability = CapabilityBase;
-pub type SourceScopeCapability = CapabilityBase;
-pub type SourceEnricherCapability = CapabilityBase;
-pub type DocumentPreparerCapability = CapabilityBase;
-pub type ChunkProfileCapability = CapabilityBase;
-pub type ParserCapability = CapabilityBase;
-pub type RetrievalCapability = CapabilityBase;
-pub type LedgerStoreCapability = CapabilityBase;
-pub type GraphStoreCapability = CapabilityBase;
-pub type MemoryStoreCapability = CapabilityBase;
-pub type JobStoreCapability = CapabilityBase;
-pub type WatchStoreCapability = CapabilityBase;
-pub type ArtifactStoreCapability = CapabilityBase;
-pub type ConfigStoreCapability = CapabilityBase;
-pub type DocumentCacheCapability = CapabilityBase;
+macro_rules! capability_newtype {
+    ($name:ident) => {
+        #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
+        #[serde(transparent)]
+        pub struct $name(pub CapabilityBase);
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+        impl From<CapabilityBase> for $name {
+            fn from(value: CapabilityBase) -> Self {
+                Self(value)
+            }
+        }
+    };
+}
+
+capability_newtype!(SourceResolverCapability);
+capability_newtype!(SourceRouterCapability);
+capability_newtype!(SourceAdapterCapability);
+capability_newtype!(SourceScopeCapability);
+capability_newtype!(SourceEnricherCapability);
+capability_newtype!(DocumentPreparerCapability);
+capability_newtype!(ChunkProfileCapability);
+capability_newtype!(ParserCapability);
+capability_newtype!(RetrievalCapability);
+capability_newtype!(LedgerStoreCapability);
+capability_newtype!(GraphStoreCapability);
+capability_newtype!(MemoryStoreCapability);
+capability_newtype!(JobStoreCapability);
+capability_newtype!(WatchStoreCapability);
+capability_newtype!(ArtifactStoreCapability);
+capability_newtype!(ConfigStoreCapability);
+capability_newtype!(DocumentCacheCapability);
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ProviderCapability {
     pub provider_id: ProviderId,
@@ -48,7 +62,7 @@ pub struct ProviderCapability {
     pub cooling_supported: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ProviderSummary {
     pub provider_id: ProviderId,
@@ -59,7 +73,7 @@ pub struct ProviderSummary {
     pub cooling_until: Option<Timestamp>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CapabilityDocument {
     pub server: ServerInfo,
@@ -73,7 +87,7 @@ pub struct CapabilityDocument {
     pub metadata: MetadataMap,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ServerInfo {
     pub name: String,
@@ -82,7 +96,7 @@ pub struct ServerInfo {
     pub environment: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StoreCapabilities {
     pub ledger: Option<LedgerStoreCapability>,
@@ -95,7 +109,7 @@ pub struct StoreCapabilities {
     pub document_cache: Option<DocumentCacheCapability>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct HealthReport {
     pub status: HealthStatus,

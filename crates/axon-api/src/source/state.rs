@@ -6,7 +6,7 @@ use super::document::CleanupSelector;
 use super::enums::*;
 use super::ids::*;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SourceGeneration {
     pub source_id: SourceId,
@@ -22,7 +22,7 @@ pub struct SourceGeneration {
     pub previous_generation: Option<SourceGenerationId>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ItemCounts {
     pub added: u64,
@@ -32,7 +32,7 @@ pub struct ItemCounts {
     pub failed: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DocumentCounts {
     pub discovered: u64,
@@ -42,7 +42,7 @@ pub struct DocumentCounts {
     pub failed: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CleanupDebt {
     pub debt_id: CleanupDebtId,

@@ -6,7 +6,7 @@ use super::enums::*;
 use super::graph::*;
 use super::ids::*;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SourceDocument {
     pub document_id: DocumentId,
@@ -32,7 +32,7 @@ pub struct SourceDocument {
     pub parser_hints: Vec<ParserHint>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PreparedDocument {
     pub document_id: DocumentId,
@@ -45,7 +45,7 @@ pub struct PreparedDocument {
     pub graph_refs: Vec<GraphRef>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PreparedChunk {
     pub chunk_id: ChunkId,
@@ -59,7 +59,7 @@ pub struct PreparedChunk {
     pub metadata: MetadataMap,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ChunkLocator {
     pub canonical_uri: String,
@@ -71,14 +71,14 @@ pub struct ChunkLocator {
     pub range: SourceRange,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CleanupKey {
     pub kind: CleanupDebtKind,
     pub selector: CleanupSelector,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CleanupSelector {
     Source { source_id: SourceId },
@@ -88,7 +88,7 @@ pub enum CleanupSelector {
     Artifact { artifact_id: ArtifactId },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DocumentStatus {
     pub document_id: DocumentId,

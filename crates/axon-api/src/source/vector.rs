@@ -5,7 +5,7 @@ use super::common::*;
 use super::enums::*;
 use super::ids::*;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct EmbeddingBatch {
     pub batch_id: BatchId,
@@ -19,7 +19,7 @@ pub struct EmbeddingBatch {
     pub metadata: MetadataMap,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct EmbeddingInput {
     pub chunk_id: ChunkId,
@@ -28,7 +28,7 @@ pub struct EmbeddingInput {
     pub metadata: MetadataMap,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct EmbeddingResult {
     pub batch_id: BatchId,
@@ -39,14 +39,14 @@ pub struct EmbeddingResult {
     pub warnings: Vec<SourceWarning>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct EmbeddingVector {
     pub chunk_id: ChunkId,
     pub values: Vec<f32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ProviderUsage {
     pub input_tokens: Option<u64>,
@@ -55,7 +55,7 @@ pub struct ProviderUsage {
     pub duration_ms: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct VectorPointBatch {
     pub batch_id: BatchId,
@@ -68,7 +68,7 @@ pub struct VectorPointBatch {
     pub payload_indexes: Vec<PayloadIndexSpec>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct VectorPoint {
     pub point_id: VectorPointId,
@@ -79,7 +79,7 @@ pub struct VectorPoint {
     pub payload: MetadataMap,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SparseVector {
     pub chunk_id: ChunkId,
@@ -87,7 +87,7 @@ pub struct SparseVector {
     pub values: Vec<f32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PayloadIndexSpec {
     pub field_name: String,
@@ -95,7 +95,7 @@ pub struct PayloadIndexSpec {
     pub required_for_filters: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PayloadFieldSchema {
     Keyword,
