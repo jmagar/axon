@@ -4,6 +4,25 @@ use uuid::Uuid;
 
 use crate::boundary::Result;
 
+pub(crate) fn new_job_descriptor(
+    job_id: JobId,
+    kind: JobKind,
+    timestamp: Timestamp,
+) -> JobDescriptor {
+    JobDescriptor {
+        job_id,
+        kind,
+        status: LifecycleStatus::Queued,
+        poll: PollDescriptor {
+            status_url: format!("/v1/jobs/{job_id}", job_id = job_id.0),
+            events_url: Some(format!("/v1/jobs/{job_id}/events", job_id = job_id.0)),
+            suggested_interval_ms: 1000,
+        },
+        created_at: timestamp.clone(),
+        updated_at: timestamp,
+    }
+}
+
 pub(crate) fn descriptor(summary: &JobSummary) -> JobDescriptor {
     JobDescriptor {
         job_id: summary.job_id,

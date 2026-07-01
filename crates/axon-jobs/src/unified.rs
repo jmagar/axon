@@ -79,18 +79,7 @@ impl JobStore for SqliteUnifiedJobStore {
         }
 
         tx.commit().await.map_err(sql_error)?;
-        Ok(JobDescriptor {
-            job_id,
-            kind: request.job_kind,
-            status: LifecycleStatus::Queued,
-            poll: PollDescriptor {
-                status_url: format!("/v1/jobs/{job_id}", job_id = job_id.0),
-                events_url: Some(format!("/v1/jobs/{job_id}/events", job_id = job_id.0)),
-                suggested_interval_ms: 1000,
-            },
-            created_at: now.clone(),
-            updated_at: now,
-        })
+        Ok(new_job_descriptor(job_id, request.job_kind, now))
     }
 
     async fn get(&self, job_id: JobId) -> Result<Option<JobSummary>> {
