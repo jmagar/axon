@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use axon_api::source::MetadataMap;
+use serde_json::Value;
 
 pub const MODULE_NAME: &str = "payload";
 
@@ -23,6 +24,9 @@ pub enum VectorPayloadValidationError {
         field: String,
     },
     ForbiddenField {
+        field: String,
+    },
+    ForbiddenValue {
         field: String,
     },
     UnknownSourceSpecificField {
@@ -45,6 +49,9 @@ impl fmt::Display for VectorPayloadValidationError {
             }
             Self::ForbiddenField { field } => {
                 write!(f, "forbidden vector payload field `{field}`")
+            }
+            Self::ForbiddenValue { field } => {
+                write!(f, "forbidden vector payload value under `{field}`")
             }
             Self::UnknownSourceSpecificField {
                 source_family,
@@ -184,12 +191,13 @@ fn validate_required_fields(metadata: &MetadataMap) -> Result<(), VectorPayloadV
 }
 
 fn validate_forbidden_fields(metadata: &MetadataMap) -> Result<(), VectorPayloadValidationError> {
-    for field in metadata.keys() {
+    for (field, value) in metadata.iter() {
         if forbidden_field_name(field) {
             return Err(VectorPayloadValidationError::ForbiddenField {
                 field: field.clone(),
             });
         }
+        validate_forbidden_value(field, value)?;
     }
     Ok(())
 }
@@ -247,6 +255,92 @@ fn forbidden_field_name(field: &str) -> bool {
     FORBIDDEN_FIELD_FRAGMENTS
         .iter()
         .any(|fragment| normalized.contains(fragment))
+}
+
+fn validate_forbidden_value(path: &str, value: &Value) -> Result<(), VectorPayloadValidationError> {
+    match value {
+        Value::String(value) if forbidden_string_value(value) => {
+            Err(VectorPayloadValidationError::ForbiddenValue {
+                field: path.to_string(),
+            })
+        }
+        Value::Array(values) => {
+            for (index, value) in values.iter().enumerate() {
+                validate_forbidden_value(&format!("{path}[{index}]"), value)?;
+            }
+            Ok(())
+        }
+        Value::Object(object) => {
+            if adapter_response_blob(object) {
+                return Err(VectorPayloadValidationError::ForbiddenValue {
+                    field: path.to_string(),
+                });
+            }
+            for (field, value) in object {
+                let child_path = format!("{path}.{field}");
+                if forbidden_field_name(field) {
+                    return Err(VectorPayloadValidationError::ForbiddenValue { field: child_path });
+                }
+                validate_forbidden_value(&child_path, value)?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+fn forbidden_string_value(value: &str) -> bool {
+    let normalized = value.to_ascii_lowercase();
+    FORBIDDEN_VALUE_FRAGMENTS
+        .iter()
+        .any(|fragment| normalized.contains(fragment))
+        || raw_dotenv_assignment(value)
+        || home_credential_path(&normalized)
+        || raw_html_blob(&normalized)
+        || normalized.contains("adapter_response")
+}
+
+fn raw_dotenv_assignment(value: &str) -> bool {
+    value.lines().any(|line| {
+        let line = line.trim();
+        let Some((key, raw_value)) = line.split_once('=') else {
+            return false;
+        };
+        let key = key.trim();
+        !key.is_empty()
+            && !raw_value.trim().is_empty()
+            && key
+                .chars()
+                .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit() || ch == '_')
+            && key
+                .chars()
+                .next()
+                .is_some_and(|ch| ch.is_ascii_uppercase() || ch == '_')
+    })
+}
+
+fn home_credential_path(normalized: &str) -> bool {
+    normalized.contains("/home/")
+        && HOME_CREDENTIAL_PATH_FRAGMENTS
+            .iter()
+            .any(|fragment| normalized.contains(fragment))
+}
+
+fn raw_html_blob(normalized: &str) -> bool {
+    let trimmed = normalized.trim_start();
+    trimmed.starts_with("<!doctype html")
+        || trimmed.starts_with("<html")
+        || (normalized.contains("<html") && normalized.contains("</html>"))
+        || (normalized.contains("<body") && normalized.contains("</body>"))
+}
+
+fn adapter_response_blob(object: &serde_json::Map<String, Value>) -> bool {
+    let has_status = object.contains_key("status") || object.contains_key("status_code");
+    let has_headers = object.contains_key("headers");
+    let has_body = object.contains_key("body")
+        || object.contains_key("raw_body")
+        || object.contains_key("response_body");
+    has_status && has_headers && has_body
 }
 
 const REQUIRED_FIELDS: &[&str] = &[
@@ -308,4 +402,31 @@ const FORBIDDEN_FIELD_FRAGMENTS: &[&str] = &[
     "html_blob",
     "adapter_response",
     "response_blob",
+];
+
+const FORBIDDEN_VALUE_FRAGMENTS: &[&str] = &[
+    "authorization:",
+    "proxy-authorization:",
+    "bearer ",
+    "cookie:",
+    "set-cookie:",
+    "api_key=",
+    "apikey=",
+    "api-key:",
+    "x-api-key:",
+    "access_token=",
+    "refresh_token=",
+    "secret_key=",
+    "token=",
+];
+
+const HOME_CREDENTIAL_PATH_FRAGMENTS: &[&str] = &[
+    "/.ssh/",
+    "/.aws/",
+    "/.gnupg/",
+    "/.config/chezmoi/key.txt",
+    "/.config/gcloud/",
+    "/.docker/config.json",
+    "/.kube/config",
+    "/.env",
 ];

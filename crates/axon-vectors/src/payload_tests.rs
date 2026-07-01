@@ -125,6 +125,42 @@ fn invalid_payload_fixtures_report_the_expected_validation_error() {
                 value: "world".to_string(),
             },
         ),
+        (
+            "forbidden_auth_header_value.invalid.json",
+            VectorPayloadValidationError::ForbiddenValue {
+                field: "web_title".to_string(),
+            },
+        ),
+        (
+            "forbidden_cookie_value.invalid.json",
+            VectorPayloadValidationError::ForbiddenValue {
+                field: "source_range.headers[0]".to_string(),
+            },
+        ),
+        (
+            "forbidden_dotenv_value.invalid.json",
+            VectorPayloadValidationError::ForbiddenValue {
+                field: "source_range.env[0]".to_string(),
+            },
+        ),
+        (
+            "forbidden_home_credential_path_value.invalid.json",
+            VectorPayloadValidationError::ForbiddenValue {
+                field: "chunk_locator".to_string(),
+            },
+        ),
+        (
+            "forbidden_raw_html_value.invalid.json",
+            VectorPayloadValidationError::ForbiddenValue {
+                field: "web_title".to_string(),
+            },
+        ),
+        (
+            "forbidden_adapter_response_value.invalid.json",
+            VectorPayloadValidationError::ForbiddenValue {
+                field: "source_range.adapter_response".to_string(),
+            },
+        ),
     ];
 
     for (name, expected) in cases {
