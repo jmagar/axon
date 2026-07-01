@@ -242,3 +242,53 @@ fn source_generation_and_cleanup_debt_round_trip() {
         debt
     );
 }
+
+#[test]
+fn capability_document_uses_closed_provider_enums() {
+    let capability = CapabilityDocument {
+        server: ServerInfo {
+            name: "axon".to_string(),
+            version: "6.2.1".to_string(),
+            build: None,
+            environment: Some("test".to_string()),
+        },
+        generated_at: Utc::now(),
+        source_kinds: vec![SourceKind::Local, SourceKind::Git],
+        source_scopes: vec![SourceScope::File, SourceScope::Repo],
+        pipeline_phases: vec![PipelinePhase::Resolving, PipelinePhase::Embedding],
+        adapters: vec![CapabilityBase {
+            name: "local".to_string(),
+            version: "0.1.0".to_string(),
+            owner_crate: "axon-adapters".to_string(),
+            health: HealthStatus::Healthy,
+            features: vec!["manifest".to_string()],
+            limits: MetadataMap::new(),
+        }],
+        providers: vec![ProviderCapability {
+            provider_id: ProviderId::from("tei-default"),
+            provider_kind: ProviderKind::Embedding,
+            name: "tei".to_string(),
+            version: "0.1.0".to_string(),
+            health: HealthStatus::Healthy,
+            features: vec!["dense".to_string()],
+            limits: MetadataMap::new(),
+            reservations_supported: true,
+            cooling_supported: true,
+        }],
+        stores: StoreCapabilities {
+            ledger: None,
+            graph: None,
+            memory: None,
+            job: None,
+            watch: None,
+            artifact: None,
+            config: None,
+            document_cache: None,
+        },
+        metadata: MetadataMap::new(),
+    };
+
+    let value = serde_json::to_value(&capability).expect("capability document");
+    assert_eq!(value["providers"][0]["provider_kind"], "embedding");
+    assert_eq!(value["adapters"][0]["owner_crate"], "axon-adapters");
+}

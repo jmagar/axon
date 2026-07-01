@@ -4,6 +4,7 @@
 //! stores, providers, and future adapters without pulling runtime crates into
 //! `axon-api`.
 
+pub mod capability;
 pub mod common;
 pub mod document;
 pub mod enums;
@@ -14,6 +15,7 @@ pub mod stage;
 pub mod state;
 pub mod vector;
 
+pub use capability::*;
 pub use common::*;
 pub use document::*;
 pub use enums::*;
