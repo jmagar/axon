@@ -23,7 +23,10 @@ pub fn canonicalize(raw: &str, requested_scope: Option<SourceScope>) -> Option<C
         .or_else(|| canonical_reddit(source))
         .or_else(|| canonical_youtube(source))
         .or_else(|| canonical_registry(source))
+        .or_else(|| canonical_gitlab(source))
+        .or_else(|| canonical_gitea(source))
         .or_else(|| canonical_github(source))
+        .or_else(|| canonical_generic_git(source))
         .or_else(|| canonical_web(source))
 }
 
@@ -196,6 +199,56 @@ fn canonical_github(raw: &str) -> Option<CanonicalSource> {
     ))
 }
 
+fn canonical_gitlab(raw: &str) -> Option<CanonicalSource> {
+    let url = normalized_url(raw)?;
+    let host = url.host_str()?;
+    if !host.contains("gitlab") {
+        return None;
+    }
+    let path = repo_path(&url)?;
+    Some(basic(
+        format!("gitlab://{host}/{path}"),
+        SourceKind::Git,
+        SourceScope::Repo,
+        "gitlab",
+        path.rsplit('/').next().unwrap_or(&path),
+        "resolved as GitLab repository source",
+    ))
+}
+
+fn canonical_gitea(raw: &str) -> Option<CanonicalSource> {
+    let url = normalized_url(raw)?;
+    let host = url.host_str()?;
+    if !(host.contains("gitea") || host.contains("forgejo") || host == "codeberg.org") {
+        return None;
+    }
+    let path = repo_path(&url)?;
+    Some(basic(
+        format!("gitea://{host}/{path}"),
+        SourceKind::Git,
+        SourceScope::Repo,
+        "gitea",
+        path.rsplit('/').next().unwrap_or(&path),
+        "resolved as Gitea/Forgejo repository source",
+    ))
+}
+
+fn canonical_generic_git(raw: &str) -> Option<CanonicalSource> {
+    let url = normalized_url(raw)?;
+    let path = repo_path(&url)?;
+    if !path.ends_with(".git") {
+        return None;
+    }
+    Some(basic(
+        format!("git+https://{}{}", url.host_str()?, clean_path(&url)),
+        SourceKind::Git,
+        SourceScope::Repo,
+        "git",
+        path.rsplit('/').next().unwrap_or(&path),
+        "resolved as generic Git repository source",
+    ))
+}
+
 fn canonical_web(raw: &str) -> Option<CanonicalSource> {
     let url = normalized_url(raw)?;
     Some(basic(
@@ -227,11 +280,39 @@ fn clean_path(url: &Url) -> String {
     } else {
         url.path()
     };
+    let path = collapse_duplicate_slashes(path);
     if path == "/" {
-        "/".to_string()
+        path
     } else {
         path.trim_end_matches('/').to_string()
     }
+}
+
+fn repo_path(url: &Url) -> Option<String> {
+    let path = clean_path(url).trim_start_matches('/').to_string();
+    let path = path.split("/-/").next().unwrap_or(&path);
+    if path.split('/').count() < 2 {
+        None
+    } else {
+        Some(path.to_string())
+    }
+}
+
+fn collapse_duplicate_slashes(path: &str) -> String {
+    let mut collapsed = String::with_capacity(path.len());
+    let mut previous_slash = false;
+    for ch in path.chars() {
+        if ch == '/' {
+            if !previous_slash {
+                collapsed.push(ch);
+            }
+            previous_slash = true;
+        } else {
+            collapsed.push(ch);
+            previous_slash = false;
+        }
+    }
+    collapsed
 }
 
 fn trim_git_suffix(value: &str) -> &str {

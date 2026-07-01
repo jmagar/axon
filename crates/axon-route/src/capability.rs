@@ -92,6 +92,18 @@ impl AdapterRegistry {
                 .with_scope(SourceScope::Issue)
                 .with_scope(SourceScope::PullRequest)
                 .with_scope(SourceScope::Release),
+            AdapterDefinition::new("git", "1", SourceKind::Git, SourceScope::Repo)
+                .with_scope(SourceScope::Branch),
+            AdapterDefinition::new("gitea", "1", SourceKind::Git, SourceScope::Repo)
+                .with_scope(SourceScope::Branch)
+                .with_scope(SourceScope::Issue)
+                .with_scope(SourceScope::PullRequest)
+                .with_scope(SourceScope::Release),
+            AdapterDefinition::new("gitlab", "1", SourceKind::Git, SourceScope::Repo)
+                .with_scope(SourceScope::Branch)
+                .with_scope(SourceScope::Issue)
+                .with_scope(SourceScope::MergeRequest)
+                .with_scope(SourceScope::Release),
             AdapterDefinition::new("local", "1", SourceKind::Local, SourceScope::Directory)
                 .with_scope(SourceScope::File)
                 .with_scope(SourceScope::Workspace)

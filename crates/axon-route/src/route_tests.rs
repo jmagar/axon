@@ -83,6 +83,34 @@ fn resolver_normalizes_source_families_without_fetching_content() {
             "npm",
         ),
         (
+            SourceRequest::new("pypi:FastAPI"),
+            SourceKind::Registry,
+            "pkg://pypi/fastapi",
+            SourceScope::Package,
+            "pypi",
+        ),
+        (
+            SourceRequest::new("docker:library/postgres:16"),
+            SourceKind::Registry,
+            "docker://docker.io/library/postgres:16",
+            SourceScope::Package,
+            "docker",
+        ),
+        (
+            SourceRequest::new("https://gitlab.com/group/subgroup/project"),
+            SourceKind::Git,
+            "gitlab://gitlab.com/group/subgroup/project",
+            SourceScope::Repo,
+            "gitlab",
+        ),
+        (
+            SourceRequest::new("https://git.example.com/org/project.git"),
+            SourceKind::Git,
+            "git+https://git.example.com/org/project.git",
+            SourceScope::Repo,
+            "git",
+        ),
+        (
             SourceRequest::new("r/rust"),
             SourceKind::Reddit,
             "reddit://r/rust",
@@ -138,6 +166,23 @@ fn resolver_normalizes_source_families_without_fetching_content() {
 }
 
 #[test]
+fn resolver_uses_equivalent_canonical_uri_for_noisy_web_urls() {
+    let resolver = resolver_with_authority();
+    let clean = resolver
+        .resolve(&SourceRequest::new("https://example.com/docs"))
+        .expect("clean resolves");
+    let noisy = resolver
+        .resolve(&SourceRequest::new(
+            "HTTPS://Example.COM:443//docs/?utm_source=newsletter&fbclid=abc#install",
+        ))
+        .expect("noisy resolves");
+
+    assert_eq!(noisy.canonical_uri, "https://example.com/docs");
+    assert_eq!(clean.canonical_uri, noisy.canonical_uri);
+    assert_eq!(clean.source_id, noisy.source_id);
+}
+
+#[test]
 fn resolver_keeps_local_absolute_paths_out_of_public_identity() {
     let resolver = resolver_with_authority();
     let request = SourceRequest::local_path("/home/jmagar/workspace/axon/crates/axon-route", true);
@@ -149,6 +194,41 @@ fn resolver_keeps_local_absolute_paths_out_of_public_identity() {
     assert!(resolved.canonical_uri.starts_with("local://lp_"));
     assert!(!resolved.canonical_uri.contains("/home/jmagar"));
     assert!(resolved.display_name.contains("axon-route"));
+}
+
+#[test]
+fn target_registry_declares_expected_route_time_adapters() {
+    let registry = AdapterRegistry::target_defaults();
+    let expected = [
+        ("cli", SourceKind::CliTool, SourceScope::Tool),
+        ("crates", SourceKind::Registry, SourceScope::Package),
+        ("docker", SourceKind::Registry, SourceScope::Package),
+        ("feed", SourceKind::Feed, SourceScope::Feed),
+        ("git", SourceKind::Git, SourceScope::Repo),
+        ("github", SourceKind::Git, SourceScope::Repo),
+        ("gitlab", SourceKind::Git, SourceScope::Repo),
+        ("gitea", SourceKind::Git, SourceScope::Repo),
+        ("local", SourceKind::Local, SourceScope::Directory),
+        ("mcp", SourceKind::McpTool, SourceScope::Tool),
+        ("npm", SourceKind::Registry, SourceScope::Package),
+        ("pypi", SourceKind::Registry, SourceScope::Package),
+        ("reddit", SourceKind::Reddit, SourceScope::Subreddit),
+        ("session", SourceKind::Session, SourceScope::Thread),
+        ("web", SourceKind::Web, SourceScope::Site),
+        ("youtube", SourceKind::Youtube, SourceScope::Video),
+    ];
+
+    for (name, source_kind, default_scope) in expected {
+        let adapter = registry
+            .find(name)
+            .unwrap_or_else(|| panic!("{name} exists"));
+        assert_eq!(adapter.source_kind, source_kind, "{name}");
+        assert_eq!(adapter.default_scope, default_scope, "{name}");
+        assert!(
+            adapter.supported_scopes.contains(&default_scope),
+            "{name} supports its default scope"
+        );
+    }
 }
 
 #[test]
