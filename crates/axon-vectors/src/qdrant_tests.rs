@@ -1,5 +1,7 @@
 use axon_api::source::*;
-use qdrant_client::qdrant::{FieldType, condition, point_id, vector, vectors, vectors_config};
+use qdrant_client::qdrant::{
+    FieldType, condition, r#match, point_id, vector, vectors, vectors_config,
+};
 use serde_json::json;
 
 use crate::point::VectorPointBatchBuilder;
@@ -94,6 +96,24 @@ fn source_generation_and_document_filters_convert_to_qdrant_filters() {
     assert!(keys.contains(&"source_id"));
     assert!(keys.contains(&"source_generation"));
     assert!(keys.contains(&"document_id"));
+    let generation_condition = filter
+        .must
+        .iter()
+        .find_map(|condition| {
+            let condition::ConditionOneOf::Field(field) = condition.condition_one_of.as_ref()?
+            else {
+                return None;
+            };
+            (field.key == "source_generation").then_some(field)
+        })
+        .expect("source_generation condition");
+    assert!(matches!(
+        generation_condition
+            .r#match
+            .as_ref()
+            .and_then(|value| value.match_value.as_ref()),
+        Some(r#match::MatchValue::Integer(7))
+    ));
 
     request.filters.clear();
     request.generation = None;
@@ -102,13 +122,15 @@ fn source_generation_and_document_filters_convert_to_qdrant_filters() {
 
 #[test]
 fn vector_point_batch_converts_to_qdrant_points_without_dropping_payload_fields() {
+    let mut spec = test_collection_spec(3);
+    spec.dense.name = "dense_docs".to_string();
     let document = test_prepared_document();
     let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
-    let batch = VectorPointBatchBuilder::new(test_collection_spec(3), document, embeddings)
+    let batch = VectorPointBatchBuilder::new(spec.clone(), document, embeddings)
         .build()
         .unwrap();
 
-    let points = qdrant_upsert_points(&batch);
+    let points = qdrant_upsert_points(&spec, &batch);
 
     assert_eq!(points.len(), 2);
     let first = &points[0];
@@ -133,7 +155,8 @@ fn vector_point_batch_converts_to_qdrant_points_without_dropping_payload_fields(
     else {
         panic!("expected named vectors");
     };
-    let vector::Vector::Dense(dense) = named.vectors["dense"].vector.as_ref().unwrap() else {
+    assert!(!named.vectors.contains_key("dense"));
+    let vector::Vector::Dense(dense) = named.vectors["dense_docs"].vector.as_ref().unwrap() else {
         panic!("expected dense vector");
     };
     assert_eq!(dense.data, batch.points[0].vector);

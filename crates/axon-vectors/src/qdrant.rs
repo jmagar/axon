@@ -189,10 +189,12 @@ pub fn qdrant_filter(request: &VectorSearchRequest) -> Option<Filter> {
         .map(|(field, value)| field_condition(field, value))
         .collect::<Vec<_>>();
     if let Some(generation) = &request.generation {
-        conditions.push(field_condition(
-            "source_generation",
-            &serde_json::Value::String(generation.0.clone()),
-        ));
+        let value = generation
+            .0
+            .parse::<i64>()
+            .map(serde_json::Value::from)
+            .unwrap_or_else(|_| serde_json::Value::String(generation.0.clone()));
+        conditions.push(field_condition("source_generation", &value));
     }
     (!conditions.is_empty()).then_some(Filter {
         should: Vec::new(),
@@ -202,13 +204,13 @@ pub fn qdrant_filter(request: &VectorSearchRequest) -> Option<Filter> {
     })
 }
 
-pub fn qdrant_upsert_points(batch: &VectorPointBatch) -> Vec<PointStruct> {
+pub fn qdrant_upsert_points(spec: &CollectionSpec, batch: &VectorPointBatch) -> Vec<PointStruct> {
     batch
         .points
         .iter()
         .map(|point| {
             let mut named = HashMap::new();
-            named.insert("dense".to_string(), point.vector.clone());
+            named.insert(spec.dense.name.clone(), point.vector.clone());
             PointStruct {
                 id: Some(point.point_id.0.as_str().into()),
                 payload: point
