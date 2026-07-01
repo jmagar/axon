@@ -77,6 +77,42 @@ async fn fake_credential_provider_reports_health_override() {
 }
 
 #[tokio::test]
+async fn fake_credential_provider_capabilities_reflect_failure_mode() {
+    let timeout = FakeCredentialProvider::new().with_mode(FakeCredentialMode::Timeout);
+    assert_eq!(
+        CredentialProvider::capabilities(&timeout)
+            .await
+            .unwrap()
+            .health,
+        HealthStatus::Degraded
+    );
+
+    let rate_limited = FakeCredentialProvider::new().with_mode(FakeCredentialMode::RateLimited);
+    let capability = CredentialProvider::capabilities(&rate_limited)
+        .await
+        .unwrap();
+    assert_eq!(capability.health, HealthStatus::Cooling);
+    assert!(capability.cooldown_until.is_some());
+    assert_eq!(
+        capability.last_error.unwrap().code.to_string(),
+        "provider.rate_limited"
+    );
+
+    let provider = FakeCredentialProvider::new().with_mode(FakeCredentialMode::Fatal);
+
+    let capability = CredentialProvider::capabilities(&provider).await.unwrap();
+
+    assert_eq!(capability.health, HealthStatus::Unavailable);
+    let error = capability.last_error.unwrap();
+    assert_eq!(error.code.to_string(), "provider.fatal");
+    assert_eq!(
+        error.provider_id,
+        Some("fake-credential-provider".to_string())
+    );
+    assert!(!error.retryable);
+}
+
+#[tokio::test]
 async fn fake_credential_provider_returns_failure_modes_and_records_calls() {
     let provider = FakeCredentialProvider::new().with_mode(FakeCredentialMode::Fatal);
 

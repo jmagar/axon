@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use fake::{FakeEmbeddingMode, FakeEmbeddingProvider};
 use provider::EmbeddingProvider;
-use reservation::{ProviderReservationConfig, ProviderReservationManager};
+use reservation::{ProviderReservationConfig, ProviderReservationManager, ProviderReservations};
 
 fn batch(priority: JobPriority) -> EmbeddingBatch {
     EmbeddingBatch {
@@ -133,4 +133,21 @@ async fn reservation_drop_releases_capacity_synchronously() {
         .reserve(JobPriority::Interactive, 1)
         .await
         .unwrap();
+}
+
+#[tokio::test]
+async fn compatibility_provider_reservations_keep_legacy_per_provider_api() {
+    let reservations = ProviderReservations::new(2, 1);
+
+    let held = reservations
+        .reserve(
+            ProviderId::new("fake-embedding"),
+            JobPriority::Interactive,
+            1,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(held.provider_id(), &ProviderId::new("fake-embedding"));
+    assert_eq!(reservations.snapshot().await.active, 1);
 }

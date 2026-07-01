@@ -3,13 +3,13 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axon_api::source::{
     ApiError, HealthStatus, JobPriority, ProviderId, ProviderKind, ReservationState,
     ReservationStateSnapshot, Timestamp,
 };
 use axon_error::ErrorStage;
+use chrono::{DateTime, Duration, Utc};
 
 pub type Result<T> = std::result::Result<T, ApiError>;
 
@@ -36,6 +36,7 @@ struct ReservationStateInner {
     consecutive_failures: u32,
     health: HealthStatus,
     cooldown_until: Option<Timestamp>,
+    cooldown_deadline: Option<DateTime<Utc>>,
     last_error_code: Option<String>,
 }
 
@@ -65,6 +66,7 @@ impl ProviderReservationManager {
                 consecutive_failures: 0,
                 health: HealthStatus::Healthy,
                 cooldown_until: None,
+                cooldown_deadline: None,
                 last_error_code: None,
             })),
         }
@@ -72,6 +74,16 @@ impl ProviderReservationManager {
 
     pub async fn reserve(&self, priority: JobPriority, units: u32) -> Result<ProviderReservation> {
         let mut state = self.state.lock().expect("reservation state mutex poisoned");
+        state.refresh_cooldown();
+        if state.health == HealthStatus::Unavailable {
+            let code = state
+                .last_error_code
+                .as_deref()
+                .unwrap_or("provider.unavailable");
+            let mut error = state.error(code, "provider is unavailable");
+            error.retryable = false;
+            return Err(error);
+        }
         if state.cooldown_until.is_some() {
             return Err(state.error("provider.cooling", "provider is cooling down"));
         }
@@ -136,13 +148,17 @@ impl ProviderReservationManager {
         state.last_error_code = Some(code.into());
         if !retryable {
             state.health = HealthStatus::Unavailable;
+            state.cooldown_until = None;
+            state.cooldown_deadline = None;
             return ProviderReservationOutcome::Recorded;
         }
 
         state.consecutive_failures += 1;
         if state.consecutive_failures >= state.config.cooldown_after_failures {
             state.health = HealthStatus::Cooling;
-            state.cooldown_until = Some(timestamp_after(state.config.cooldown_secs));
+            let deadline = Utc::now() + Duration::seconds(state.config.cooldown_secs as i64);
+            state.cooldown_until = Some(Timestamp::from(deadline));
+            state.cooldown_deadline = Some(deadline);
             ProviderReservationOutcome::Cooling
         } else {
             state.health = HealthStatus::Degraded;
@@ -155,22 +171,20 @@ impl ProviderReservationManager {
         state.consecutive_failures = 0;
         state.health = HealthStatus::Healthy;
         state.cooldown_until = None;
+        state.cooldown_deadline = None;
         state.last_error_code = None;
     }
 
     pub async fn health(&self) -> HealthStatus {
-        self.state
-            .lock()
-            .expect("reservation state mutex poisoned")
-            .health
+        let mut state = self.state.lock().expect("reservation state mutex poisoned");
+        state.refresh_cooldown();
+        state.health
     }
 
     pub async fn cooldown_until(&self) -> Option<Timestamp> {
-        self.state
-            .lock()
-            .expect("reservation state mutex poisoned")
-            .cooldown_until
-            .clone()
+        let mut state = self.state.lock().expect("reservation state mutex poisoned");
+        state.refresh_cooldown();
+        state.cooldown_until.clone()
     }
 }
 
@@ -207,6 +221,19 @@ impl Drop for ProviderReservation {
 }
 
 impl ReservationStateInner {
+    fn refresh_cooldown(&mut self) {
+        if self
+            .cooldown_deadline
+            .is_some_and(|deadline| deadline <= Utc::now())
+        {
+            self.consecutive_failures = 0;
+            self.health = HealthStatus::Healthy;
+            self.cooldown_until = None;
+            self.cooldown_deadline = None;
+            self.last_error_code = None;
+        }
+    }
+
     fn preserves_interactive_capacity(&self, priority: JobPriority, units: u32) -> bool {
         if !matches!(priority, JobPriority::Background | JobPriority::Maintenance) {
             return true;
@@ -234,11 +261,4 @@ fn priority_key(priority: JobPriority) -> String {
         JobPriority::Maintenance => "maintenance",
     }
     .to_string()
-}
-
-fn timestamp_after(seconds: u64) -> Timestamp {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_else(|_| Duration::from_secs(0));
-    Timestamp(format!("epoch+{}s", now.as_secs().saturating_add(seconds)))
 }

@@ -79,7 +79,11 @@ impl FakeAdapterProviders {
             .push(call);
     }
 
-    fn mode_error(&self, stage: axon_error::ErrorStage) -> Option<ApiError> {
+    fn mode_error(
+        &self,
+        stage: axon_error::ErrorStage,
+        provider_kind: ProviderKind,
+    ) -> Option<ApiError> {
         let (code, message) = match self.mode {
             FakeAdapterMode::Success => return None,
             FakeAdapterMode::Timeout => ("provider.timeout", "adapter provider timed out"),
@@ -88,11 +92,65 @@ impl FakeAdapterProviders {
             }
             FakeAdapterMode::Fatal => ("provider.fatal", "adapter provider failed fatally"),
         };
-        let mut error = ApiError::new(code, stage, message);
+        let mut error =
+            ApiError::new(code, stage, message).with_provider_id(provider_id(provider_kind));
         if self.mode == FakeAdapterMode::Fatal {
             error.retryable = false;
         }
         Some(error)
+    }
+
+    fn capability_health(&self) -> HealthStatus {
+        match self.mode {
+            FakeAdapterMode::Success => self.health,
+            FakeAdapterMode::Timeout => HealthStatus::Degraded,
+            FakeAdapterMode::RateLimited => HealthStatus::Cooling,
+            FakeAdapterMode::Fatal => HealthStatus::Unavailable,
+        }
+    }
+
+    fn capability_cooldown(&self) -> Option<Timestamp> {
+        (self.mode == FakeAdapterMode::RateLimited)
+            .then(|| Timestamp("2026-07-01T00:00:30Z".to_string()))
+    }
+
+    fn provider_capability(&self, provider_kind: ProviderKind) -> ProviderCapability {
+        ProviderCapability {
+            provider_id: ProviderId::new(provider_id(provider_kind)),
+            provider_kind,
+            implementation: "fake".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            health: self.capability_health(),
+            limits: ProviderLimits::default(),
+            features: vec!["fake".to_string()],
+            cooldown_until: self.capability_cooldown(),
+            last_error: self.mode_error(axon_error::ErrorStage::Observing, provider_kind),
+            reservation_policy: ReservationPolicy {
+                supports_reservations: false,
+                queue_policy: QueuePolicy::Fifo,
+                interactive_reserve: 0,
+                cooldown_after_failures: 0,
+                cooldown_secs: 0,
+                retry_backoff_ms: None,
+            },
+            reservation_state: ReservationStateSnapshot {
+                queued: 0,
+                active: 0,
+                available_units: 1,
+                oldest_queued_ms: None,
+                priority_breakdown: Default::default(),
+                states: Vec::new(),
+            },
+            cost_class: ProviderCostClass::Internal,
+            degraded_modes: Vec::new(),
+            fake_overrides_supported: true,
+            embedding: None,
+            llm: None,
+            vector_store: None,
+            fetch: None,
+            render: None,
+            credential: None,
+        }
     }
 }
 
@@ -106,7 +164,9 @@ impl Default for FakeAdapterProviders {
 impl SearchProvider for FakeAdapterProviders {
     async fn search(&self, request: SearchRequest) -> Result<SearchResult> {
         self.record("search");
-        if let Some(err) = self.mode_error(axon_error::ErrorStage::Discovering) {
+        if let Some(err) =
+            self.mode_error(axon_error::ErrorStage::Discovering, ProviderKind::Search)
+        {
             return Err(err);
         }
         Ok(SearchResult {
@@ -120,7 +180,7 @@ impl SearchProvider for FakeAdapterProviders {
     }
 
     async fn capabilities(&self) -> Result<ProviderCapability> {
-        Ok(provider_capability(ProviderKind::Search, self.health))
+        Ok(self.provider_capability(ProviderKind::Search))
     }
 }
 
@@ -128,7 +188,7 @@ impl SearchProvider for FakeAdapterProviders {
 impl FetchProvider for FakeAdapterProviders {
     async fn fetch(&self, request: FetchRequest) -> Result<FetchedResource> {
         self.record("fetch");
-        if let Some(err) = self.mode_error(axon_error::ErrorStage::Fetching) {
+        if let Some(err) = self.mode_error(axon_error::ErrorStage::Fetching, ProviderKind::Fetch) {
             return Err(err);
         }
         Ok(FetchedResource {
@@ -150,7 +210,7 @@ impl FetchProvider for FakeAdapterProviders {
     }
 
     async fn capabilities(&self) -> Result<ProviderCapability> {
-        Ok(provider_capability(ProviderKind::Fetch, self.health))
+        Ok(self.provider_capability(ProviderKind::Fetch))
     }
 }
 
@@ -158,7 +218,8 @@ impl FetchProvider for FakeAdapterProviders {
 impl RenderProvider for FakeAdapterProviders {
     async fn render(&self, request: RenderRequest) -> Result<RenderedResource> {
         self.record("render");
-        if let Some(err) = self.mode_error(axon_error::ErrorStage::Rendering) {
+        if let Some(err) = self.mode_error(axon_error::ErrorStage::Rendering, ProviderKind::Render)
+        {
             return Err(err);
         }
         Ok(RenderedResource {
@@ -177,7 +238,7 @@ impl RenderProvider for FakeAdapterProviders {
     }
 
     async fn capabilities(&self) -> Result<ProviderCapability> {
-        Ok(provider_capability(ProviderKind::Render, self.health))
+        Ok(self.provider_capability(ProviderKind::Render))
     }
 }
 
@@ -185,7 +246,10 @@ impl RenderProvider for FakeAdapterProviders {
 impl NetworkCaptureProvider for FakeAdapterProviders {
     async fn capture(&self, request: NetworkCaptureRequest) -> Result<NetworkCaptureResult> {
         self.record("capture");
-        if let Some(err) = self.mode_error(axon_error::ErrorStage::Discovering) {
+        if let Some(err) = self.mode_error(
+            axon_error::ErrorStage::Discovering,
+            ProviderKind::NetworkCapture,
+        ) {
             return Err(err);
         }
         Ok(NetworkCaptureResult {
@@ -198,50 +262,12 @@ impl NetworkCaptureProvider for FakeAdapterProviders {
     }
 
     async fn capabilities(&self) -> Result<ProviderCapability> {
-        Ok(provider_capability(
-            ProviderKind::NetworkCapture,
-            self.health,
-        ))
+        Ok(self.provider_capability(ProviderKind::NetworkCapture))
     }
 }
 
-fn provider_capability(provider_kind: ProviderKind, health: HealthStatus) -> ProviderCapability {
-    ProviderCapability {
-        provider_id: ProviderId::new(format!("fake_{provider_kind:?}").to_lowercase()),
-        provider_kind,
-        implementation: "fake".to_string(),
-        version: env!("CARGO_PKG_VERSION").to_string(),
-        health,
-        limits: ProviderLimits::default(),
-        features: vec!["fake".to_string()],
-        cooldown_until: None,
-        last_error: None,
-        reservation_policy: ReservationPolicy {
-            supports_reservations: false,
-            queue_policy: QueuePolicy::Fifo,
-            interactive_reserve: 0,
-            cooldown_after_failures: 0,
-            cooldown_secs: 0,
-            retry_backoff_ms: None,
-        },
-        reservation_state: ReservationStateSnapshot {
-            queued: 0,
-            active: 0,
-            available_units: 1,
-            oldest_queued_ms: None,
-            priority_breakdown: Default::default(),
-            states: Vec::new(),
-        },
-        cost_class: ProviderCostClass::Internal,
-        degraded_modes: Vec::new(),
-        fake_overrides_supported: true,
-        embedding: None,
-        llm: None,
-        vector_store: None,
-        fetch: None,
-        render: None,
-        credential: None,
-    }
+fn provider_id(provider_kind: ProviderKind) -> String {
+    format!("fake_{provider_kind:?}").to_lowercase()
 }
 
 fn timestamp() -> Timestamp {

@@ -1,4 +1,5 @@
 use axon_api::source::{HealthStatus, JobPriority, ProviderId, ProviderKind, ReservationState};
+use chrono::DateTime;
 
 use crate::reservation::{
     ProviderReservationConfig, ProviderReservationManager, ProviderReservationOutcome,
@@ -96,5 +97,59 @@ async fn successful_probe_clears_cooldown() {
 
     assert_eq!(manager.health().await, HealthStatus::Healthy);
     assert!(manager.cooldown_until().await.is_none());
+    manager.reserve(JobPriority::Interactive, 1).await.unwrap();
+}
+
+#[tokio::test]
+async fn cooldown_timestamps_are_rfc3339_date_times() {
+    let manager = manager();
+
+    manager.record_failure("provider.timeout", true).await;
+    manager.record_failure("provider.timeout", true).await;
+    let cooldown_until = manager
+        .cooldown_until()
+        .await
+        .expect("cooldown should be set");
+
+    DateTime::parse_from_rfc3339(&cooldown_until.0).expect("cooldown timestamp must be RFC3339");
+}
+
+#[tokio::test]
+async fn expired_cooldown_allows_new_reservations_without_probe_success() {
+    let manager = ProviderReservationManager::new(ProviderReservationConfig {
+        provider_id: ProviderId::new("tei"),
+        provider_kind: ProviderKind::Embedding,
+        capacity: 1,
+        interactive_reserve: 0,
+        cooldown_after_failures: 1,
+        cooldown_secs: 0,
+    });
+
+    assert_eq!(
+        manager.record_failure("provider.timeout", true).await,
+        ProviderReservationOutcome::Cooling
+    );
+
+    manager.reserve(JobPriority::Interactive, 1).await.unwrap();
+
+    assert_eq!(manager.health().await, HealthStatus::Healthy);
+    assert!(manager.cooldown_until().await.is_none());
+}
+
+#[tokio::test]
+async fn fatal_provider_failure_blocks_reservations_until_success_probe() {
+    let manager = manager();
+
+    manager.record_failure("provider.fatal", false).await;
+    assert_eq!(manager.health().await, HealthStatus::Unavailable);
+
+    let denied = manager
+        .reserve(JobPriority::Interactive, 1)
+        .await
+        .unwrap_err();
+    assert_eq!(denied.code.to_string(), "provider.fatal");
+    assert!(!denied.retryable);
+
+    manager.record_success().await;
     manager.reserve(JobPriority::Interactive, 1).await.unwrap();
 }

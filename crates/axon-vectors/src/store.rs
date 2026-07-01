@@ -80,6 +80,20 @@ impl FakeVectorStore {
         }
         Some(error)
     }
+
+    fn capability_health(&self) -> HealthStatus {
+        match self.mode {
+            FakeVectorMode::Success => self.health,
+            FakeVectorMode::Timeout => HealthStatus::Degraded,
+            FakeVectorMode::RateLimited => HealthStatus::Cooling,
+            FakeVectorMode::Fatal => HealthStatus::Unavailable,
+        }
+    }
+
+    fn capability_cooldown(&self) -> Option<Timestamp> {
+        (self.mode == FakeVectorMode::RateLimited)
+            .then(|| Timestamp("2026-07-01T00:00:30Z".to_string()))
+    }
 }
 
 #[async_trait]
@@ -250,7 +264,7 @@ impl VectorStore for FakeVectorStore {
             provider_kind: ProviderKind::Vector,
             implementation: "fake".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
-            health: self.health,
+            health: self.capability_health(),
             limits: ProviderLimits {
                 max_concurrency: Some(2),
                 interactive_reserved_concurrency: Some(1),
@@ -258,8 +272,8 @@ impl VectorStore for FakeVectorStore {
                 ..ProviderLimits::default()
             },
             features: vec!["dense".to_string(), "delete_by_chunk".to_string()],
-            cooldown_until: None,
-            last_error: None,
+            cooldown_until: self.capability_cooldown(),
+            last_error: self.mode_error(),
             reservation_policy: ReservationPolicy {
                 supports_reservations: true,
                 queue_policy: QueuePolicy::Priority,

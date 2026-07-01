@@ -86,6 +86,34 @@ async fn fake_adapter_providers_report_health_override() {
 }
 
 #[tokio::test]
+async fn fake_adapter_provider_capabilities_reflect_failure_mode() {
+    let timeout = FakeAdapterProviders::new().with_mode(FakeAdapterMode::Timeout);
+    assert_eq!(
+        FetchProvider::capabilities(&timeout).await.unwrap().health,
+        HealthStatus::Degraded
+    );
+
+    let rate_limited = FakeAdapterProviders::new().with_mode(FakeAdapterMode::RateLimited);
+    let capability = FetchProvider::capabilities(&rate_limited).await.unwrap();
+    assert_eq!(capability.health, HealthStatus::Cooling);
+    assert!(capability.cooldown_until.is_some());
+    assert_eq!(
+        capability.last_error.unwrap().code.to_string(),
+        "provider.rate_limited"
+    );
+
+    let fake = FakeAdapterProviders::new().with_mode(FakeAdapterMode::Fatal);
+
+    let capability = FetchProvider::capabilities(&fake).await.unwrap();
+
+    assert_eq!(capability.health, HealthStatus::Unavailable);
+    let error = capability.last_error.unwrap();
+    assert_eq!(error.code.to_string(), "provider.fatal");
+    assert_eq!(error.provider_id, Some("fake_fetch".to_string()));
+    assert!(!error.retryable);
+}
+
+#[tokio::test]
 async fn fake_adapter_providers_return_failure_modes_and_record_calls() {
     let rate_limited = FakeAdapterProviders::new().with_mode(FakeAdapterMode::RateLimited);
 

@@ -93,6 +93,20 @@ impl FakeCredentialProvider {
         }
         Some(error)
     }
+
+    fn capability_health(&self) -> HealthStatus {
+        match self.mode {
+            FakeCredentialMode::Success => self.health,
+            FakeCredentialMode::Timeout => HealthStatus::Degraded,
+            FakeCredentialMode::RateLimited => HealthStatus::Cooling,
+            FakeCredentialMode::Fatal => HealthStatus::Unavailable,
+        }
+    }
+
+    fn capability_cooldown(&self) -> Option<Timestamp> {
+        (self.mode == FakeCredentialMode::RateLimited)
+            .then(|| Timestamp("2026-07-01T00:00:30Z".to_string()))
+    }
 }
 
 impl Default for FakeCredentialProvider {
@@ -128,7 +142,9 @@ impl CredentialProvider for FakeCredentialProvider {
             "fake",
             vec!["resolve".to_string()],
             true,
-            self.health,
+            self.capability_health(),
+            self.capability_cooldown(),
+            self.mode_error(),
         ))
     }
 }
@@ -158,6 +174,8 @@ impl SecurityPolicy for ScopeSecurityPolicy {
             vec!["source_authorization".to_string()],
             false,
             HealthStatus::Healthy,
+            None,
+            None,
         ))
     }
 }
@@ -169,6 +187,8 @@ fn provider_capability(
     features: Vec<String>,
     fake_overrides_supported: bool,
     health: HealthStatus,
+    cooldown_until: Option<Timestamp>,
+    last_error: Option<ApiError>,
 ) -> ProviderCapability {
     ProviderCapability {
         provider_id: ProviderId::new(provider_id),
@@ -178,8 +198,8 @@ fn provider_capability(
         health,
         limits: ProviderLimits::default(),
         features,
-        cooldown_until: None,
-        last_error: None,
+        cooldown_until,
+        last_error,
         reservation_policy: ReservationPolicy {
             supports_reservations: false,
             queue_policy: QueuePolicy::Fifo,

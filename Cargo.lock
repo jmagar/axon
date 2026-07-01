@@ -787,6 +787,7 @@ version = "6.2.1"
 dependencies = [
  "axon-api",
  "axon-error",
+ "chrono",
  "tokio",
 ]
 

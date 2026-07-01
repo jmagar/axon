@@ -94,7 +94,7 @@ impl FakeCoreBoundaries {
             .push(call);
     }
 
-    fn mode_error(&self, stage: ErrorStage) -> Option<ApiError> {
+    fn mode_error(&self, stage: ErrorStage, provider_id: Option<String>) -> Option<ApiError> {
         let (code, message) = match self.mode {
             FakeCoreMode::Success => return None,
             FakeCoreMode::Timeout => ("provider.timeout", "core provider timed out"),
@@ -102,10 +102,67 @@ impl FakeCoreBoundaries {
             FakeCoreMode::Fatal => ("provider.fatal", "core provider failed fatally"),
         };
         let mut error = ApiError::new(code, stage, message);
+        if let Some(provider_id) = provider_id {
+            error = error.with_provider_id(provider_id);
+        }
         if self.mode == FakeCoreMode::Fatal {
             error.retryable = false;
         }
         Some(error)
+    }
+
+    fn capability_health(&self) -> HealthStatus {
+        match self.mode {
+            FakeCoreMode::Success => self.health,
+            FakeCoreMode::Timeout => HealthStatus::Degraded,
+            FakeCoreMode::RateLimited => HealthStatus::Cooling,
+            FakeCoreMode::Fatal => HealthStatus::Unavailable,
+        }
+    }
+
+    fn capability_cooldown(&self) -> Option<Timestamp> {
+        (self.mode == FakeCoreMode::RateLimited)
+            .then(|| Timestamp("2026-07-01T00:00:30Z".to_string()))
+    }
+
+    fn provider_capability(&self, provider_kind: ProviderKind) -> ProviderCapability {
+        let provider_id = provider_id(provider_kind);
+        ProviderCapability {
+            provider_id: ProviderId::new(provider_id.clone()),
+            provider_kind,
+            implementation: "fake".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            health: self.capability_health(),
+            limits: ProviderLimits::default(),
+            features: vec!["fake".to_string()],
+            cooldown_until: self.capability_cooldown(),
+            last_error: self.mode_error(ErrorStage::Observing, Some(provider_id)),
+            reservation_policy: ReservationPolicy {
+                supports_reservations: false,
+                queue_policy: QueuePolicy::Fifo,
+                interactive_reserve: 0,
+                cooldown_after_failures: 0,
+                cooldown_secs: 0,
+                retry_backoff_ms: None,
+            },
+            reservation_state: ReservationStateSnapshot {
+                queued: 0,
+                active: 0,
+                available_units: 1,
+                oldest_queued_ms: None,
+                priority_breakdown: Default::default(),
+                states: Vec::new(),
+            },
+            cost_class: ProviderCostClass::Internal,
+            degraded_modes: Vec::new(),
+            fake_overrides_supported: true,
+            embedding: None,
+            llm: None,
+            vector_store: None,
+            fetch: None,
+            render: None,
+            credential: None,
+        }
     }
 }
 
@@ -176,7 +233,7 @@ impl ArtifactStore for FakeCoreBoundaries {
     }
 
     async fn capabilities(&self) -> Result<ArtifactStoreCapability> {
-        Ok(capability("fake-artifact", "axon-core").into())
+        Ok(capability("fake-artifact", "axon-core", self.health).into())
     }
 }
 
@@ -205,7 +262,7 @@ impl ConfigStore for FakeCoreBoundaries {
     }
 
     async fn capabilities(&self) -> Result<ConfigStoreCapability> {
-        Ok(capability("fake-config", "axon-core").into())
+        Ok(capability("fake-config", "axon-core", self.health).into())
     }
 }
 
@@ -243,7 +300,7 @@ impl DocumentCache for FakeCoreBoundaries {
     }
 
     async fn capabilities(&self) -> Result<DocumentCacheCapability> {
-        Ok(capability("fake-document-cache", "axon-core").into())
+        Ok(capability("fake-document-cache", "axon-core", self.health).into())
     }
 }
 
@@ -251,8 +308,10 @@ impl DocumentCache for FakeCoreBoundaries {
 impl RateLimiter for FakeCoreBoundaries {
     async fn acquire(&self, request: RateLimitRequest) -> Result<RateLimitPermit> {
         self.record("rate_limit.acquire");
-        if let Some(err) = self.mode_error(ErrorStage::Planning) {
-            return Err(err.with_provider_id(request.provider_id.0.clone()));
+        if let Some(err) =
+            self.mode_error(ErrorStage::Planning, Some(request.provider_id.0.clone()))
+        {
+            return Err(err);
         }
         Ok(RateLimitPermit {
             provider_id: request.provider_id,
@@ -261,7 +320,7 @@ impl RateLimiter for FakeCoreBoundaries {
     }
 
     async fn capabilities(&self) -> Result<ProviderCapability> {
-        Ok(provider_capability(ProviderKind::RateLimiter, self.health))
+        Ok(self.provider_capability(ProviderKind::RateLimiter))
     }
 }
 
@@ -269,7 +328,9 @@ impl RateLimiter for FakeCoreBoundaries {
 impl HealthProbe for FakeCoreBoundaries {
     async fn probe(&self, _request: HealthProbeRequest) -> Result<HealthReport> {
         self.record("health.probe");
-        if let Some(err) = self.mode_error(ErrorStage::Observing) {
+        if let Some(err) =
+            self.mode_error(ErrorStage::Observing, Some(_request.provider_id.0.clone()))
+        {
             return Err(err);
         }
         Ok(HealthReport {
@@ -282,58 +343,23 @@ impl HealthProbe for FakeCoreBoundaries {
     }
 
     async fn capabilities(&self) -> Result<ProviderCapability> {
-        Ok(provider_capability(ProviderKind::HealthProbe, self.health))
+        Ok(self.provider_capability(ProviderKind::HealthProbe))
     }
 }
 
-fn capability(name: &str, owner_crate: &str) -> CapabilityBase {
+fn capability(name: &str, owner_crate: &str, health: HealthStatus) -> CapabilityBase {
     CapabilityBase {
         name: name.to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         owner_crate: owner_crate.to_string(),
-        health: HealthStatus::Healthy,
+        health,
         features: vec!["fake".to_string()],
         limits: MetadataMap::new(),
     }
 }
 
-fn provider_capability(provider_kind: ProviderKind, health: HealthStatus) -> ProviderCapability {
-    ProviderCapability {
-        provider_id: ProviderId::new(format!("fake_{provider_kind:?}").to_lowercase()),
-        provider_kind,
-        implementation: "fake".to_string(),
-        version: env!("CARGO_PKG_VERSION").to_string(),
-        health,
-        limits: ProviderLimits::default(),
-        features: vec!["fake".to_string()],
-        cooldown_until: None,
-        last_error: None,
-        reservation_policy: ReservationPolicy {
-            supports_reservations: false,
-            queue_policy: QueuePolicy::Fifo,
-            interactive_reserve: 0,
-            cooldown_after_failures: 0,
-            cooldown_secs: 0,
-            retry_backoff_ms: None,
-        },
-        reservation_state: ReservationStateSnapshot {
-            queued: 0,
-            active: 0,
-            available_units: 1,
-            oldest_queued_ms: None,
-            priority_breakdown: Default::default(),
-            states: Vec::new(),
-        },
-        cost_class: ProviderCostClass::Internal,
-        degraded_modes: Vec::new(),
-        fake_overrides_supported: true,
-        embedding: None,
-        llm: None,
-        vector_store: None,
-        fetch: None,
-        render: None,
-        credential: None,
-    }
+fn provider_id(provider_kind: ProviderKind) -> String {
+    format!("fake_{provider_kind:?}").to_lowercase()
 }
 
 #[cfg(test)]
