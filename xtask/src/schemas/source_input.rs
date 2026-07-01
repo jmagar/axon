@@ -7,7 +7,17 @@ use sha2::{Digest, Sha256};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SourceInput {
     pub path: String,
-    pub sha256: String,
+    pub kind: SourceInputKind,
+    pub checksum: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceInputKind {
+    RustModule,
+    RustDirectory,
+    MarkdownContract,
+    SqlMigrationDirectory,
 }
 
 pub fn source_inputs(root: &Path, paths: &[&str]) -> Result<Vec<SourceInput>> {
@@ -27,11 +37,25 @@ fn source_input(root: &Path, rel_path: PathBuf) -> Result<SourceInput> {
         std::fs::read(&path)
             .with_context(|| format!("failed to read schema source input {}", rel_path.display()))?
     };
-    let sha256 = format!("{:x}", Sha256::digest(&bytes));
+    let digest = format!("{:x}", Sha256::digest(&bytes));
     Ok(SourceInput {
+        kind: source_input_kind(&rel_path, path.is_dir()),
         path: rel_path.to_string_lossy().to_string(),
-        sha256,
+        checksum: format!("sha256:{digest}"),
     })
+}
+
+fn source_input_kind(path: &Path, is_dir: bool) -> SourceInputKind {
+    let path = path.to_string_lossy();
+    if path.contains("/migrations") && is_dir {
+        SourceInputKind::SqlMigrationDirectory
+    } else if is_dir {
+        SourceInputKind::RustDirectory
+    } else if path.ends_with(".md") {
+        SourceInputKind::MarkdownContract
+    } else {
+        SourceInputKind::RustModule
+    }
 }
 
 fn directory_bytes(root: &Path, rel_path: &Path) -> Result<Vec<u8>> {

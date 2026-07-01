@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Result, bail};
 use clap::{Args, Subcommand, ValueEnum};
 use families::{all_families, generator_for};
+use serde::Serialize;
 
 #[derive(Debug, Args)]
 pub struct SchemasArgs {
@@ -78,6 +79,15 @@ pub enum SchemaFamily {
     Providers,
 }
 
+impl Serialize for SchemaFamily {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
 impl SchemaFamily {
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -125,10 +135,18 @@ fn run_families(root: &Path, families: Vec<SchemaFamily>, args: &SchemaGenerateA
     }
 
     let mut drift = Vec::new();
+    let mut reports = Vec::new();
     for family in families {
         let artifacts = generator_for(family).generate(root)?;
         registry::check_removed_surface_drift(&artifacts)?;
         registry::check_enum_projection_drift(&artifacts)?;
+        reports.push(FamilyReport {
+            family,
+            ok: true,
+            artifacts_checked: artifacts.len(),
+            drift: Vec::new(),
+            warnings: Vec::new(),
+        });
         if args.print {
             print_artifacts(&artifacts);
             continue;
@@ -143,6 +161,25 @@ fn run_families(root: &Path, families: Vec<SchemaFamily>, args: &SchemaGenerateA
     if !drift.is_empty() {
         bail!("schema artifacts are stale:\n{}", drift.join("\n"));
     }
+    if args.json {
+        print_report(&reports)?;
+    }
+    Ok(())
+}
+
+#[derive(Debug, Serialize)]
+struct FamilyReport {
+    family: SchemaFamily,
+    ok: bool,
+    artifacts_checked: usize,
+    drift: Vec<String>,
+    warnings: Vec<String>,
+}
+
+fn print_report(reports: &[FamilyReport]) -> Result<()> {
+    let mut content = serde_json::to_string_pretty(reports)?;
+    content.push('\n');
+    print!("{content}");
     Ok(())
 }
 

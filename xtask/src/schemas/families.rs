@@ -139,7 +139,7 @@ fn skeleton_artifacts(root: &Path, spec: FamilySpec) -> Result<Vec<SchemaArtifac
         &format!("cargo xtask schemas {}", spec.family.as_str()),
         spec.owner_crates,
         &inputs,
-        json!({}),
+        skeleton_defs(spec.family),
     );
     let mut artifacts = vec![
         SchemaArtifact::new(rel(spec.json_path), json_string(&schema)?),
@@ -204,6 +204,26 @@ fn enum_defs(owner_crate: &str) -> Value {
     Value::Object(defs)
 }
 
+fn skeleton_defs(family: SchemaFamily) -> Value {
+    json!({
+        "SchemaFamilyContract": {
+            "type": "object",
+            "required": ["family", "status", "owner_crates"],
+            "properties": {
+                "family": { "const": family.as_str() },
+                "status": { "const": "skeleton" },
+                "owner_crates": { "type": "array", "items": { "type": "string" } },
+                "future_registry": { "type": "string" }
+            },
+            "additionalProperties": false,
+            "x-axon": {
+                "skeleton": true,
+                "replaced_by": "crate-owned registry generator in the matching implementation PR"
+            }
+        }
+    })
+}
+
 fn enum_markdown() -> String {
     let mut out = generated_header("api-enums");
     out.push_str("| Enum | Values |\n|---|---|\n");
@@ -217,7 +237,7 @@ fn markdown(family: &str, inputs: &[SourceInput]) -> String {
     let mut out = generated_header(family);
     out.push_str("## Source Inputs\n\n| Path | SHA-256 |\n|---|---|\n");
     for input in inputs {
-        out.push_str(&format!("| `{}` | `{}` |\n", input.path, input.sha256));
+        out.push_str(&format!("| `{}` | `{}` |\n", input.path, input.checksum));
     }
     out
 }

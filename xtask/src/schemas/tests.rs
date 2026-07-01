@@ -130,7 +130,14 @@ fn generated_json_contains_source_input_checksums_and_canonical_enums() {
     let inputs = value["x-axon"]["source_inputs"].as_array().unwrap();
     assert!(inputs.iter().any(|input| {
         input["path"] == "crates/axon-api/src/source.rs"
-            && input["sha256"].as_str().unwrap().len() == 64
+            && input["kind"] == "rust_module"
+            && input["checksum"]
+                .as_str()
+                .unwrap()
+                .strip_prefix("sha256:")
+                .unwrap()
+                .len()
+                == 64
     }));
     assert_eq!(
         value["$defs"]["enums"]["SourceKind"]["enum"][0],
@@ -186,8 +193,9 @@ fn source_input_checksum_matches_fixture_and_drifts_when_source_changes() {
         .iter()
         .find(|input| input["path"] == "crates/axon-api/src/source.rs")
         .unwrap();
-    let expected = format!("{:x}", Sha256::digest(b"fixture"));
-    assert_eq!(source["sha256"], expected);
+    let expected = format!("sha256:{:x}", Sha256::digest(b"fixture"));
+    assert_eq!(source["kind"], "rust_module");
+    assert_eq!(source["checksum"], expected);
 
     write_fixture(
         tmp.path(),
@@ -203,11 +211,34 @@ fn source_input_checksum_matches_fixture_and_drifts_when_source_changes() {
 
 #[test]
 fn removed_surface_drift_fails_generation() {
-    let artifacts = vec![artifact::SchemaArtifact::new(
-        "docs/reference/api/schemas.json",
-        "{\"title\":\"EmbedRequest\"}",
-    )];
-    let err = registry::check_removed_surface_drift(&artifacts)
-        .expect_err("removed surface token should fail");
-    assert!(err.to_string().contains("removed public surface token"));
+    for token in [
+        "\"EmbedRequest\"",
+        "\"code-search\"",
+        "\"action=vertical_scrape\"",
+        "\"/v1/watch/{id}/run\"",
+        "\"AXON_MCP_HTTP_TOKEN\"",
+        "\"path_prefix\"",
+    ] {
+        let artifacts = vec![artifact::SchemaArtifact::new(
+            "docs/reference/api/schemas.json",
+            format!("{{\"title\":{token}}}"),
+        )];
+        let err = registry::check_removed_surface_drift(&artifacts)
+            .expect_err("removed surface token should fail");
+        assert!(err.to_string().contains("removed public surface token"));
+    }
+}
+
+#[test]
+fn json_report_shape_is_machine_readable() {
+    let reports = vec![super::FamilyReport {
+        family: SchemaFamily::Api,
+        ok: true,
+        artifacts_checked: 3,
+        drift: Vec::new(),
+        warnings: Vec::new(),
+    }];
+    let value = serde_json::to_value(reports).unwrap();
+    assert_eq!(value[0]["family"], "api");
+    assert_eq!(value[0]["artifacts_checked"], 3);
 }
