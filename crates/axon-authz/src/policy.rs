@@ -78,34 +78,34 @@ impl FakeCredentialProvider {
     }
 
     fn mode_error(&self) -> Option<ApiError> {
-        let (code, message) = match self.mode {
-            FakeCredentialMode::Success => return None,
-            FakeCredentialMode::Timeout => ("provider.timeout", "credential provider timed out"),
-            FakeCredentialMode::RateLimited => {
-                ("provider.rate_limited", "credential provider rate limited")
-            }
-            FakeCredentialMode::Fatal => ("provider.fatal", "credential provider failed fatally"),
-        };
-        let mut error = ApiError::new(code, axon_error::ErrorStage::Authorizing, message)
-            .with_provider_id("fake-credential-provider");
-        if self.mode == FakeCredentialMode::Fatal {
-            error.retryable = false;
-        }
-        Some(error)
+        fake_provider_mode_error(
+            self.mode_state(),
+            "fake-credential-provider",
+            axon_error::ErrorStage::Authorizing,
+            "credential provider",
+        )
     }
 
-    fn capability_health(&self) -> HealthStatus {
+    fn mode_state(&self) -> FakeProviderModeState {
         match self.mode {
-            FakeCredentialMode::Success => self.health,
-            FakeCredentialMode::Timeout => HealthStatus::Degraded,
-            FakeCredentialMode::RateLimited => HealthStatus::Cooling,
-            FakeCredentialMode::Fatal => HealthStatus::Unavailable,
+            FakeCredentialMode::Success => FakeProviderModeState::Success,
+            FakeCredentialMode::Timeout => FakeProviderModeState::Timeout,
+            FakeCredentialMode::RateLimited => FakeProviderModeState::RateLimited,
+            FakeCredentialMode::Fatal => FakeProviderModeState::Fatal,
         }
     }
 
-    fn capability_cooldown(&self) -> Option<Timestamp> {
-        (self.mode == FakeCredentialMode::RateLimited)
-            .then(|| Timestamp("2026-07-01T00:00:30Z".to_string()))
+    fn capability_state(&self) -> FakeProviderCapabilityState {
+        let mut state = fake_provider_capability_state(
+            self.mode_state(),
+            "fake-credential-provider",
+            axon_error::ErrorStage::Authorizing,
+            "credential provider",
+        );
+        if self.health != HealthStatus::Healthy {
+            state.health = self.health;
+        }
+        state
     }
 }
 
@@ -136,15 +136,16 @@ impl CredentialProvider for FakeCredentialProvider {
     }
 
     async fn capabilities(&self) -> Result<ProviderCapability> {
+        let state = self.capability_state();
         Ok(provider_capability(
             ProviderKind::Credential,
             "fake-credential-provider",
             "fake",
             vec!["resolve".to_string()],
             true,
-            self.capability_health(),
-            self.capability_cooldown(),
-            self.mode_error(),
+            state.health,
+            state.cooldown_until,
+            state.last_error,
         ))
     }
 }

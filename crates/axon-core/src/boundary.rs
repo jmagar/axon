@@ -95,48 +95,49 @@ impl FakeCoreBoundaries {
     }
 
     fn mode_error(&self, stage: ErrorStage, provider_id: Option<String>) -> Option<ApiError> {
-        let (code, message) = match self.mode {
-            FakeCoreMode::Success => return None,
-            FakeCoreMode::Timeout => ("provider.timeout", "core provider timed out"),
-            FakeCoreMode::RateLimited => ("provider.rate_limited", "core provider rate limited"),
-            FakeCoreMode::Fatal => ("provider.fatal", "core provider failed fatally"),
-        };
-        let mut error = ApiError::new(code, stage, message);
-        if let Some(provider_id) = provider_id {
-            error = error.with_provider_id(provider_id);
-        }
-        if self.mode == FakeCoreMode::Fatal {
-            error.retryable = false;
-        }
-        Some(error)
+        fake_provider_mode_error(
+            self.mode_state(),
+            provider_id.as_deref().unwrap_or("fake-core"),
+            stage,
+            "core provider",
+        )
     }
 
-    fn capability_health(&self) -> HealthStatus {
+    fn mode_state(&self) -> FakeProviderModeState {
         match self.mode {
-            FakeCoreMode::Success => self.health,
-            FakeCoreMode::Timeout => HealthStatus::Degraded,
-            FakeCoreMode::RateLimited => HealthStatus::Cooling,
-            FakeCoreMode::Fatal => HealthStatus::Unavailable,
+            FakeCoreMode::Success => FakeProviderModeState::Success,
+            FakeCoreMode::Timeout => FakeProviderModeState::Timeout,
+            FakeCoreMode::RateLimited => FakeProviderModeState::RateLimited,
+            FakeCoreMode::Fatal => FakeProviderModeState::Fatal,
         }
     }
 
-    fn capability_cooldown(&self) -> Option<Timestamp> {
-        (self.mode == FakeCoreMode::RateLimited)
-            .then(|| Timestamp("2026-07-01T00:00:30Z".to_string()))
+    fn capability_state(&self, provider_id: &str) -> FakeProviderCapabilityState {
+        let mut state = fake_provider_capability_state(
+            self.mode_state(),
+            provider_id,
+            ErrorStage::Observing,
+            "core provider",
+        );
+        if self.health != HealthStatus::Healthy {
+            state.health = self.health;
+        }
+        state
     }
 
     fn provider_capability(&self, provider_kind: ProviderKind) -> ProviderCapability {
         let provider_id = provider_id(provider_kind);
+        let state = self.capability_state(&provider_id);
         ProviderCapability {
             provider_id: ProviderId::new(provider_id.clone()),
             provider_kind,
             implementation: "fake".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
-            health: self.capability_health(),
+            health: state.health,
             limits: ProviderLimits::default(),
             features: vec!["fake".to_string()],
-            cooldown_until: self.capability_cooldown(),
-            last_error: self.mode_error(ErrorStage::Observing, Some(provider_id)),
+            cooldown_until: state.cooldown_until,
+            last_error: state.last_error,
             reservation_policy: ReservationPolicy {
                 supports_reservations: false,
                 queue_policy: QueuePolicy::Fifo,

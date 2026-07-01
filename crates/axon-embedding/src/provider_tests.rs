@@ -61,6 +61,41 @@ async fn fake_embedding_provider_reports_capability_and_health_overrides() {
 }
 
 #[tokio::test]
+async fn fake_embedding_provider_capabilities_reflect_failure_mode() {
+    let timeout =
+        FakeEmbeddingProvider::new("fake-embedding", 8).with_mode(FakeEmbeddingMode::Timeout);
+    assert_eq!(
+        timeout.capabilities().await.unwrap().health,
+        HealthStatus::Degraded
+    );
+
+    let rate_limited =
+        FakeEmbeddingProvider::new("fake-embedding", 8).with_mode(FakeEmbeddingMode::RateLimited);
+    let capability = rate_limited.capabilities().await.unwrap();
+    assert_eq!(capability.health, HealthStatus::Cooling);
+    assert!(capability.cooldown_until.is_some());
+    assert_eq!(
+        capability.last_error.unwrap().code.to_string(),
+        "provider.rate_limited"
+    );
+
+    let fatal = FakeEmbeddingProvider::new("fake-embedding", 8).with_mode(FakeEmbeddingMode::Fatal);
+    let capability = fatal.capabilities().await.unwrap();
+    assert_eq!(capability.health, HealthStatus::Unavailable);
+    let error = capability.last_error.unwrap();
+    assert_eq!(error.code.to_string(), "provider.fatal");
+    assert_eq!(error.provider_id, Some("fake-embedding".to_string()));
+    assert!(!error.retryable);
+
+    let err = fatal
+        .embed(batch(JobPriority::Interactive))
+        .await
+        .unwrap_err();
+    assert_eq!(err.code.to_string(), "provider.fatal");
+    assert!(!err.retryable);
+}
+
+#[tokio::test]
 async fn reservations_preserve_interactive_capacity_under_background_load() {
     let reservations = ProviderReservationManager::new(ProviderReservationConfig {
         provider_id: ProviderId::new("fake-embedding"),
@@ -150,4 +185,26 @@ async fn compatibility_provider_reservations_keep_legacy_per_provider_api() {
 
     assert_eq!(held.provider_id(), &ProviderId::new("fake-embedding"));
     assert_eq!(reservations.snapshot().await.active, 1);
+}
+
+#[tokio::test]
+async fn compatibility_provider_reservations_share_capacity_across_provider_ids() {
+    let reservations = ProviderReservations::new(2, 0);
+
+    let _first = reservations
+        .reserve(ProviderId::new("fake-a"), JobPriority::Interactive, 1)
+        .await
+        .unwrap();
+    let _second = reservations
+        .reserve(ProviderId::new("fake-b"), JobPriority::Interactive, 1)
+        .await
+        .unwrap();
+
+    let denied = reservations
+        .reserve(ProviderId::new("fake-c"), JobPriority::Interactive, 1)
+        .await
+        .unwrap_err();
+
+    assert_eq!(denied.code.to_string(), "provider.capacity_exhausted");
+    assert_eq!(reservations.snapshot().await.available_units, 0);
 }

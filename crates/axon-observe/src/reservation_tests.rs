@@ -1,4 +1,5 @@
 use axon_api::source::{HealthStatus, JobPriority, ProviderId, ProviderKind, ReservationState};
+use axon_error::ErrorStage;
 use chrono::DateTime;
 
 use crate::reservation::{
@@ -60,6 +61,26 @@ async fn provider_kinds_have_isolated_capacity() {
     assert_eq!(vector_hold.provider_kind(), ProviderKind::Vector);
     assert_eq!(embedding.snapshot().await.active, 2);
     assert_eq!(vector.snapshot().await.active, 1);
+}
+
+#[tokio::test]
+async fn reservation_denials_use_leasing_stage_for_non_embedding_providers() {
+    let vector = ProviderReservationManager::new(ProviderReservationConfig {
+        provider_id: ProviderId::new("qdrant"),
+        provider_kind: ProviderKind::Vector,
+        capacity: 1,
+        interactive_reserve: 0,
+        cooldown_after_failures: 1,
+        cooldown_secs: 30,
+    });
+
+    let _held = vector.reserve(JobPriority::Interactive, 1).await.unwrap();
+    let denied = vector
+        .reserve(JobPriority::Interactive, 1)
+        .await
+        .unwrap_err();
+
+    assert_eq!(denied.stage, ErrorStage::Leasing);
 }
 
 #[tokio::test]
@@ -132,7 +153,7 @@ async fn expired_cooldown_allows_new_reservations_without_probe_success() {
 
     manager.reserve(JobPriority::Interactive, 1).await.unwrap();
 
-    assert_eq!(manager.health().await, HealthStatus::Healthy);
+    assert_eq!(manager.health().await, HealthStatus::Degraded);
     assert!(manager.cooldown_until().await.is_none());
 }
 

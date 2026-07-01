@@ -73,6 +73,24 @@ impl ProviderReservationManager {
     }
 
     pub async fn reserve(&self, priority: JobPriority, units: u32) -> Result<ProviderReservation> {
+        self.reserve_inner(None, priority, units).await
+    }
+
+    pub async fn reserve_for_provider(
+        &self,
+        provider_id: ProviderId,
+        priority: JobPriority,
+        units: u32,
+    ) -> Result<ProviderReservation> {
+        self.reserve_inner(Some(provider_id), priority, units).await
+    }
+
+    async fn reserve_inner(
+        &self,
+        provider_id: Option<ProviderId>,
+        priority: JobPriority,
+        units: u32,
+    ) -> Result<ProviderReservation> {
         let mut state = self.state.lock().expect("reservation state mutex poisoned");
         state.refresh_cooldown();
         if state.health == HealthStatus::Unavailable {
@@ -109,7 +127,7 @@ impl ProviderReservationManager {
             .or_default() += units;
 
         Ok(ProviderReservation {
-            provider_id: state.config.provider_id.clone(),
+            provider_id: provider_id.unwrap_or_else(|| state.config.provider_id.clone()),
             provider_kind: state.config.provider_kind,
             priority,
             units,
@@ -227,10 +245,9 @@ impl ReservationStateInner {
             .is_some_and(|deadline| deadline <= Utc::now())
         {
             self.consecutive_failures = 0;
-            self.health = HealthStatus::Healthy;
+            self.health = HealthStatus::Degraded;
             self.cooldown_until = None;
             self.cooldown_deadline = None;
-            self.last_error_code = None;
         }
     }
 
@@ -247,7 +264,7 @@ impl ReservationStateInner {
     }
 
     fn error(&self, code: &str, message: &str) -> ApiError {
-        ApiError::new(code, ErrorStage::Embedding, message)
+        ApiError::new(code, ErrorStage::Leasing, message)
             .with_provider_id(self.config.provider_id.0.clone())
     }
 }

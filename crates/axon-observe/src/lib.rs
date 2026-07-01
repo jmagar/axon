@@ -1,7 +1,5 @@
-//! Target pipeline crate skeleton for `axon-observe`.
-//!
-//! This crate is intentionally marker-only in PR0. Runtime behavior moves here
-//! in issue #298 implementation PRs after contract tests exist.
+//! Observation, progress, heartbeat, and provider reservation primitives for the
+//! unified source pipeline.
 
 pub mod collector;
 pub mod event;

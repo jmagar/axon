@@ -67,32 +67,34 @@ impl FakeVectorStore {
     }
 
     fn mode_error(&self) -> Option<ApiError> {
-        let (code, message) = match self.mode {
-            FakeVectorMode::Success => return None,
-            FakeVectorMode::Timeout => ("provider.timeout", "vector store timed out"),
-            FakeVectorMode::RateLimited => ("provider.rate_limited", "vector store rate limited"),
-            FakeVectorMode::Fatal => ("provider.fatal", "vector store failed fatally"),
-        };
-        let mut error = ApiError::new(code, axon_error::ErrorStage::Upserting, message)
-            .with_provider_id(self.provider_id.0.clone());
-        if self.mode == FakeVectorMode::Fatal {
-            error.retryable = false;
-        }
-        Some(error)
+        fake_provider_mode_error(
+            self.mode_state(),
+            &self.provider_id.0,
+            axon_error::ErrorStage::Upserting,
+            "vector store",
+        )
     }
 
-    fn capability_health(&self) -> HealthStatus {
+    fn mode_state(&self) -> FakeProviderModeState {
         match self.mode {
-            FakeVectorMode::Success => self.health,
-            FakeVectorMode::Timeout => HealthStatus::Degraded,
-            FakeVectorMode::RateLimited => HealthStatus::Cooling,
-            FakeVectorMode::Fatal => HealthStatus::Unavailable,
+            FakeVectorMode::Success => FakeProviderModeState::Success,
+            FakeVectorMode::Timeout => FakeProviderModeState::Timeout,
+            FakeVectorMode::RateLimited => FakeProviderModeState::RateLimited,
+            FakeVectorMode::Fatal => FakeProviderModeState::Fatal,
         }
     }
 
-    fn capability_cooldown(&self) -> Option<Timestamp> {
-        (self.mode == FakeVectorMode::RateLimited)
-            .then(|| Timestamp("2026-07-01T00:00:30Z".to_string()))
+    fn capability_state(&self) -> FakeProviderCapabilityState {
+        let mut state = fake_provider_capability_state(
+            self.mode_state(),
+            &self.provider_id.0,
+            axon_error::ErrorStage::Upserting,
+            "vector store",
+        );
+        if self.health != HealthStatus::Healthy {
+            state.health = self.health;
+        }
+        state
     }
 }
 
@@ -259,12 +261,13 @@ impl VectorStore for FakeVectorStore {
     }
 
     async fn capabilities(&self) -> Result<ProviderCapability> {
+        let state = self.capability_state();
         Ok(ProviderCapability {
             provider_id: self.provider_id.clone(),
             provider_kind: ProviderKind::Vector,
             implementation: "fake".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
-            health: self.capability_health(),
+            health: state.health,
             limits: ProviderLimits {
                 max_concurrency: Some(2),
                 interactive_reserved_concurrency: Some(1),
@@ -272,8 +275,8 @@ impl VectorStore for FakeVectorStore {
                 ..ProviderLimits::default()
             },
             features: vec!["dense".to_string(), "delete_by_chunk".to_string()],
-            cooldown_until: self.capability_cooldown(),
-            last_error: self.mode_error(),
+            cooldown_until: state.cooldown_until,
+            last_error: state.last_error,
             reservation_policy: ReservationPolicy {
                 supports_reservations: true,
                 queue_policy: QueuePolicy::Priority,

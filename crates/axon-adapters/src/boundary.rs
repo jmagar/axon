@@ -84,47 +84,48 @@ impl FakeAdapterProviders {
         stage: axon_error::ErrorStage,
         provider_kind: ProviderKind,
     ) -> Option<ApiError> {
-        let (code, message) = match self.mode {
-            FakeAdapterMode::Success => return None,
-            FakeAdapterMode::Timeout => ("provider.timeout", "adapter provider timed out"),
-            FakeAdapterMode::RateLimited => {
-                ("provider.rate_limited", "adapter provider rate limited")
-            }
-            FakeAdapterMode::Fatal => ("provider.fatal", "adapter provider failed fatally"),
-        };
-        let mut error =
-            ApiError::new(code, stage, message).with_provider_id(provider_id(provider_kind));
-        if self.mode == FakeAdapterMode::Fatal {
-            error.retryable = false;
-        }
-        Some(error)
+        fake_provider_mode_error(
+            self.mode_state(),
+            &provider_id(provider_kind),
+            stage,
+            "adapter provider",
+        )
     }
 
-    fn capability_health(&self) -> HealthStatus {
+    fn mode_state(&self) -> FakeProviderModeState {
         match self.mode {
-            FakeAdapterMode::Success => self.health,
-            FakeAdapterMode::Timeout => HealthStatus::Degraded,
-            FakeAdapterMode::RateLimited => HealthStatus::Cooling,
-            FakeAdapterMode::Fatal => HealthStatus::Unavailable,
+            FakeAdapterMode::Success => FakeProviderModeState::Success,
+            FakeAdapterMode::Timeout => FakeProviderModeState::Timeout,
+            FakeAdapterMode::RateLimited => FakeProviderModeState::RateLimited,
+            FakeAdapterMode::Fatal => FakeProviderModeState::Fatal,
         }
     }
 
-    fn capability_cooldown(&self) -> Option<Timestamp> {
-        (self.mode == FakeAdapterMode::RateLimited)
-            .then(|| Timestamp("2026-07-01T00:00:30Z".to_string()))
+    fn capability_state(&self, provider_kind: ProviderKind) -> FakeProviderCapabilityState {
+        let mut state = fake_provider_capability_state(
+            self.mode_state(),
+            &provider_id(provider_kind),
+            axon_error::ErrorStage::Observing,
+            "adapter provider",
+        );
+        if self.health != HealthStatus::Healthy {
+            state.health = self.health;
+        }
+        state
     }
 
     fn provider_capability(&self, provider_kind: ProviderKind) -> ProviderCapability {
+        let state = self.capability_state(provider_kind);
         ProviderCapability {
             provider_id: ProviderId::new(provider_id(provider_kind)),
             provider_kind,
             implementation: "fake".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
-            health: self.capability_health(),
+            health: state.health,
             limits: ProviderLimits::default(),
             features: vec!["fake".to_string()],
-            cooldown_until: self.capability_cooldown(),
-            last_error: self.mode_error(axon_error::ErrorStage::Observing, provider_kind),
+            cooldown_until: state.cooldown_until,
+            last_error: state.last_error,
             reservation_policy: ReservationPolicy {
                 supports_reservations: false,
                 queue_policy: QueuePolicy::Fifo,
