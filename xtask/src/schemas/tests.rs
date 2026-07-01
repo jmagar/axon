@@ -11,8 +11,10 @@ pub(super) fn fixture_repo() -> TempDir {
     let tmp = TempDir::new().unwrap();
     for path in [
         "crates/axon-api/src/source.rs",
+        "crates/axon-api/src/source/boundary.rs",
         "crates/axon-api/src/source/document.rs",
         "crates/axon-api/src/source/lifecycle.rs",
+        "crates/axon-api/src/source/listing.rs",
         "crates/axon-api/src/source/enums.rs",
         "crates/axon-api/src/source/graph.rs",
         "crates/axon-api/src/source/ids.rs",

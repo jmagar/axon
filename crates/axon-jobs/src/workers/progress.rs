@@ -104,6 +104,7 @@ fn active_ratio(done: f64, total: f64) -> f64 {
     ((done / total).clamp(0.02, 0.98) * 100.0).round() / 100.0
 }
 
+#[allow(dead_code)]
 pub(crate) fn legacy_progress_event(
     id: uuid::Uuid,
     kind: JobKind,

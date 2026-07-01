@@ -60,6 +60,7 @@ impl Drop for HeartbeatGuard {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn legacy_job_heartbeat(
     id: uuid::Uuid,
     kind: JobKind,

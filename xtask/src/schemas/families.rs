@@ -76,8 +76,10 @@ fn api_artifacts(root: &Path) -> Result<Vec<SchemaArtifact>> {
         root,
         &[
             "crates/axon-api/src/source.rs",
+            "crates/axon-api/src/source/boundary.rs",
             "crates/axon-api/src/source/document.rs",
             "crates/axon-api/src/source/lifecycle.rs",
+            "crates/axon-api/src/source/listing.rs",
             "crates/axon-api/src/source/enums.rs",
             "crates/axon-api/src/source/graph.rs",
             "crates/axon-api/src/source/ids.rs",
@@ -186,6 +188,90 @@ fn api_source_schema_defs() -> Vec<(&'static str, Value)> {
         (
             "GraphEvidence",
             schemars::schema_for!(axon_api::source::GraphEvidence).into(),
+        ),
+        (
+            "JobCreateRequest",
+            schemars::schema_for!(axon_api::source::JobCreateRequest).into(),
+        ),
+        (
+            "JobDescriptor",
+            schemars::schema_for!(axon_api::source::JobDescriptor).into(),
+        ),
+        (
+            "JobSummary",
+            schemars::schema_for!(axon_api::source::JobSummary).into(),
+        ),
+        (
+            "SourceJobStatus",
+            schemars::schema_for!(axon_api::source::SourceJobStatus).into(),
+        ),
+        (
+            "JobAttemptSnapshot",
+            schemars::schema_for!(axon_api::source::JobAttemptSnapshot).into(),
+        ),
+        (
+            "JobStageSnapshot",
+            schemars::schema_for!(axon_api::source::JobStageSnapshot).into(),
+        ),
+        (
+            "JobStatusUpdate",
+            schemars::schema_for!(axon_api::source::JobStatusUpdate).into(),
+        ),
+        (
+            "JobEvent",
+            schemars::schema_for!(axon_api::source::JobEvent).into(),
+        ),
+        (
+            "JobEventListRequest",
+            schemars::schema_for!(axon_api::source::JobEventListRequest).into(),
+        ),
+        (
+            "JobEventPage",
+            schemars::schema_for!(axon_api::source::JobEventPage).into(),
+        ),
+        (
+            "JobHeartbeat",
+            schemars::schema_for!(axon_api::source::JobHeartbeat).into(),
+        ),
+        (
+            "JobCancelRequest",
+            schemars::schema_for!(axon_api::source::JobCancelRequest).into(),
+        ),
+        (
+            "JobCancelResult",
+            schemars::schema_for!(axon_api::source::JobCancelResult).into(),
+        ),
+        (
+            "JobRetryRequest",
+            schemars::schema_for!(axon_api::source::JobRetryRequest).into(),
+        ),
+        (
+            "JobRetryResult",
+            schemars::schema_for!(axon_api::source::JobRetryResult).into(),
+        ),
+        (
+            "JobRecoveryRequest",
+            schemars::schema_for!(axon_api::source::JobRecoveryRequest).into(),
+        ),
+        (
+            "JobRecoveryResult",
+            schemars::schema_for!(axon_api::source::JobRecoveryResult).into(),
+        ),
+        (
+            "JobCleanupRequest",
+            schemars::schema_for!(axon_api::source::JobCleanupRequest).into(),
+        ),
+        (
+            "JobCleanupResult",
+            schemars::schema_for!(axon_api::source::JobCleanupResult).into(),
+        ),
+        (
+            "JobArtifactListRequest",
+            schemars::schema_for!(axon_api::source::JobArtifactListRequest).into(),
+        ),
+        (
+            "JobArtifactListResult",
+            schemars::schema_for!(axon_api::source::JobArtifactListResult).into(),
         ),
     ]
 }
@@ -470,6 +556,16 @@ fn api_markdown(inputs: &[SourceInput]) -> String {
         "VectorSearchRequest",
         "VectorSearchResult",
         "VectorSearchMatch",
+        "JobCreateRequest",
+        "JobDescriptor",
+        "JobSummary",
+        "SourceJobStatus",
+        "JobEvent",
+        "JobHeartbeat",
+        "JobCancelRequest",
+        "JobRetryRequest",
+        "JobRecoveryRequest",
+        "JobCleanupRequest",
     ] {
         out.push_str(&format!("| `{dto}` |\n"));
     }

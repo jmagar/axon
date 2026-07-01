@@ -19,6 +19,7 @@ pub(super) struct StarvationAlarm {
 }
 
 impl StarvationAlarm {
+    #[allow(dead_code)]
     pub(crate) fn to_progress_event(
         self,
         job_id: JobId,
