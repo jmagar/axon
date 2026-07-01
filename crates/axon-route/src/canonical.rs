@@ -1,7 +1,6 @@
 //! Lexical source normalization and source-family detection.
 
 use axon_api::{Severity, SourceKind, SourceScope, SourceWarning};
-use std::path::{Component, Path, PathBuf};
 use url::{Url, form_urlencoded};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -41,7 +40,7 @@ fn canonical_local(raw: &str, requested_scope: Option<SourceScope>) -> Option<Ca
     {
         return None;
     }
-    let normalized = normalize_local_path(raw);
+    let normalized = crate::local_path::normalize_local_path(raw);
     let key = crate::source_id::local_project_key(&normalized);
     let display_name = normalized
         .trim_end_matches('/')
@@ -122,7 +121,7 @@ fn canonical_feed(raw: &str) -> Option<CanonicalSource> {
         .or_else(|| raw.strip_prefix("atom:"))?;
     let url = normalized_url(feed_url)?;
     Some(basic(
-        format!("feed://{}{}", url.host_str()?, clean_path(&url)),
+        format!("feed://{}{}", host_port(&url)?, clean_path(&url)),
         SourceKind::Feed,
         SourceScope::Feed,
         "feed",
@@ -155,7 +154,7 @@ fn canonical_youtube(raw: &str) -> Option<CanonicalSource> {
         let id = url.path().trim_start_matches('/');
         return Some(youtube_video(id));
     }
-    if host.ends_with("youtube.com") && url.path() == "/watch" {
+    if is_youtube_host(host) && url.path() == "/watch" {
         let id = url.query_pairs().find(|(key, _)| key == "v")?.1;
         return Some(youtube_video(&id));
     }
@@ -229,12 +228,12 @@ fn canonical_github(raw: &str) -> Option<CanonicalSource> {
 fn canonical_gitlab(raw: &str) -> Option<CanonicalSource> {
     let url = normalized_url(raw)?;
     let host = url.host_str()?;
-    if !host.contains("gitlab") {
+    if !is_gitlab_host(host) {
         return None;
     }
     let path = repo_path(&url)?;
     Some(basic(
-        format!("gitlab://{host}/{path}"),
+        format!("gitlab://{}/{path}", host_port(&url)?),
         SourceKind::Git,
         SourceScope::Repo,
         "gitlab",
@@ -246,12 +245,12 @@ fn canonical_gitlab(raw: &str) -> Option<CanonicalSource> {
 fn canonical_gitea(raw: &str) -> Option<CanonicalSource> {
     let url = normalized_url(raw)?;
     let host = url.host_str()?;
-    if !(host.contains("gitea") || host.contains("forgejo") || host == "codeberg.org") {
+    if !is_gitea_host(host) {
         return None;
     }
     let path = repo_path(&url)?;
     Some(basic(
-        format!("gitea://{host}/{path}"),
+        format!("gitea://{}/{path}", host_port(&url)?),
         SourceKind::Git,
         SourceScope::Repo,
         "gitea",
@@ -267,7 +266,7 @@ fn canonical_generic_git(raw: &str) -> Option<CanonicalSource> {
         return None;
     }
     Some(basic(
-        format!("git+https://{}{}", url.host_str()?, clean_path(&url)),
+        format!("git+https://{}{}", host_port(&url)?, clean_path(&url)),
         SourceKind::Git,
         SourceScope::Repo,
         "git",
@@ -282,7 +281,7 @@ fn canonical_web(raw: &str) -> Option<CanonicalSource> {
     let mut source = basic(
         format!(
             "https://{}{}{}",
-            url.host_str()?,
+            host_port(&url)?,
             clean_path(&url),
             query.query
         ),
@@ -327,6 +326,14 @@ fn clean_path(url: &Url) -> String {
     } else {
         path.trim_end_matches('/').to_string()
     }
+}
+
+fn host_port(url: &Url) -> Option<String> {
+    let host = url.host_str()?;
+    Some(match url.port() {
+        Some(port) => format!("{host}:{port}"),
+        None => host.to_string(),
+    })
 }
 
 struct QueryNormalization {
@@ -388,52 +395,15 @@ fn is_sensitive_param(key: &str) -> bool {
     key.contains("token")
         || key.contains("secret")
         || key.contains("password")
+        || key.contains("signature")
+        || key.contains("credential")
+        || key == "sig"
+        || key == "jwt"
         || key == "key"
         || key == "api_key"
         || key == "apikey"
         || key == "auth"
         || key == "authorization"
-}
-
-fn normalize_local_path(raw: &str) -> String {
-    let expanded = expand_home(raw.trim());
-    match std::fs::canonicalize(&expanded) {
-        Ok(path) => path.to_string_lossy().into_owned(),
-        Err(_) => normalize_path_components(&expanded),
-    }
-}
-
-fn expand_home(raw: &str) -> PathBuf {
-    if raw == "~" {
-        return home_dir();
-    }
-    if let Some(rest) = raw.strip_prefix("~/") {
-        return home_dir().join(rest);
-    }
-    PathBuf::from(raw)
-}
-
-fn home_dir() -> PathBuf {
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("~"))
-}
-
-fn normalize_path_components(path: &Path) -> String {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                normalized.pop();
-            }
-            other => normalized.push(other.as_os_str()),
-        }
-    }
-    normalized
-        .to_string_lossy()
-        .trim_end_matches('/')
-        .to_string()
 }
 
 fn repo_path(url: &Url) -> Option<String> {
@@ -465,6 +435,23 @@ fn collapse_duplicate_slashes(path: &str) -> String {
 
 fn trim_git_suffix(value: &str) -> &str {
     value.strip_suffix(".git").unwrap_or(value)
+}
+
+fn is_youtube_host(host: &str) -> bool {
+    host == "youtube.com" || host.ends_with(".youtube.com")
+}
+
+fn is_gitlab_host(host: &str) -> bool {
+    host == "gitlab.com" || host.ends_with(".gitlab.com")
+}
+
+fn is_gitea_host(host: &str) -> bool {
+    host == "codeberg.org"
+        || host.ends_with(".codeberg.org")
+        || host == "gitea.com"
+        || host.ends_with(".gitea.com")
+        || host == "forgejo.org"
+        || host.ends_with(".forgejo.org")
 }
 
 fn basic(

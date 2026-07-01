@@ -1,0 +1,40 @@
+//! Lexical local path normalization for route identity.
+
+use std::path::{Component, Path, PathBuf};
+
+pub fn normalize_local_path(raw: &str) -> String {
+    normalize_path_components(&expand_home(raw.trim()))
+}
+
+fn expand_home(raw: &str) -> PathBuf {
+    if raw == "~" {
+        return home_dir();
+    }
+    if let Some(rest) = raw.strip_prefix("~/") {
+        return home_dir().join(rest);
+    }
+    PathBuf::from(raw)
+}
+
+fn home_dir() -> PathBuf {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("~"))
+}
+
+fn normalize_path_components(path: &Path) -> String {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            other => normalized.push(other.as_os_str()),
+        }
+    }
+    normalized
+        .to_string_lossy()
+        .trim_end_matches('/')
+        .to_string()
+}

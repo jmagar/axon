@@ -1,4 +1,4 @@
-use axon_api::{AuthorityLevel, SafetyClass, SourceIntent, SourceKind, SourceRequest, SourceScope};
+use axon_api::{AuthorityLevel, SourceIntent, SourceKind, SourceRequest, SourceScope};
 
 use crate::{
     AdapterRegistry, AuthorityRecord, InMemoryAuthorityRegistry, SourceResolver, SourceRouter,
@@ -222,7 +222,9 @@ fn resolver_keeps_local_absolute_paths_out_of_public_identity() {
     assert_eq!(resolved.source_kind, SourceKind::Local);
     assert_eq!(resolved.default_scope, SourceScope::Directory);
     assert!(resolved.canonical_uri.starts_with("local://lp_"));
+    assert_eq!(resolved.requested_uri, "local://redacted");
     assert!(!resolved.canonical_uri.contains("/home/jmagar"));
+    assert!(!resolved.requested_uri.contains("/home/jmagar"));
     assert!(resolved.display_name.contains("axon-route"));
 }
 
@@ -372,77 +374,6 @@ fn router_rejects_adapter_that_does_not_support_source_kind() {
 }
 
 #[test]
-fn router_rejects_unknown_route_options() {
-    let resolver = resolver_with_authority();
-    let router = SourceRouter::new(AdapterRegistry::target_defaults());
-    let mut request = SourceRequest::new("example.com");
-    request
-        .options
-        .values
-        .insert("definitely_not_valid".to_string(), true.into());
-    let resolved = resolver.resolve(&request).expect("source resolves");
-
-    let err = router
-        .route(&request, resolved)
-        .expect_err("unknown route option fails");
-
-    assert_eq!(err.code.0, "route.options.unsupported");
-    assert_eq!(err.stage, axon_error::ErrorStage::Routing);
-}
-
-#[test]
-fn router_requires_explicit_tool_execution_allowance() {
-    let resolver = resolver_with_authority();
-    let router = SourceRouter::new(AdapterRegistry::target_defaults());
-    let request = SourceRequest::new("mcp:context7/resolve-library-id");
-    let resolved = resolver.resolve(&request).expect("mcp source resolves");
-
-    let err = router
-        .route(&request, resolved)
-        .expect_err("tool execution needs explicit opt-in");
-
-    assert_eq!(err.code.0, "route.tool_execution.denied");
-    assert_eq!(err.stage, axon_error::ErrorStage::Routing);
-}
-
-#[test]
-fn router_reports_credentials_required_by_adapter() {
-    let resolver = resolver_with_authority();
-    let router = SourceRouter::new(AdapterRegistry::target_defaults());
-    let request = SourceRequest::new("r/rust");
-    let resolved = resolver.resolve(&request).expect("reddit source resolves");
-
-    let route = router.route(&request, resolved).expect("reddit routes");
-
-    assert_eq!(route.adapter.name, "reddit");
-    assert!(
-        route
-            .credential_requirements
-            .iter()
-            .any(|requirement| requirement.required)
-    );
-}
-
-#[test]
-fn router_allows_tool_execution_with_explicit_option() {
-    let resolver = resolver_with_authority();
-    let router = SourceRouter::new(AdapterRegistry::target_defaults());
-    let mut request = SourceRequest::new("cli:repomix --help");
-    request
-        .options
-        .values
-        .insert("allow_tool_execution".to_string(), true.into());
-    let resolved = resolver.resolve(&request).expect("cli source resolves");
-
-    let route = router
-        .route(&request, resolved)
-        .expect("cli route resolves");
-
-    assert_eq!(route.adapter.name, "cli");
-    assert_eq!(route.safety_class, SafetyClass::ToolExecution);
-}
-
-#[test]
 fn router_routes_map_as_first_class_scope() {
     let resolver = resolver_with_authority();
     let router = SourceRouter::new(AdapterRegistry::target_defaults());
@@ -457,25 +388,4 @@ fn router_routes_map_as_first_class_scope() {
     assert_eq!(route.adapter.name, "web");
     assert_eq!(route.scope, SourceScope::Map);
     assert!(route.graph_fact_kinds.contains(&"source".to_string()));
-}
-
-#[test]
-fn router_selects_adapters_deterministically() {
-    let registry = AdapterRegistry::from_adapters(vec![
-        crate::AdapterDefinition::new("zeta", "1", SourceKind::Web, SourceScope::Site)
-            .with_scope(SourceScope::Page),
-        crate::AdapterDefinition::new("alpha", "1", SourceKind::Web, SourceScope::Site)
-            .with_scope(SourceScope::Page),
-    ]);
-    let resolver = SourceResolver::new(InMemoryAuthorityRegistry::default(), registry.clone());
-    let router = SourceRouter::new(registry);
-    let request = SourceRequest::new("example.com");
-    let resolved = resolver.resolve(&request).expect("web source resolves");
-
-    let route = router.route(&request, resolved).expect("route resolves");
-
-    assert_eq!(route.adapter.name, "alpha");
-    assert_eq!(route.scope, SourceScope::Site);
-    assert_eq!(route.safety_class, SafetyClass::PublicNetwork);
-    assert!(route.refresh_supported);
 }

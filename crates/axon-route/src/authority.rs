@@ -10,6 +10,7 @@ pub struct AuthorityRecord {
     pub authority: AuthorityLevel,
     pub aliases: Vec<String>,
     pub entrypoints: Vec<(SourceScope, String)>,
+    pub adapter_hint: Option<String>,
     pub confidence: f32,
 }
 
@@ -20,9 +21,11 @@ impl AuthorityRecord {
         source_kind: SourceKind,
         authority: AuthorityLevel,
     ) -> Self {
+        let canonical_uri = canonical_uri.into();
         Self {
             authority_id: authority_id.into(),
-            canonical_uri: canonical_uri.into(),
+            adapter_hint: adapter_hint_for_uri(&canonical_uri),
+            canonical_uri,
             source_kind,
             authority,
             aliases: Vec::new(),
@@ -40,11 +43,53 @@ impl AuthorityRecord {
         self.entrypoints.push((scope, uri.into()));
         self
     }
+
+    pub fn with_adapter_hint(mut self, adapter: impl Into<String>) -> Self {
+        self.adapter_hint = Some(adapter.into());
+        self
+    }
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct InMemoryAuthorityRegistry {
     records: Vec<AuthorityRecord>,
+}
+
+fn adapter_hint_for_uri(uri: &str) -> Option<String> {
+    let hint = if uri.starts_with("github://") {
+        "github"
+    } else if uri.starts_with("gitlab://") {
+        "gitlab"
+    } else if uri.starts_with("gitea://") {
+        "gitea"
+    } else if uri.starts_with("git+https://") {
+        "git"
+    } else if let Some(rest) = uri.strip_prefix("pkg://") {
+        rest.split('/').next()?
+    } else if uri.starts_with("docker://") {
+        "docker"
+    } else if uri.starts_with("reddit://") {
+        "reddit"
+    } else if uri.starts_with("youtube://") {
+        "youtube"
+    } else if uri.starts_with("feed://") {
+        "feed"
+    } else if uri.starts_with("session://") {
+        "session"
+    } else if uri.starts_with("local://") {
+        "local"
+    } else if uri.starts_with("upload://") {
+        "upload"
+    } else if uri.starts_with("cli://") {
+        "cli"
+    } else if uri.starts_with("mcp://") {
+        "mcp"
+    } else if uri.starts_with("http://") || uri.starts_with("https://") {
+        "web"
+    } else {
+        return None;
+    };
+    Some(hint.to_string())
 }
 
 impl InMemoryAuthorityRegistry {

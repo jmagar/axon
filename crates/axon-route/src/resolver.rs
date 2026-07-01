@@ -1,8 +1,8 @@
 //! Source resolver boundary.
 
 use axon_api::{
-    AdapterCandidate, AuthorityLevel, ResolvedSource, Severity, SourceRequest, SourceScope,
-    SourceWarning,
+    AdapterCandidate, AuthorityLevel, ResolvedSource, Severity, SourceKind, SourceRequest,
+    SourceScope, SourceWarning,
 };
 use axon_error::{ApiError, ErrorStage};
 
@@ -27,18 +27,26 @@ impl SourceResolver {
 
     pub fn resolve(&self, request: &SourceRequest) -> Result<ResolvedSource, ApiError> {
         let mut warnings = Vec::new();
-        let canonical = self.resolve_canonical(request, &mut warnings)?;
+        let authority_record = self.authorities.find(&request.source);
+        let canonical = self.resolve_canonical(request, authority_record, &mut warnings)?;
         warnings.extend(canonical.warnings.clone());
         let candidates = self.candidates_for(&canonical);
-        let authority = self.authority_for(&request.source);
+        let authority = authority_record
+            .map(|record| record.authority)
+            .unwrap_or(AuthorityLevel::Inferred);
         let confidence = if authority == AuthorityLevel::Official {
             0.95
         } else {
             0.75
         };
+        let requested_uri = if canonical.source_kind == SourceKind::Local {
+            "local://redacted".to_string()
+        } else {
+            request.source.clone()
+        };
 
         Ok(ResolvedSource {
-            requested_uri: request.source.clone(),
+            requested_uri,
             canonical_uri: canonical.canonical_uri.clone(),
             source_id: source_id(canonical.source_kind, &canonical.canonical_uri),
             source_kind: canonical.source_kind,
@@ -59,9 +67,10 @@ impl SourceResolver {
     fn resolve_canonical(
         &self,
         request: &SourceRequest,
+        authority_record: Option<&crate::authority::AuthorityRecord>,
         warnings: &mut Vec<SourceWarning>,
     ) -> Result<canonical::CanonicalSource, ApiError> {
-        match self.authorities.find(&request.source) {
+        match authority_record {
             Some(record) => {
                 let scope = request.scope.unwrap_or(SourceScope::Docs);
                 let canonical_uri = record
@@ -78,7 +87,7 @@ impl SourceResolver {
                     canonical_uri,
                     source_kind: record.source_kind,
                     default_scope: scope,
-                    adapter_hint: None,
+                    adapter_hint: record.adapter_hint.clone(),
                     display_name: request.source.clone(),
                     reason: format!("matched authority {}", record.authority_id),
                     warnings: Vec::new(),
@@ -120,13 +129,6 @@ impl SourceResolver {
                 .then_with(|| left.adapter.name.cmp(&right.adapter.name))
         });
         candidates
-    }
-
-    fn authority_for(&self, source: &str) -> AuthorityLevel {
-        self.authorities
-            .find(source)
-            .map(|record| record.authority)
-            .unwrap_or(AuthorityLevel::Inferred)
     }
 }
 

@@ -10,6 +10,11 @@ use crate::capability::{AdapterDefinition, AdapterRegistry};
 
 pub type RouteDecision = RoutePlan;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RouteSecurityPolicy {
+    pub allow_tool_execution: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct SourceRouter {
     adapters: AdapterRegistry,
@@ -25,6 +30,15 @@ impl SourceRouter {
         request: &SourceRequest,
         source: ResolvedSource,
     ) -> Result<RoutePlan, ApiError> {
+        self.route_with_policy(request, source, RouteSecurityPolicy::default())
+    }
+
+    pub fn route_with_policy(
+        &self,
+        request: &SourceRequest,
+        source: ResolvedSource,
+        policy: RouteSecurityPolicy,
+    ) -> Result<RoutePlan, ApiError> {
         let scope = request.scope.unwrap_or(source.default_scope);
         let adapter = self.select_adapter(request, &source)?;
 
@@ -37,7 +51,7 @@ impl SourceRouter {
             .with_context("adapter", adapter.adapter.name.clone())
             .with_context("scope", format!("{scope:?}")));
         }
-        self.validate_options(request, adapter)?;
+        self.validate_options(request, adapter, policy)?;
 
         Ok(RoutePlan {
             source,
@@ -102,34 +116,25 @@ impl SourceRouter {
         &self,
         request: &SourceRequest,
         adapter: &AdapterDefinition,
+        policy: RouteSecurityPolicy,
     ) -> Result<(), ApiError> {
         for key in request.options.values.keys() {
-            if key != "allow_tool_execution" {
-                return Err(ApiError::new(
-                    "route.options.unsupported",
-                    ErrorStage::Routing,
-                    "unsupported route option for selected adapter",
-                )
-                .with_context("adapter", adapter.adapter.name.clone())
-                .with_context("option", key.clone()));
-            }
+            return Err(ApiError::new(
+                "route.options.unsupported",
+                ErrorStage::Routing,
+                "unsupported route option for selected adapter",
+            )
+            .with_context("adapter", adapter.adapter.name.clone())
+            .with_context("option", key.clone()));
         }
 
-        if adapter.safety_class == SafetyClass::ToolExecution {
-            let allowed = request
-                .options
-                .values
-                .get("allow_tool_execution")
-                .and_then(|value| value.as_bool())
-                == Some(true);
-            if !allowed {
-                return Err(ApiError::new(
-                    "route.tool_execution.denied",
-                    ErrorStage::Routing,
-                    "tool execution sources require explicit allow_tool_execution=true",
-                )
-                .with_context("adapter", adapter.adapter.name.clone()));
-            }
+        if adapter.safety_class == SafetyClass::ToolExecution && !policy.allow_tool_execution {
+            return Err(ApiError::new(
+                "route.tool_execution.denied",
+                ErrorStage::Routing,
+                "tool execution sources require trusted execution policy",
+            )
+            .with_context("adapter", adapter.adapter.name.clone()));
         }
 
         Ok(())
