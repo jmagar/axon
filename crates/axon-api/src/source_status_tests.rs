@@ -46,6 +46,7 @@ fn status_envelope_and_progress_event_round_trip() {
     };
     let envelope = SuccessEnvelope {
         ok: true,
+        contract_version: "2026-06-30".to_string(),
         data: SourceStatus {
             job_id,
             source_id: SourceId::from("src_local"),
@@ -60,7 +61,16 @@ fn status_envelope_and_progress_event_round_trip() {
         },
         warnings: Vec::new(),
         request_id: "req_1".to_string(),
+        trace: TraceContext {
+            trace_id: "trace_1".to_string(),
+            span_id: Some("span_1".to_string()),
+            parent_span_id: None,
+            sampled: true,
+            attributes: MetadataMap::default(),
+        },
+        pagination: None,
         job: None,
+        artifacts: Vec::new(),
     };
 
     let value = serde_json::to_value(&event).expect("progress event");
@@ -72,6 +82,52 @@ fn status_envelope_and_progress_event_round_trip() {
         )
         .unwrap(),
         envelope
+    );
+}
+
+#[test]
+fn common_contract_enums_and_ranges_are_schema_aligned() {
+    let fetch = FetchPlan {
+        uri: "https://example.com".to_string(),
+        method: "GET".to_string(),
+        headers: RedactedHeaders {
+            headers: Vec::new(),
+        },
+        render_required: false,
+        cache_policy: CachePolicy::Revalidate,
+    };
+    let range = SourceRange {
+        line_start: None,
+        line_end: None,
+        byte_start: None,
+        byte_end: None,
+        time_start_ms: None,
+        time_end_ms: None,
+        dom_selector: Some("main article".to_string()),
+        json_pointer: Some("/items/0".to_string()),
+        yaml_path: None,
+        xml_xpath: None,
+        csv_row: None,
+        session_turn_id: Some("turn_1".to_string()),
+    };
+    let caller = CallerContext {
+        actor: Some("cli".to_string()),
+        transport: TransportKind::Worker,
+        scopes: vec!["axon:read".to_string()],
+        visibility_ceiling: Visibility::Internal,
+    };
+
+    assert_eq!(
+        serde_json::to_value(&fetch).unwrap()["cache_policy"],
+        "revalidate"
+    );
+    assert_eq!(
+        serde_json::to_value(&caller).unwrap()["transport"],
+        "worker"
+    );
+    assert_eq!(
+        serde_json::to_value(&range).unwrap()["dom_selector"],
+        "main article"
     );
 }
 

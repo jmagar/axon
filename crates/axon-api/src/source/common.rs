@@ -264,10 +264,10 @@ pub struct FetchPlan {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum CachePolicy {
-    Use,
     Bypass,
-    Refresh,
-    OnlyIfCached,
+    Use,
+    Revalidate,
+    Offline,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
@@ -299,6 +299,18 @@ pub struct SourceRange {
     pub time_start_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub time_end_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dom_selector: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub json_pointer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub yaml_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub xml_xpath: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub csv_row: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_turn_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
@@ -341,5 +353,6 @@ pub enum TransportKind {
     Rest,
     Mcp,
     Watch,
-    Job,
+    Worker,
+    System,
 }

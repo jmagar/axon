@@ -10,19 +10,48 @@ use super::stage::StageCounts;
 #[serde(deny_unknown_fields)]
 pub struct SuccessEnvelope<T> {
     pub ok: bool,
+    pub contract_version: String,
     pub data: T,
     pub warnings: Vec<SourceWarning>,
     pub request_id: String,
+    pub trace: TraceContext,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pagination: Option<PageInfo>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub job: Option<super::lifecycle::JobDescriptor>,
+    pub artifacts: Vec<ArtifactRef>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ErrorEnvelope {
     pub ok: bool,
+    pub contract_version: String,
     pub error: ApiError,
     pub request_id: String,
+    pub trace: TraceContext,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TraceContext {
+    pub trace_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub span_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_span_id: Option<String>,
+    pub sampled: bool,
+    pub attributes: MetadataMap,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PageInfo {
+    pub limit: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
