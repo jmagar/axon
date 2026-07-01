@@ -772,6 +772,7 @@ jobs:
             .github
             scripts
             config
+            vendor
             .cargo
       - uses: dtolnay/rust-toolchain@stable
         with:
