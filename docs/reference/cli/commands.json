@@ -1,0 +1,28 @@
+{
+  "$defs": {},
+  "$id": "https://axon.local/schemas/cli/commands.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Generated Axon schema contract artifact.",
+  "title": "AxonCliSchema",
+  "type": "object",
+  "x-axon": {
+    "clean_break": true,
+    "contract_version": "2026-06-30",
+    "generated_by": "cargo xtask schemas cli",
+    "owner_crates": [
+      "axon-cli",
+      "axon-api"
+    ],
+    "source_inputs": [
+      {
+        "path": "crates/axon-cli/src/lib.rs",
+        "sha256": "61ecfe04eac4bc0f4ee5ca513f0edf9a9ad69803d42817fa61179261c685cc7d"
+      },
+      {
+        "path": "docs/pipeline-unification/surfaces/command-contract.md",
+        "sha256": "e1ce27b0a5c57a97e1f64e0009cf7e30e401e682694f02c3660c4fbc054cc3db"
+      }
+    ]
+  }
+}

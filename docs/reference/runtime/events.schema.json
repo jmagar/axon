@@ -1,0 +1,27 @@
+{
+  "$defs": {},
+  "$id": "https://axon.local/schemas/runtime/events.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Generated Axon schema contract artifact.",
+  "title": "AxonEventSchema",
+  "type": "object",
+  "x-axon": {
+    "clean_break": true,
+    "contract_version": "2026-06-30",
+    "generated_by": "cargo xtask schemas events",
+    "owner_crates": [
+      "axon-observe"
+    ],
+    "source_inputs": [
+      {
+        "path": "crates/axon-observe/src/lib.rs",
+        "sha256": "5ccd61866803b35848f3e388c5400fa25752a6abee7f3f8e7b76eec96ff49e41"
+      },
+      {
+        "path": "docs/pipeline-unification/runtime/observability-contract.md",
+        "sha256": "a378f301ea863acdc7d2a3f7d7ba1940c8cb80fb3c78e035db2e2c33bf3eab6c"
+      }
+    ]
+  }
+}

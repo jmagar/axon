@@ -1,0 +1,28 @@
+{
+  "$defs": {},
+  "$id": "https://axon.local/schemas/runtime/database.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Generated Axon schema contract artifact.",
+  "title": "AxonDatabaseSchema",
+  "type": "object",
+  "x-axon": {
+    "clean_break": true,
+    "contract_version": "2026-06-30",
+    "generated_by": "cargo xtask schemas database",
+    "owner_crates": [
+      "axon-jobs",
+      "axon-ledger"
+    ],
+    "source_inputs": [
+      {
+        "path": "crates/axon-jobs/src/migrations",
+        "sha256": "40b009449887238d2b761e3e64a88c7025626a300b341754b6b00255eb3284c1"
+      },
+      {
+        "path": "docs/pipeline-unification/runtime/schema-contract.md",
+        "sha256": "1c08e19fbaca7f87f0c252ed40a2678440952a8c3b70558c5f59ce9244b7fb35"
+      }
+    ]
+  }
+}

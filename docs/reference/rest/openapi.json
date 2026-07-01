@@ -1,0 +1,28 @@
+{
+  "$defs": {},
+  "$id": "https://axon.local/schemas/rest/openapi.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Generated Axon schema contract artifact.",
+  "title": "AxonOpenApiSchema",
+  "type": "object",
+  "x-axon": {
+    "clean_break": true,
+    "contract_version": "2026-06-30",
+    "generated_by": "cargo xtask schemas openapi",
+    "owner_crates": [
+      "axon-web",
+      "axon-api"
+    ],
+    "source_inputs": [
+      {
+        "path": "crates/axon-web/src/lib.rs",
+        "sha256": "aa4bcfa6eab3b0188ebc6eaaa06cceb1a97aaae6b93ee393f2a394cf2e0b5c55"
+      },
+      {
+        "path": "docs/pipeline-unification/surfaces/rest-contract.md",
+        "sha256": "ff50a2cbbd5b3c75075ea7db5880832b2f7b3ac0015730676bd2c317fe23b612"
+      }
+    ]
+  }
+}
