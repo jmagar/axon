@@ -765,6 +765,7 @@ jobs:
           sparse-checkout: |
             Cargo.toml
             Cargo.lock
+            src
             crates
             xtask
             docs
