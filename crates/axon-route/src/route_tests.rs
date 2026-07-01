@@ -1,4 +1,4 @@
-use axon_api::{AuthorityLevel, SafetyClass, SourceKind, SourceRequest, SourceScope};
+use axon_api::{AuthorityLevel, SafetyClass, SourceIntent, SourceKind, SourceRequest, SourceScope};
 
 use crate::{
     AdapterRegistry, AuthorityRecord, InMemoryAuthorityRegistry, SourceResolver, SourceRouter,
@@ -245,6 +245,55 @@ fn router_rejects_unsupported_scope_before_acquisition() {
 
     assert_eq!(err.code.0, "source.scope.unsupported");
     assert_eq!(err.stage, axon_error::ErrorStage::Routing);
+}
+
+#[test]
+fn router_rejects_unknown_explicit_adapter() {
+    let resolver = resolver_with_authority();
+    let router = SourceRouter::new(AdapterRegistry::target_defaults());
+    let mut request = SourceRequest::new("example.com");
+    request.adapter = Some("missing-adapter".to_string());
+    let resolved = resolver.resolve(&request).expect("source resolves");
+
+    let err = router
+        .route(&request, resolved)
+        .expect_err("unknown adapter fails before acquisition");
+
+    assert_eq!(err.code.0, "route.adapter.unknown");
+    assert_eq!(err.stage, axon_error::ErrorStage::Routing);
+}
+
+#[test]
+fn router_rejects_adapter_that_does_not_support_source_kind() {
+    let resolver = resolver_with_authority();
+    let router = SourceRouter::new(AdapterRegistry::target_defaults());
+    let mut request = SourceRequest::new("example.com");
+    request.adapter = Some("github".to_string());
+    let resolved = resolver.resolve(&request).expect("source resolves");
+
+    let err = router
+        .route(&request, resolved)
+        .expect_err("source-kind mismatch fails before acquisition");
+
+    assert_eq!(err.code.0, "route.adapter.unsupported_source");
+    assert_eq!(err.stage, axon_error::ErrorStage::Routing);
+}
+
+#[test]
+fn router_routes_map_as_first_class_scope() {
+    let resolver = resolver_with_authority();
+    let router = SourceRouter::new(AdapterRegistry::target_defaults());
+    let mut request = SourceRequest::new("example.com");
+    request.intent = SourceIntent::Map;
+    request.scope = Some(SourceScope::Map);
+    request.embed = false;
+    let resolved = resolver.resolve(&request).expect("source resolves");
+
+    let route = router.route(&request, resolved).expect("map routes");
+
+    assert_eq!(route.adapter.name, "web");
+    assert_eq!(route.scope, SourceScope::Map);
+    assert!(route.graph_fact_kinds.contains(&"source".to_string()));
 }
 
 #[test]

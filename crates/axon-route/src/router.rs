@@ -26,23 +26,7 @@ impl SourceRouter {
         source: ResolvedSource,
     ) -> Result<RoutePlan, ApiError> {
         let scope = request.scope.unwrap_or(source.default_scope);
-        let adapter = request
-            .adapter
-            .as_deref()
-            .and_then(|name| self.adapters.find(name))
-            .or_else(|| {
-                source
-                    .candidate_adapters
-                    .first()
-                    .and_then(|candidate| self.adapters.find(&candidate.adapter.name))
-            })
-            .ok_or_else(|| {
-                ApiError::new(
-                    "route.adapter.missing",
-                    ErrorStage::Routing,
-                    "no adapter supports resolved source",
-                )
-            })?;
+        let adapter = self.select_adapter(request, &source)?;
 
         if !adapter.supported_scopes.contains(&scope) {
             return Err(ApiError::new(
@@ -72,6 +56,45 @@ impl SourceRouter {
             watch_supported: adapter.watch_supported,
             refresh_supported: adapter.refresh_supported,
         })
+    }
+
+    fn select_adapter(
+        &self,
+        request: &SourceRequest,
+        source: &ResolvedSource,
+    ) -> Result<&AdapterDefinition, ApiError> {
+        if let Some(name) = request.adapter.as_deref() {
+            let adapter = self.adapters.find(name).ok_or_else(|| {
+                ApiError::new(
+                    "route.adapter.unknown",
+                    ErrorStage::Routing,
+                    "requested adapter is not registered",
+                )
+                .with_context("adapter", name.to_string())
+            })?;
+            if adapter.source_kind != source.source_kind {
+                return Err(ApiError::new(
+                    "route.adapter.unsupported_source",
+                    ErrorStage::Routing,
+                    "requested adapter does not support resolved source kind",
+                )
+                .with_context("adapter", name.to_string())
+                .with_context("source_kind", format!("{:?}", source.source_kind)));
+            }
+            return Ok(adapter);
+        }
+
+        source
+            .candidate_adapters
+            .first()
+            .and_then(|candidate| self.adapters.find(&candidate.adapter.name))
+            .ok_or_else(|| {
+                ApiError::new(
+                    "route.adapter.missing",
+                    ErrorStage::Routing,
+                    "no adapter supports resolved source",
+                )
+            })
     }
 }
 
