@@ -65,30 +65,41 @@ impl Citation {
                 )
             })?
             .to_string();
+        let range = SourceRange {
+            line_start: payload_u32(item, "line_start"),
+            line_end: payload_u32(item, "line_end"),
+            byte_start: payload_u64(item, "byte_start"),
+            byte_end: payload_u64(item, "byte_end"),
+            char_start: payload_u64(item, "char_start"),
+            char_end: payload_u64(item, "char_end"),
+            time_start_ms: payload_u64(item, "time_start_ms"),
+            time_end_ms: payload_u64(item, "time_end_ms"),
+            dom_selector: payload_string(item, "dom_selector"),
+            json_pointer: payload_string(item, "json_pointer"),
+            yaml_path: payload_string(item, "yaml_path"),
+            xml_xpath: payload_string(item, "xml_xpath"),
+            csv_row: payload_u32(item, "csv_row"),
+            session_turn_id: payload_string(item, "session_turn_id"),
+            turn_start: payload_string(item, "turn_start"),
+            turn_end: payload_string(item, "turn_end"),
+        };
+        if !has_locator(&range) {
+            return Err(ApiError::new(
+                "retrieval.missing_source_range",
+                ErrorStage::Retrieving,
+                format!(
+                    "vector match {} is missing source range locator fields",
+                    item.point_id.0
+                ),
+            ));
+        }
 
         Ok(Self {
             source_id,
             document_id,
             chunk_id,
             canonical_uri,
-            range: SourceRange {
-                line_start: payload_u32(item, "line_start"),
-                line_end: payload_u32(item, "line_end"),
-                byte_start: payload_u64(item, "byte_start"),
-                byte_end: payload_u64(item, "byte_end"),
-                char_start: payload_u64(item, "char_start"),
-                char_end: payload_u64(item, "char_end"),
-                time_start_ms: None,
-                time_end_ms: None,
-                dom_selector: None,
-                json_pointer: None,
-                yaml_path: None,
-                xml_xpath: None,
-                csv_row: None,
-                session_turn_id: None,
-                turn_start: None,
-                turn_end: None,
-            },
+            range,
         })
     }
 }
@@ -99,4 +110,28 @@ fn payload_u32(item: &VectorSearchMatch, key: &str) -> Option<u32> {
 
 fn payload_u64(item: &VectorSearchMatch, key: &str) -> Option<u64> {
     item.payload.get(key)?.as_u64()
+}
+
+fn payload_string(item: &VectorSearchMatch, key: &str) -> Option<String> {
+    let value = item.payload.get(key)?.as_str()?.trim();
+    (!value.is_empty()).then(|| value.to_string())
+}
+
+fn has_locator(range: &SourceRange) -> bool {
+    range.line_start.is_some()
+        || range.line_end.is_some()
+        || range.byte_start.is_some()
+        || range.byte_end.is_some()
+        || range.char_start.is_some()
+        || range.char_end.is_some()
+        || range.time_start_ms.is_some()
+        || range.time_end_ms.is_some()
+        || range.dom_selector.is_some()
+        || range.json_pointer.is_some()
+        || range.yaml_path.is_some()
+        || range.xml_xpath.is_some()
+        || range.csv_row.is_some()
+        || range.session_turn_id.is_some()
+        || range.turn_start.is_some()
+        || range.turn_end.is_some()
 }

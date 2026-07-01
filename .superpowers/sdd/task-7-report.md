@@ -19,7 +19,7 @@ Files changed
 - `crates/axon-retrieval/src/engine_tests.rs`
 
 Commit hash
-- `364e1d215`
+- `cffeba714`
 
 Self-review notes
 - Kept the work inside `axon-retrieval` plus the required manifest/lockfile refresh.
@@ -28,3 +28,27 @@ Self-review notes
 
 Concerns
 - The fake engine currently maps namespace filters to the first `vector_namespace` string for compatibility with the existing fake vector store payload matcher; full multi-namespace retrieval semantics are intentionally deferred to the later cutover work.
+- This report is updated to the final HEAD hash after commit; re-amending it would change the hash again, so the worktree now differs only at this self-referential report file.
+
+---
+
+Review-fix appendix
+- Scope: review findings against `crates/axon-retrieval` only; no runtime cutover and no `axon-vector` edits.
+
+Red checks run first
+- `cargo test -p axon-retrieval --locked context_assembly_counts_separator_bytes_against_budget`
+  - Failed as expected: the bundle accepted `chunk-b` even though joining `chunk-a` and `chunk-b` with `"\n\n"` would exceed the byte budget.
+- `cargo test -p axon-retrieval --locked citation_from_vector_match_rejects_missing_range_locator`
+  - Failed as expected: `Citation::from_vector_match` returned a citation whose `SourceRange` had every locator field unset.
+
+Fixes applied
+- `crates/axon-retrieval/src/context.rs`
+  - Counted separator bytes during incremental context assembly so accepted chunks fit the actual joined text budget.
+- `crates/axon-retrieval/src/citation.rs`
+  - Parsed the full set of source-range locator payload fields and rejected vector matches that provide no real locator.
+- `crates/axon-retrieval/src/engine_tests.rs`
+  - Added regression coverage for separator-inclusive context budgeting and locator-less citation rejection.
+
+Green re-checks after implementation
+- `cargo test -p axon-retrieval --locked context_assembly_counts_separator_bytes_against_budget`
+- `cargo test -p axon-retrieval --locked citation_from_vector_match_rejects_missing_range_locator`

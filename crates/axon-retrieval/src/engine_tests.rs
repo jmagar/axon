@@ -125,12 +125,27 @@ fn context_assembly_respects_byte_and_token_budget_inputs() {
         5,
     );
 
-    assert_eq!(
-        context.chunk_ids,
-        vec![ChunkId::new("chunk-a"), ChunkId::new("chunk-b")]
+    assert_eq!(context.chunk_ids, vec![ChunkId::new("chunk-a")]);
+    assert_eq!(context.bytes_used, 10);
+    assert_eq!(context.token_estimate, 3);
+    assert!(context.truncated);
+}
+
+#[test]
+fn context_assembly_counts_separator_bytes_against_budget() {
+    let context = ContextBundle::from_chunks(
+        vec![
+            (ChunkId::new("chunk-a"), "1234567890".to_string()),
+            (ChunkId::new("chunk-b"), "abcdefghij".to_string()),
+        ],
+        21,
+        10,
     );
-    assert_eq!(context.bytes_used, 20);
-    assert_eq!(context.token_estimate, 5);
+
+    assert_eq!(context.chunk_ids, vec![ChunkId::new("chunk-a")]);
+    assert_eq!(context.text, "1234567890");
+    assert_eq!(context.bytes_used, 10);
+    assert_eq!(context.token_estimate, 3);
     assert!(context.truncated);
 }
 
@@ -167,6 +182,29 @@ fn citations_always_include_source_document_chunk_uri_and_range() {
     assert_eq!(citation.canonical_uri, "https://example.com/docs/guide");
     assert_eq!(citation.range.line_start, Some(10));
     assert_eq!(citation.range.line_end, Some(14));
+}
+
+#[test]
+fn citation_from_vector_match_rejects_missing_range_locator() {
+    let mut payload = MetadataMap::new();
+    payload.insert(
+        "canonical_uri".to_string(),
+        json!("https://example.com/docs/guide"),
+    );
+
+    let err = Citation::from_vector_match(&axon_api::source::VectorSearchMatch {
+        point_id: VectorPointId::new("point-no-range"),
+        score: 0.99,
+        chunk_id: Some(ChunkId::new("chunk-1")),
+        document_id: Some(DocumentId::new("doc-1")),
+        source_id: Some(SourceId::new("src-docs")),
+        source_item_key: None,
+        text: Some("hello".to_string()),
+        payload,
+    })
+    .expect_err("locator-less vector matches should be rejected");
+
+    assert_eq!(err.code.to_string(), "retrieval.missing_source_range");
 }
 
 fn point(point_id: &str, chunk_id: &str, vector: &[f32], text: &str) -> VectorPoint {

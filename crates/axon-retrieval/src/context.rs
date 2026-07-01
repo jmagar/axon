@@ -28,8 +28,8 @@ impl ContextBundle {
         let mut truncated = false;
 
         for (chunk_id, text) in chunks {
-            let candidate_bytes = text.len() as u64;
-            let next_bytes_used = bytes_used + candidate_bytes;
+            let separator_bytes = if text_parts.is_empty() { 0 } else { 2 };
+            let next_bytes_used = bytes_used + separator_bytes + text.len() as u64;
             let next_token_estimate = estimate_tokens(next_bytes_used);
             if next_bytes_used > byte_budget || next_token_estimate > token_budget {
                 truncated = true;
