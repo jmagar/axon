@@ -839,6 +839,15 @@ version = "6.2.1"
 [[package]]
 name = "axon-retrieval"
 version = "6.2.1"
+dependencies = [
+ "axon-api",
+ "axon-embedding",
+ "axon-error",
+ "axon-vectors",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
 
 [[package]]
 name = "axon-route"

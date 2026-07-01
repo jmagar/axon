@@ -15,3 +15,7 @@ pub mod rank;
 pub mod testing;
 
 pub const CRATE_NAME: &str = "axon-retrieval";
+
+#[cfg(test)]
+#[path = "engine_tests.rs"]
+mod engine_tests;
