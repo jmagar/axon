@@ -206,6 +206,7 @@ fn route_plan(adapter_name: &str, source_kind: SourceKind, scope: SourceScope) -
             authority: AuthorityLevel::Inferred,
             confidence: 1.0,
             reason: "test source".to_string(),
+            authority_hint: None,
             warnings: Vec::new(),
         },
         adapter: AdapterRef {
