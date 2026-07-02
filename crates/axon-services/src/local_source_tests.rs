@@ -1,9 +1,13 @@
 use axon_api::source::*;
 use axon_embedding::fake::{FakeEmbeddingMode, FakeEmbeddingProvider};
+use axon_jobs::boundary::{FakeJobWatchStore, JobStore};
 use axon_ledger::store::FakeLedgerStore;
 use axon_vectors::store::{FakeVectorMode, FakeVectorStore};
 
-use super::{LocalSourceIndexInput, LocalSourceSelectionPolicy, index_local_source};
+use super::{
+    LocalSourceIndexInput, LocalSourceSelectionPolicy, index_local_source,
+    index_local_source_with_job,
+};
 
 fn job_id() -> JobId {
     JobId::new(uuid::Uuid::from_u128(0x1111))
@@ -46,6 +50,70 @@ async fn local_file_refresh_writes_vectors_then_commits_source_generation() {
     assert!(output.chunks_prepared >= 1);
     assert!(output.vector_points_written >= 1);
     assert_eq!(vectors.calls().await, vec!["ensure_collection", "upsert"]);
+}
+
+#[tokio::test]
+async fn local_source_job_emits_progress_events_for_pipeline_phases() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lib.rs");
+    tokio::fs::write(&path, "pub fn answer() -> i32 {\n    42\n}\n")
+        .await
+        .unwrap();
+    let jobs = FakeJobWatchStore::new();
+    let ledger = FakeLedgerStore::new();
+    let embedder = FakeEmbeddingProvider::new("fake-embedding", 8);
+    let vectors = FakeVectorStore::new("fake-vector");
+
+    let output = index_local_source_with_job(input(path), &jobs, &ledger, &embedder, &vectors)
+        .await
+        .unwrap();
+
+    let summary = JobStore::get(&jobs, output.job_id)
+        .await
+        .unwrap()
+        .expect("job summary");
+    assert_eq!(summary.kind, JobKind::Source);
+    assert_eq!(summary.status, LifecycleStatus::Completed);
+    assert_eq!(summary.source_id, Some(output.source_id.clone()));
+
+    let events = JobStore::events(
+        &jobs,
+        JobEventListRequest {
+            job_id: output.job_id,
+            phase: None,
+            severity: None,
+            visibility: Some(Visibility::Public),
+            since_sequence: None,
+            limit: Some(20),
+            cursor: None,
+        },
+    )
+    .await
+    .unwrap();
+    let phases = events
+        .events
+        .iter()
+        .map(|event| event.phase)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        phases,
+        vec![
+            PipelinePhase::Discovering,
+            PipelinePhase::Diffing,
+            PipelinePhase::Preparing,
+            PipelinePhase::Embedding,
+            PipelinePhase::Vectorizing,
+            PipelinePhase::Publishing,
+            PipelinePhase::Complete,
+        ]
+    );
+    assert!(
+        events
+            .events
+            .iter()
+            .all(|event| event.job_id == output.job_id)
+    );
 }
 
 #[tokio::test]

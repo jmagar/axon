@@ -1,4 +1,5 @@
 mod local_source_discovery;
+mod local_source_job;
 
 use std::path::PathBuf;
 
@@ -17,6 +18,7 @@ use self::local_source_discovery::{
     LocalItem, collection_spec, discover_items, local_adapter_ref, local_source_id, source_summary,
     source_token, stable_token, timestamp,
 };
+pub use self::local_source_job::index_local_source_with_job;
 
 const LOCAL_ADAPTER_VERSION: &str = "target-local-pr11";
 const LOCAL_LEASE_TTL_SECONDS: u64 = 30 * 60;
@@ -35,6 +37,7 @@ pub struct LocalSourceIndexInput {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalSourceIndexOutput {
+    pub job_id: JobId,
     pub source_id: SourceId,
     pub generation: SourceGenerationId,
     pub documents_prepared: u64,
@@ -146,6 +149,7 @@ async fn index_local_source_with_lease(
         && let Some(committed_generation) = diff.previous_generation
     {
         return Ok(LocalSourceIndexOutput {
+            job_id: input.job_id,
             source_id,
             generation: committed_generation,
             documents_prepared: 0,
@@ -180,6 +184,7 @@ async fn index_local_source_with_lease(
         publish_generation(ledger, generation, &diff, items.len() as u64, &vectorized).await?;
 
     Ok(LocalSourceIndexOutput {
+        job_id: input.job_id,
         source_id,
         generation: published.generation,
         documents_prepared: vectorized.documents_prepared,

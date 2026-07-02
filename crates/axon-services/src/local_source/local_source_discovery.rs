@@ -158,7 +158,7 @@ pub(super) fn local_adapter_ref() -> AdapterRef {
     }
 }
 
-pub(super) fn local_source_id(root: &Path) -> SourceId {
+pub(crate) fn local_source_id(root: &Path) -> SourceId {
     SourceId::new(format!("src_local_{}", source_token(root)))
 }
 
@@ -166,7 +166,7 @@ pub(super) fn source_token(root: &Path) -> String {
     stable_token(&file_url_for_path(root).unwrap_or_else(|_| root.display().to_string()))
 }
 
-pub(super) fn timestamp() -> Timestamp {
+pub(crate) fn timestamp() -> Timestamp {
     Timestamp(chrono::Utc::now().to_rfc3339())
 }
 
