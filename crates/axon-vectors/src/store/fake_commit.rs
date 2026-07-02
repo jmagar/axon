@@ -38,7 +38,7 @@ impl FakeVectorStore {
         let mut points_written = 0;
         for point in points.values_mut() {
             let point_source = payload_string(&point.payload, "source_id");
-            let point_generation = payload_string(&point.payload, "source_generation");
+            let point_generation = payload_string(&point.payload, "committed_generation");
             let point_item = payload_string(&point.payload, "source_item_key");
             if point_source.as_deref() == Some(source_id.0.as_str())
                 && point_generation.as_deref() == Some(previous_generation.0.as_str())

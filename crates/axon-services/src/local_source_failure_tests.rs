@@ -91,6 +91,37 @@ async fn embedding_failure_keeps_generation_uncommitted() {
 }
 
 #[tokio::test]
+async fn partial_vector_write_failure_rolls_back_generation_points() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lib.rs");
+    tokio::fs::write(
+        &path,
+        "pub fn answer() -> i32 {\n    42\n}\n\npub fn other() -> i32 {\n    7\n}\n",
+    )
+    .await
+    .unwrap();
+    let ledger = FakeLedgerStore::new();
+    let embedder = FakeEmbeddingProvider::new("fake-embedding", 8);
+    let vectors = FakeVectorStore::new("fake-vector").with_mode(FakeVectorMode::PartialFailure);
+
+    let err = index_local_source(input(path.clone()), &ledger, &embedder, &vectors)
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("wrote"),
+        "unexpected error: {err:#}"
+    );
+
+    let source_id = super::local_source_id(&tokio::fs::canonicalize(&path).await.unwrap());
+    assert_eq!(ledger.committed_generation(&source_id).await, None);
+    assert_eq!(
+        vectors.calls().await,
+        vec!["ensure_collection", "upsert", "delete"]
+    );
+    assert!(vectors.points("axon-test").await.is_empty());
+}
+
+#[tokio::test]
 async fn source_job_terminal_failure_preserves_provider_retryability() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("lib.rs");
@@ -255,6 +286,29 @@ async fn publish_generation_failure_leaves_vectors_uncommitted() {
         ]
     );
     assert!(vectors.points("axon-test").await.is_empty());
+}
+
+#[tokio::test]
+async fn lost_lease_before_publish_leaves_generation_uncommitted() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lib.rs");
+    tokio::fs::write(&path, "pub fn answer() -> i32 {\n    42\n}\n")
+        .await
+        .unwrap();
+    let ledger = FakeLedgerStore::new().with_heartbeat_lost();
+    let embedder = FakeEmbeddingProvider::new("fake-embedding", 8);
+    let vectors = FakeVectorStore::new("fake-vector");
+
+    let err = index_local_source(input(path.clone()), &ledger, &embedder, &vectors)
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("lost lease before publish"),
+        "unexpected error: {err:#}"
+    );
+
+    let source_id = super::local_source_id(&tokio::fs::canonicalize(&path).await.unwrap());
+    assert_eq!(ledger.committed_generation(&source_id).await, None);
 }
 
 #[tokio::test]

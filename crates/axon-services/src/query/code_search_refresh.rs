@@ -167,7 +167,7 @@ async fn refresh_target_local_code_search_index_with_progress(
                     "fresh",
                     None,
                     usize::try_from(output.documents_prepared).unwrap_or(usize::MAX),
-                    0,
+                    usize::try_from(output.removed_files).unwrap_or(usize::MAX),
                 ),
             };
             tracing::debug!(
@@ -178,26 +178,12 @@ async fn refresh_target_local_code_search_index_with_progress(
             Ok(result)
         }
         Err(err) => {
-            let source_id = local_source_id(&project_root);
-            let committed_generation = target
-                .ledger
-                .committed_generation(source_id.clone())
-                .await
-                .ok()
-                .flatten();
-            let result = target_refresh_failed_result(
-                project_root.clone(),
-                project_key.clone(),
-                Some(source_id),
-                committed_generation,
-                err.to_string(),
-            );
             tracing::warn!(
-            project_key,
-                warning = ?result.freshness.warning,
-            "target local source refresh degraded"
+                project_key,
+                error = %err,
+                "target local source refresh failed"
             );
-            Ok(result)
+            Err(err.into())
         }
     }
 }

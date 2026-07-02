@@ -14,7 +14,7 @@ use qdrant_client::qdrant::{
 };
 
 use crate::collection::{normalize_collection_spec, validate_collection_spec};
-use crate::filter::{SEARCH_GENERATION_FIELD, validate_search_filters};
+use crate::filter::{PATH_PREFIX, SEARCH_GENERATION_FIELD, validate_search_filters};
 use crate::store::{Result, VectorStore};
 use crate::validation::validate_upsert_batch;
 
@@ -267,6 +267,13 @@ pub fn qdrant_filter(request: &VectorSearchRequest) -> Result<Option<Filter>> {
     validate_search_filters(request)?;
     let mut conditions = Vec::new();
     for (field, value) in request.filters.iter() {
+        if field == PATH_PREFIX {
+            return Err(ApiError::new(
+                "vector.qdrant.path_prefix_unsupported",
+                axon_error::ErrorStage::Retrieving,
+                "target Qdrant path-prefix filters require live prefix-query wiring",
+            ));
+        }
         conditions.extend(qdrant_field_conditions(field, value));
     }
     if let Some(generation) = &request.generation {

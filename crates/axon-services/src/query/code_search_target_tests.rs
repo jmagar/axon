@@ -104,6 +104,20 @@ async fn target_code_search_keeps_unchanged_previous_generation_results_visible(
                     .map(|value| value.0.as_str())
     }));
 
+    let third = refresh_code_search_index_with_backend(
+        &ctx,
+        Some(repo.path()),
+        CodeSearchCaller::Cli,
+        CodeSearchRefreshBackend::TargetLocalSource,
+        None,
+    )
+    .await
+    .expect("third unchanged target refresh");
+    assert_eq!(
+        third.target_source_generation,
+        second.target_source_generation
+    );
+
     let searched = code_search(
         &ctx,
         "stable_answer",
@@ -130,7 +144,7 @@ async fn target_code_search_keeps_unchanged_previous_generation_results_visible(
 }
 
 #[tokio::test]
-async fn target_code_search_uses_last_committed_generation_when_refresh_fails() {
+async fn target_code_search_fails_refresh_but_can_query_last_committed_generation_when_skipped() {
     let repo = tempfile::tempdir().expect("repo");
     Command::new("git")
         .arg("-C")
@@ -173,7 +187,7 @@ async fn target_code_search_uses_last_committed_generation_when_refresh_fails() 
     .expect("first target refresh");
     std::fs::write(repo.path().join("bad.rs"), [0xff, 0xfe, 0xfd]).expect("bad file");
 
-    let searched = code_search(
+    let err = code_search(
         &ctx,
         "answer",
         CodeSearchOptions {
@@ -186,10 +200,29 @@ async fn target_code_search_uses_last_committed_generation_when_refresh_fails() 
         },
     )
     .await
-    .expect("target search after failed refresh");
+    .expect_err("ensure_fresh target search should fail after refresh failure");
+    assert!(
+        err.to_string().contains("valid UTF-8"),
+        "unexpected error: {err:#}"
+    );
 
-    assert_eq!(searched.freshness.status, "stale");
-    assert!(searched.freshness.warning.is_some());
+    let searched = code_search(
+        &ctx,
+        "answer",
+        CodeSearchOptions {
+            limit: 10,
+            offset: 0,
+            cwd: Some(repo.path().to_path_buf()),
+            path_prefix: None,
+            ensure_fresh: false,
+            caller: CodeSearchCaller::Cli,
+        },
+    )
+    .await
+    .expect("target search without refresh");
+
+    assert_eq!(searched.freshness.status, "skipped");
+    assert!(searched.freshness.warning.is_none());
     assert!(
         searched
             .results

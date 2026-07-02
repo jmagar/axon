@@ -17,7 +17,7 @@ pub mod extract;
 pub mod freshness;
 pub mod ingest;
 pub mod jobs;
-pub mod local_source;
+pub(crate) mod local_source;
 pub mod map;
 pub mod memory;
 pub mod migrate;

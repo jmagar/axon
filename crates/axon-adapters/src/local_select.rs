@@ -41,11 +41,21 @@ impl LocalOptions {
         relative_key: &str,
         path: &Path,
     ) -> bool {
+        let explicitly_included = self
+            .include_set
+            .as_ref()
+            .is_some_and(|include_set| include_set.is_match(relative_key));
         if self.exclude_set.is_match(relative_key) {
             return false;
         }
         if let Some(include_set) = &self.include_set
             && !include_set.is_match(relative_key)
+        {
+            return false;
+        }
+        if scope != SourceScope::File
+            && is_sensitive_local_path(relative_key)
+            && !explicitly_included
         {
             return false;
         }
@@ -297,6 +307,38 @@ fn is_known_config(name: &str) -> bool {
         name,
         "Dockerfile" | ".env.example" | "Makefile" | "Justfile"
     )
+}
+
+fn is_sensitive_local_path(relative_key: &str) -> bool {
+    relative_key
+        .split('/')
+        .filter(|component| !component.is_empty())
+        .any(is_sensitive_local_name)
+}
+
+fn is_sensitive_local_name(name: &str) -> bool {
+    if name == ".env.example" {
+        return false;
+    }
+    let lower = name.to_ascii_lowercase();
+    lower.starts_with('.')
+        || lower == "id_rsa"
+        || lower == "id_ed25519"
+        || lower == "known_hosts"
+        || lower == "authorized_keys"
+        || lower.starts_with(".env")
+        || lower.ends_with(".pem")
+        || lower.ends_with(".key")
+        || lower.ends_with(".p12")
+        || lower.ends_with(".pfx")
+        || lower.contains("secret")
+        || lower.contains("credential")
+        || lower.contains("password")
+        || lower.contains("passwd")
+        || lower.contains("token")
+        || lower.contains("apikey")
+        || lower.contains("api-key")
+        || lower.contains("api_key")
 }
 
 fn is_lockfile(name: &str) -> bool {

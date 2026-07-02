@@ -1,6 +1,7 @@
 mod local_source_adapter;
 mod local_source_job;
 mod local_source_progress;
+mod local_source_publish;
 mod local_source_vectorize;
 
 use std::path::PathBuf;
@@ -22,8 +23,13 @@ use self::local_source_progress::{
     LocalSourceProgress, ensure_providers_ready, phase_for_api_error, record_progress,
     record_progress_error,
 };
+use self::local_source_publish::{
+    complete_generation, completed_source_summary, ensure_lease_before_publish,
+    mark_completed_generation_failed, mark_vectors_for_completed_generation,
+    publish_generation_and_rollback_vectors, rollback_new_generation_vectors,
+};
 use self::local_source_vectorize::{
-    VectorizeStats, publish_document_status, vectorize_changed_documents,
+    VectorizeResult, publish_document_status, vectorize_changed_documents,
 };
 
 const LOCAL_ADAPTER_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -52,14 +58,17 @@ pub struct LocalSourceIndexOutput {
     pub documents_prepared: u64,
     pub chunks_prepared: u64,
     pub vector_points_written: u64,
+    pub removed_files: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(test), allow(dead_code))]
 pub enum LocalSourceSelectionPolicy {
     Permissive,
     CodeSearch,
 }
 
+#[cfg(test)]
 pub async fn index_local_source(
     input: LocalSourceIndexInput,
     ledger: &dyn LedgerStore,
@@ -104,6 +113,7 @@ async fn index_local_source_with_progress(
         progress,
         previous_source,
         run,
+        &lease,
     )
     .await;
 
@@ -128,6 +138,7 @@ async fn index_local_source_with_lease(
     progress: Option<&dyn LocalSourceProgress>,
     previous_source: Option<SourceSummary>,
     run: LocalAdapterRun,
+    lease: &LeaseGuard,
 ) -> anyhow::Result<LocalSourceIndexOutput> {
     let mut manifest = discover_manifest(&run).await?;
     record_progress(progress, PipelinePhase::Discovering, None).await?;
@@ -151,6 +162,7 @@ async fn index_local_source_with_lease(
             documents_prepared: 0,
             chunks_prepared: 0,
             vector_points_written: 0,
+            removed_files: 0,
         });
     }
 
@@ -166,27 +178,26 @@ async fn index_local_source_with_lease(
     record_progress(progress, PipelinePhase::Preparing, None).await?;
     let collection = collection_spec(&input.collection, input.embedding_dimensions);
     vector_store.ensure_collection(collection.clone()).await?;
-    let vectorized = vectorize_changed_documents(
+    let vectorized = vectorize_generation_or_fail(
         input,
         &run,
         &diff,
-        &generation.generation,
+        &source_id,
+        &generation,
         ledger,
         embedding_provider,
         vector_store,
         progress,
-        collection.clone(),
+        &collection,
     )
     .await?;
-    let completed = complete_generation(
-        ledger,
-        generation,
-        &diff,
-        manifest.items.len() as u64,
-        &vectorized.stats,
-    )
-    .await?;
-    mark_vectors_for_completed_generation(
+    if let Err(err) = ensure_lease_before_publish(ledger, input, lease, generation.clone()).await {
+        rollback_new_generation_vectors(vector_store, &collection, &source_id, &generation).await?;
+        return Err(err);
+    }
+    let completed =
+        complete_generation(ledger, generation, &diff, manifest.items.len() as u64).await?;
+    let publish_stats = match mark_vectors_for_completed_generation(
         vector_store,
         &collection,
         &source_id,
@@ -194,7 +205,19 @@ async fn index_local_source_with_lease(
         &diff,
         progress,
     )
-    .await?;
+    .await
+    {
+        Ok(stats) => stats,
+        Err(err) => {
+            if let Err(fail_err) = mark_completed_generation_failed(ledger, completed.clone()).await
+            {
+                return Err(err.context(format!(
+                    "also failed to mark source generation failed: {fail_err}"
+                )));
+            }
+            return Err(err);
+        }
+    };
     let published = publish_generation_and_rollback_vectors(
         ledger,
         vector_store,
@@ -214,7 +237,7 @@ async fn index_local_source_with_lease(
             &run,
             manifest.items.len() as u64,
             &diff,
-            &vectorized.stats,
+            &publish_stats,
         ))
         .await?;
     record_progress(progress, PipelinePhase::Publishing, None).await?;
@@ -226,8 +249,77 @@ async fn index_local_source_with_lease(
         generation: published.generation,
         documents_prepared: vectorized.stats.documents_prepared,
         chunks_prepared: vectorized.stats.chunks_prepared,
-        vector_points_written: vectorized.stats.points_written,
+        vector_points_written: publish_stats.total_points_written(),
+        removed_files: diff.counts.removed,
     })
+}
+
+async fn vectorize_generation_or_fail(
+    input: &LocalSourceIndexInput,
+    run: &LocalAdapterRun,
+    diff: &SourceManifestDiff,
+    source_id: &SourceId,
+    generation: &SourceGeneration,
+    ledger: &dyn LedgerStore,
+    embedding_provider: &dyn EmbeddingProvider,
+    vector_store: &dyn VectorStore,
+    progress: Option<&dyn LocalSourceProgress>,
+    collection: &CollectionSpec,
+) -> anyhow::Result<VectorizeResult> {
+    match vectorize_changed_documents(
+        input,
+        run,
+        diff,
+        &generation.generation,
+        ledger,
+        embedding_provider,
+        vector_store,
+        progress,
+        collection.clone(),
+    )
+    .await
+    {
+        Ok(vectorized) => Ok(vectorized),
+        Err(err) => {
+            fail_generation_after_vectorize_error(
+                ledger,
+                vector_store,
+                collection,
+                source_id,
+                generation,
+                err,
+            )
+            .await
+        }
+    }
+}
+
+async fn fail_generation_after_vectorize_error(
+    ledger: &dyn LedgerStore,
+    vector_store: &dyn VectorStore,
+    collection: &CollectionSpec,
+    source_id: &SourceId,
+    generation: &SourceGeneration,
+    err: anyhow::Error,
+) -> anyhow::Result<VectorizeResult> {
+    if let Err(rollback_err) =
+        rollback_new_generation_vectors(vector_store, collection, source_id, generation).await
+    {
+        if let Err(fail_err) = mark_completed_generation_failed(ledger, generation.clone()).await {
+            return Err(err.context(format!(
+                "also failed to rollback partially written vectors: {rollback_err}; also failed to mark source generation failed: {fail_err}"
+            )));
+        }
+        return Err(err.context(format!(
+            "also failed to rollback partially written vectors: {rollback_err}"
+        )));
+    }
+    if let Err(fail_err) = mark_completed_generation_failed(ledger, generation.clone()).await {
+        return Err(err.context(format!(
+            "also failed to mark source generation failed: {fail_err}"
+        )));
+    }
+    Err(err)
 }
 
 fn unchanged_source_summary(
@@ -249,228 +341,6 @@ fn unchanged_source_summary(
     summary.counts.items_total = item_count;
     summary.updated_at = timestamp();
     summary
-}
-
-fn completed_source_summary(
-    input: &LocalSourceIndexInput,
-    run: &LocalAdapterRun,
-    item_count: u64,
-    diff: &SourceManifestDiff,
-    vectorized: &VectorizeStats,
-) -> SourceSummary {
-    let mut summary = source_summary(input, run);
-    summary.status = LifecycleStatus::Completed;
-    summary.counts = SourceCounts {
-        items_total: item_count,
-        items_changed: diff.counts.added + diff.counts.modified + diff.counts.removed,
-        documents_total: vectorized.documents_prepared,
-        chunks_total: vectorized.chunks_prepared,
-        vector_points_total: vectorized.points_written,
-        bytes_total: diff
-            .added
-            .iter()
-            .chain(diff.modified.iter())
-            .chain(diff.unchanged.iter())
-            .map(|item| item.size_bytes.unwrap_or(0))
-            .sum(),
-    };
-    summary.updated_at = timestamp();
-    summary
-}
-
-async fn complete_generation(
-    ledger: &dyn LedgerStore,
-    generation: SourceGeneration,
-    diff: &SourceManifestDiff,
-    discovered_count: u64,
-    vectorized: &VectorizeStats,
-) -> anyhow::Result<SourceGeneration> {
-    let completed = SourceGeneration {
-        status: LifecycleStatus::Completed,
-        publish_state: PublishState::Publishing,
-        published_at: None,
-        item_counts: ItemCounts {
-            added: diff.counts.added,
-            modified: diff.counts.modified,
-            removed: diff.counts.removed,
-            unchanged: diff.counts.unchanged,
-            failed: diff.counts.failed,
-        },
-        document_counts: DocumentCounts {
-            discovered: discovered_count,
-            prepared: vectorized.documents_prepared,
-            embedded: vectorized.documents_prepared,
-            published: vectorized.documents_prepared,
-            failed: 0,
-        },
-        ..generation
-    };
-    Ok(ledger.complete_generation(completed).await?)
-}
-
-async fn publish_completed_generation(
-    ledger: &dyn LedgerStore,
-    completed: SourceGeneration,
-) -> anyhow::Result<SourceGeneration> {
-    Ok(ledger
-        .publish_generation(PublishGenerationRequest {
-            source_id: completed.source_id.clone(),
-            generation: completed.generation.clone(),
-            expected_previous_generation: completed.previous_generation.clone(),
-        })
-        .await?)
-}
-
-async fn mark_vectors_for_completed_generation(
-    vector_store: &dyn VectorStore,
-    collection: &CollectionSpec,
-    source_id: &SourceId,
-    completed: &SourceGeneration,
-    diff: &SourceManifestDiff,
-    progress: Option<&dyn LocalSourceProgress>,
-) -> anyhow::Result<()> {
-    if let Err(err) = vector_store
-        .mark_generation_committed(
-            collection.collection.clone(),
-            source_id.clone(),
-            completed.generation.clone(),
-        )
-        .await
-    {
-        record_progress_error(progress, PipelinePhase::Publishing, &err).await?;
-        return Err(anyhow::Error::new(err));
-    }
-    if let Err(err) = mark_unchanged_vectors_committed(
-        vector_store,
-        collection,
-        source_id,
-        completed,
-        diff,
-        completed.generation.clone(),
-    )
-    .await
-    {
-        record_progress_error(progress, PipelinePhase::Publishing, &err).await?;
-        rollback_new_generation_vectors(vector_store, collection, source_id, completed).await?;
-        return Err(anyhow::Error::new(err));
-    }
-    Ok(())
-}
-
-async fn publish_generation_and_rollback_vectors(
-    ledger: &dyn LedgerStore,
-    vector_store: &dyn VectorStore,
-    collection: &CollectionSpec,
-    completed: &SourceGeneration,
-    diff: &SourceManifestDiff,
-) -> anyhow::Result<SourceGeneration> {
-    match publish_completed_generation(ledger, completed.clone()).await {
-        Ok(published) => Ok(published),
-        Err(err) => {
-            if let Err(rollback_err) = rollback_new_generation_vectors(
-                vector_store,
-                collection,
-                &completed.source_id,
-                completed,
-            )
-            .await
-            {
-                return Err(err.context(format!(
-                    "also failed to rollback committed vector generation {} from collection {}: {rollback_err}",
-                    completed.generation.0, collection.collection
-                )));
-            }
-            if let Err(rollback_err) = restore_unchanged_vector_markers(
-                vector_store,
-                collection,
-                &completed.source_id,
-                completed,
-                diff,
-            )
-            .await
-            {
-                return Err(err.context(format!(
-                    "also failed to restore unchanged vector generation markers in collection {}: {rollback_err}",
-                    collection.collection
-                )));
-            }
-            Err(err)
-        }
-    }
-}
-
-async fn rollback_new_generation_vectors(
-    vector_store: &dyn VectorStore,
-    collection: &CollectionSpec,
-    source_id: &SourceId,
-    completed: &SourceGeneration,
-) -> Result<(), ApiError> {
-    vector_store
-        .delete(VectorDeleteSelector::Generation {
-            collection: collection.collection.clone(),
-            source_id: source_id.clone(),
-            generation: completed.generation.clone(),
-        })
-        .await
-        .map(|_| ())
-}
-
-async fn restore_unchanged_vector_markers(
-    vector_store: &dyn VectorStore,
-    collection: &CollectionSpec,
-    source_id: &SourceId,
-    completed: &SourceGeneration,
-    diff: &SourceManifestDiff,
-) -> Result<(), ApiError> {
-    let Some(previous_generation) = completed.previous_generation.clone() else {
-        return Ok(());
-    };
-    if diff.unchanged.is_empty() {
-        return Ok(());
-    }
-    vector_store
-        .mark_unchanged_items_committed(
-            collection.collection.clone(),
-            source_id.clone(),
-            previous_generation.clone(),
-            previous_generation,
-            unchanged_item_keys(diff),
-        )
-        .await
-        .map(|_| ())
-}
-
-async fn mark_unchanged_vectors_committed(
-    vector_store: &dyn VectorStore,
-    collection: &CollectionSpec,
-    source_id: &SourceId,
-    completed: &SourceGeneration,
-    diff: &SourceManifestDiff,
-    committed_generation: SourceGenerationId,
-) -> Result<(), ApiError> {
-    let Some(previous_generation) = completed.previous_generation.clone() else {
-        return Ok(());
-    };
-    if diff.unchanged.is_empty() {
-        return Ok(());
-    }
-    vector_store
-        .mark_unchanged_items_committed(
-            collection.collection.clone(),
-            source_id.clone(),
-            previous_generation,
-            committed_generation,
-            unchanged_item_keys(diff),
-        )
-        .await
-        .map(|_| ())
-}
-
-fn unchanged_item_keys(diff: &SourceManifestDiff) -> Vec<SourceItemKey> {
-    diff.unchanged
-        .iter()
-        .map(|item| item.source_item_key.clone())
-        .collect()
 }
 
 fn manifest_diff_has_changes(diff: &SourceManifestDiff) -> bool {

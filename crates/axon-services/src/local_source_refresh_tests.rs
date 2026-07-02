@@ -121,6 +121,11 @@ async fn refresh_vectorizes_added_and_modified_docs_and_debts_removed_and_replac
 
     assert_ne!(second.generation, first.generation);
     assert_eq!(second.documents_prepared, 2);
+    assert_eq!(second.removed_files, 1);
+    assert!(
+        second.vector_points_written >= second.chunks_prepared,
+        "carried-forward unchanged vectors should be counted with new vectors"
+    );
     assert_eq!(embedder.calls().await.len(), 2);
     assert_eq!(
         vectors
@@ -178,8 +183,48 @@ async fn refresh_vectorizes_added_and_modified_docs_and_debts_removed_and_replac
     assert_eq!(ledger.cleanup_debt_count().await, 2);
     assert_eq!(
         ledger.committed_generation(&second.source_id).await,
-        Some(second.generation)
+        Some(second.generation.clone())
     );
+    let source = ledger
+        .get_source(second.source_id.clone())
+        .await
+        .unwrap()
+        .expect("source summary after incremental refresh");
+    assert_eq!(source.counts.items_total, 3);
+    assert_eq!(source.counts.items_changed, 3);
+    assert_eq!(source.counts.documents_total, 3);
+    assert_eq!(
+        source.counts.vector_points_total,
+        second.vector_points_written
+    );
+
+    let third = index_local_source(
+        input(dir.path().to_path_buf()),
+        &ledger,
+        &embedder,
+        &vectors,
+    )
+    .await
+    .unwrap();
+    assert_eq!(third.generation, second.generation);
+    assert_eq!(third.documents_prepared, 0);
+    let stable_points = vectors
+        .points("axon-test")
+        .await
+        .into_iter()
+        .filter(|point| {
+            point
+                .payload
+                .get("source_item_key")
+                .and_then(|value| value.as_str())
+                == Some("stable.rs")
+        })
+        .collect::<Vec<_>>();
+    assert!(!stable_points.is_empty());
+    assert!(stable_points.iter().all(|point| {
+        point.payload["committed_generation"].as_str() == Some(second.generation.0.as_str())
+            && point.payload["document_status"].as_str() == Some("published")
+    }));
 }
 
 #[tokio::test]

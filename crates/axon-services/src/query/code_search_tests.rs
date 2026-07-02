@@ -282,6 +282,100 @@ async fn target_code_search_queries_committed_target_vectors_with_path_prefix() 
 }
 
 #[tokio::test]
+async fn target_code_search_errors_on_failed_refresh_but_can_query_committed_state_when_skipped() {
+    let repo = tempfile::tempdir().expect("repo");
+    Command::new("git")
+        .arg("-C")
+        .arg(repo.path())
+        .args(["init", "-q"])
+        .status()
+        .expect("git init");
+    std::fs::write(
+        repo.path().join("lib.rs"),
+        "pub fn target_answer() -> i32 { 42 }\n",
+    )
+    .expect("source file");
+
+    let cfg = Arc::new(Config::test_default());
+    let service_jobs = Arc::new(NoopServiceRuntime);
+    let source_jobs = Arc::new(FakeJobWatchStore::new());
+    let ledger = Arc::new(FakeLedgerStore::new());
+    let embedder = Arc::new(FakeEmbeddingProvider::new("fake-embedding", 8));
+    let vectors = Arc::new(FakeVectorStore::new("fake-vector"));
+    let ctx = ServiceContext::from_runtime(cfg, service_jobs).with_target_local_source_runtime(
+        TargetLocalSourceRuntime::new(
+            source_jobs,
+            ledger,
+            embedder,
+            vectors,
+            ProviderId::new("fake-embedding"),
+            "fake-embedding",
+            8,
+        ),
+    );
+
+    refresh_code_search_index_with_backend(
+        &ctx,
+        Some(repo.path()),
+        CodeSearchCaller::Cli,
+        CodeSearchRefreshBackend::TargetLocalSource,
+        None,
+    )
+    .await
+    .expect("initial target refresh");
+    std::fs::write(repo.path().join("bad.rs"), [0xff, 0xfe, 0xfd]).expect("bad source file");
+    let progress = RecordingReindexProgress::default();
+
+    let err = code_search_with_progress(
+        &ctx,
+        "target_answer",
+        CodeSearchOptions {
+            limit: 10,
+            offset: 0,
+            cwd: Some(repo.path().to_path_buf()),
+            path_prefix: None,
+            ensure_fresh: true,
+            caller: CodeSearchCaller::Cli,
+        },
+        Some(&progress),
+    )
+    .await
+    .expect_err("ensure_fresh target search should fail on refresh failure");
+    assert!(
+        err.to_string().contains("valid UTF-8"),
+        "unexpected error: {err:#}"
+    );
+    let progress_events = progress.events.lock().expect("progress lock").clone();
+    assert!(matches!(
+        progress_events.first(),
+        Some(ReindexProgress::Started { .. })
+    ));
+    assert!(
+        !progress_events
+            .iter()
+            .any(|event| matches!(event, ReindexProgress::Finished { .. }))
+    );
+
+    let searched = code_search(
+        &ctx,
+        "target_answer",
+        CodeSearchOptions {
+            limit: 10,
+            offset: 0,
+            cwd: Some(repo.path().to_path_buf()),
+            path_prefix: None,
+            ensure_fresh: false,
+            caller: CodeSearchCaller::Cli,
+        },
+    )
+    .await
+    .expect("committed-state target search");
+    assert_eq!(searched.freshness.status, "skipped");
+    assert_eq!(searched.results.len(), 1);
+    assert_eq!(searched.results[0].file_path.as_deref(), Some("lib.rs"));
+}
+
+#[tokio::test]
 async fn target_code_search_refresh_reports_stale_when_runtime_missing() {
     let repo = tempfile::tempdir().expect("repo");
     Command::new("git")

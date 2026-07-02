@@ -19,6 +19,7 @@ pub trait LedgerStore: Send + Sync {
     async fn committed_generation(&self, source_id: SourceId)
     -> Result<Option<SourceGenerationId>>;
     async fn complete_generation(&self, generation: SourceGeneration) -> Result<SourceGeneration>;
+    async fn fail_generation(&self, generation: SourceGeneration) -> Result<SourceGeneration>;
     async fn publish_generation(
         &self,
         request: PublishGenerationRequest,

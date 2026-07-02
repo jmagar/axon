@@ -56,7 +56,7 @@ pub async fn index_local_source_with_job(
         }
         Err(err) => {
             let source_error = terminal_source_error(&err, &input.root);
-            let _ = progress
+            if let Err(progress_err) = progress
                 .record_phase(
                     PipelinePhase::Complete,
                     LifecycleStatus::Failed,
@@ -64,7 +64,12 @@ pub async fn index_local_source_with_job(
                     Some(source_error),
                     Vec::new(),
                 )
-                .await;
+                .await
+            {
+                return Err(err.context(format!(
+                    "also failed to record terminal local source job failure: {progress_err}"
+                )));
+            }
             Err(err)
         }
     }

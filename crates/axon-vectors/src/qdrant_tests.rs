@@ -151,6 +151,33 @@ fn source_generation_and_document_filters_convert_to_qdrant_filters() {
 }
 
 #[test]
+fn qdrant_filter_rejects_path_prefix_until_live_prefix_wiring_exists() {
+    let request = VectorSearchRequest {
+        collection: "axon-test".to_string(),
+        query: "docs".to_string(),
+        limit: 10,
+        dense_vector: None,
+        sparse_vector: None,
+        filters: MetadataMap(
+            [("path_prefix".to_string(), json!("src"))]
+                .into_iter()
+                .collect(),
+        ),
+        hybrid: None,
+        generation: None,
+        graph_refs: Vec::new(),
+        metadata: MetadataMap::new(),
+    };
+
+    let err = qdrant_filter(&request).unwrap_err();
+
+    assert_eq!(
+        err.code.to_string(),
+        "vector.qdrant.path_prefix_unsupported"
+    );
+}
+
+#[test]
 fn opaque_generation_filter_is_converted_as_keyword() {
     let request = VectorSearchRequest {
         collection: "axon-test".to_string(),

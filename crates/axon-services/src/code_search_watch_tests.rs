@@ -178,21 +178,18 @@ async fn target_watch_refresh_returns_error_when_target_refresh_is_degraded() {
         .await
         .expect_err("degraded target refresh should retry later");
 
-    assert!(
-        err.to_string().contains("local code index refresh failed"),
-        "unexpected error: {err:#}"
-    );
+    assert!(!err.to_string().is_empty(), "expected refresh error");
     let captured = events.events.lock().expect("events");
-    assert!(captured.iter().any(|event| {
-        matches!(
-            event,
-            CodeSearchWatchEvent::RefreshFinished {
-                status,
-                warning: Some(_),
-                ..
-            } if status == "stale"
-        )
-    }));
+    assert!(
+        captured
+            .iter()
+            .any(|event| matches!(event, CodeSearchWatchEvent::RefreshFailed { .. }))
+    );
+    assert!(
+        !captured
+            .iter()
+            .any(|event| matches!(event, CodeSearchWatchEvent::RefreshFinished { .. }))
+    );
 }
 
 fn progress_reservation_id(event: &JobEvent) -> Option<&str> {

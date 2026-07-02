@@ -66,7 +66,7 @@ pub async fn code_search_with_progress(
         .transpose()?
         .flatten();
     if ctx.target_local_source_runtime().is_some() {
-        return target_code_search(ctx, text, opts, path_prefix.as_deref()).await;
+        return target_code_search(ctx, text, opts, path_prefix.as_deref(), progress).await;
     }
     let root = resolve_code_search_root(opts.cwd.as_deref(), opts.caller).await?;
     let identity = code_search_identity(ctx.cfg(), root).await;
@@ -110,6 +110,7 @@ async fn target_code_search(
     text: &str,
     opts: CodeSearchOptions,
     path_prefix: Option<&str>,
+    progress: Option<&dyn ReindexProgressSink>,
 ) -> Result<CodeSearchResult, Box<dyn Error + Send + Sync>> {
     let refresh = if opts.ensure_fresh {
         refresh_code_search_index_with_backend(
@@ -117,7 +118,7 @@ async fn target_code_search(
             opts.cwd.as_deref(),
             opts.caller,
             CodeSearchRefreshBackend::TargetLocalSource,
-            None,
+            progress,
         )
         .await?
     } else {

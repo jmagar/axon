@@ -166,15 +166,13 @@ async fn refresh_due_roots(
     }
     let due = due_dirty_roots(dirty, refresh_delay);
     for root in due {
-        if let Err(error) = refresh_code_search_watch_root(ctx, events, &root, "file_change").await
+        if refresh_code_search_watch_root(ctx, events, &root, "file_change")
+            .await
+            .is_err()
         {
             if let Some(state) = dirty.get_mut(&root) {
                 state.since = Instant::now();
             }
-            events.emit(CodeSearchWatchEvent::RefreshFailed {
-                root,
-                error: error.to_string(),
-            });
         } else {
             dirty.remove(&root);
         }
@@ -232,6 +230,19 @@ async fn refresh_code_search_watch_root(
             let failed_initial = reason == "initial" && failed_refresh;
             let failed_target_refresh = target_refresh && failed_refresh;
             let warning_message = warning.clone();
+            if failed_initial || failed_target_refresh {
+                let error = format!(
+                    "local code index refresh failed for {}: {}",
+                    root.display(),
+                    warning_message
+                        .unwrap_or_else(|| "refresh did not produce a fresh index".to_string())
+                );
+                events.emit(CodeSearchWatchEvent::RefreshFailed {
+                    root: root.to_path_buf(),
+                    error: error.clone(),
+                });
+                return Err(anyhow::anyhow!(error));
+            }
             events.emit(CodeSearchWatchEvent::RefreshFinished {
                 root: root.to_path_buf(),
                 status,
@@ -240,14 +251,6 @@ async fn refresh_code_search_watch_root(
                 removed_files,
                 generation,
             });
-            if failed_initial || failed_target_refresh {
-                return Err(anyhow::anyhow!(
-                    "local code index refresh failed for {}: {}",
-                    root.display(),
-                    warning_message
-                        .unwrap_or_else(|| "refresh did not produce a fresh index".to_string())
-                ));
-            }
             Ok(())
         }
         Err(error) => {
