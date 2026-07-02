@@ -71,6 +71,10 @@ fn normalize_query(url: &mut Url) {
 fn is_tracking_or_sensitive_query(key: &str) -> bool {
     let key = key.to_ascii_lowercase();
     key.starts_with("utm_")
+        || key.starts_with("x-amz-")
+        || key.starts_with("x-goog-")
+        || key.contains("credential")
+        || key.contains("signature")
         || matches!(
             key.as_str(),
             "auth"
@@ -85,6 +89,7 @@ fn is_tracking_or_sensitive_query(key: &str) -> bool {
                 | "id_token"
                 | "jwt"
                 | "key"
+                | "policy"
                 | "mc_cid"
                 | "mc_eid"
                 | "password"
@@ -135,5 +140,36 @@ fn web_item_key(path: &str, query: Option<&str>) -> String {
 }
 
 fn redacted_url(raw: &str) -> String {
-    raw.split('?').next().unwrap_or(raw).to_string()
+    match Url::parse(raw) {
+        Ok(mut url) => {
+            let _ = url.set_username("");
+            let _ = url.set_password(None);
+            if url.query().is_some() {
+                let pairs = url
+                    .query_pairs()
+                    .map(|(key, _)| (key.to_string(), "REDACTED".to_string()))
+                    .collect::<Vec<_>>();
+                url.set_query(None);
+                let mut serializer = url.query_pairs_mut();
+                for (key, value) in pairs {
+                    serializer.append_pair(&key, &value);
+                }
+            }
+            url.to_string()
+        }
+        Err(_) => {
+            let without_query = raw.split('?').next().unwrap_or(raw);
+            match without_query.rfind('@') {
+                Some(at) => {
+                    let authority_start = without_query.find("://").map_or(0, |idx| idx + 3);
+                    format!(
+                        "{}REDACTED@{}",
+                        &without_query[..authority_start],
+                        &without_query[at + 1..]
+                    )
+                }
+                None => without_query.to_string(),
+            }
+        }
+    }
 }

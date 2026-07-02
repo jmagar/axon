@@ -1,7 +1,8 @@
 use axon_api::source::*;
 use axon_embedding::fake::FakeEmbeddingProvider;
+use axon_embedding::provider::EmbeddingProvider;
 use axon_ledger::store::FakeLedgerStore;
-use axon_vectors::store::FakeVectorStore;
+use axon_vectors::store::{FakeVectorMode, FakeVectorStore};
 use serde_json::json;
 
 use super::{WebSourceIndexInput, index_web_source};
@@ -28,131 +29,83 @@ fn input(root: &std::path::Path, manifest_path: std::path::PathBuf) -> WebSource
 }
 
 #[tokio::test]
-async fn web_source_refresh_writes_vectors_then_commits_generation() {
+async fn partial_vector_write_failure_rolls_back_web_generation_vectors() {
     let fixture = web_fixture("# Intro\n\nHello docs.");
     let ledger = FakeLedgerStore::new();
     let embedder = FakeEmbeddingProvider::new("fake-embedding", 8);
-    let vectors = FakeVectorStore::new("fake-vector");
+    let vectors = FakeVectorStore::new("fake-vector").with_mode(FakeVectorMode::PartialFailure);
 
-    let output = index_web_source(
-        input(fixture.root.path(), fixture.manifest_path.clone()),
-        &ledger,
-        &embedder,
-        &vectors,
-    )
-    .await
-    .unwrap();
-
-    assert_eq!(
-        ledger.committed_generation(&output.source_id).await,
-        Some(output.generation.clone())
-    );
-    assert_eq!(embedder.calls().await.len(), 1);
-    assert_eq!(
-        vectors.calls().await,
-        vec!["ensure_collection", "upsert", "mark_generation_committed"]
-    );
-    assert!(output.documents_prepared >= 1);
-    assert!(output.chunks_prepared >= 1);
-    assert!(output.vector_points_written >= 1);
-
-    let points = vectors.points("axon-web-test").await;
-    assert!(!points.is_empty());
-    assert!(points.iter().all(|point| {
-        point.payload["source_kind"].as_str() == Some("web")
-            && point.payload["source_adapter"].as_str() == Some("web")
-            && point.payload["source_scope"].as_str() == Some("docs")
-            && point.payload["web_domain"].as_str() == Some("example.com")
-            && point.payload["visibility"].as_str() == Some("internal")
-            && point.payload["redaction_status"].as_str() == Some("clean")
-            && point.payload["committed_generation"].as_str() == Some(output.generation.0.as_str())
-            && point.payload["document_status"].as_str() == Some("published")
-    }));
-}
-
-#[tokio::test]
-async fn unchanged_web_refresh_reuses_committed_generation_without_vector_work() {
-    let fixture = web_fixture("# Intro\n\nHello docs.");
-    let ledger = FakeLedgerStore::new();
-    let embedder = FakeEmbeddingProvider::new("fake-embedding", 8);
-    let vectors = FakeVectorStore::new("fake-vector");
-
-    let first = index_web_source(
-        input(fixture.root.path(), fixture.manifest_path.clone()),
-        &ledger,
-        &embedder,
-        &vectors,
-    )
-    .await
-    .unwrap();
-    let embedding_calls = embedder.calls().await.len();
-    let vector_calls = vectors.calls().await;
-
-    let second = index_web_source(
+    let err = index_web_source(
         input(fixture.root.path(), fixture.manifest_path),
         &ledger,
         &embedder,
         &vectors,
     )
     .await
-    .unwrap();
+    .unwrap_err();
 
-    assert_eq!(second.generation, first.generation);
-    assert_eq!(second.documents_prepared, 0);
-    assert_eq!(second.chunks_prepared, 0);
-    assert_eq!(second.vector_points_written, 0);
-    assert_eq!(embedder.calls().await.len(), embedding_calls);
-    assert_eq!(vectors.calls().await, vector_calls);
+    let rendered = format!("{err:#}");
+    assert!(
+        rendered.contains("partial_failure") || rendered.contains("partial.failure"),
+        "unexpected error: {rendered}"
+    );
+    assert!(vectors.calls().await.contains(&"delete"));
+    assert!(vectors.points("axon-web-test").await.is_empty());
+    assert_eq!(ledger.generation_count().await, 1);
 }
 
 #[tokio::test]
-async fn map_scope_publishes_manifest_without_embedding_or_vectors() {
-    let ledger = FakeLedgerStore::new();
+async fn lost_lease_before_publish_rolls_back_web_generation_vectors() {
+    let fixture = web_fixture("# Intro\n\nHello docs.");
+    let ledger = FakeLedgerStore::new().with_heartbeat_lost();
     let embedder = FakeEmbeddingProvider::new("fake-embedding", 8);
     let vectors = FakeVectorStore::new("fake-vector");
-    let input = WebSourceIndexInput {
-        source: "https://example.com/docs".to_string(),
-        scope: SourceScope::Map,
-        manifest_path: None,
-        markdown_root: None,
-        map_urls: vec![
-            "https://example.com/docs/intro".to_string(),
-            "https://example.com/docs/api".to_string(),
-        ],
-        collection: "axon-web-test".to_string(),
-        owner_id: "test-owner".to_string(),
-        job_id: job_id(),
-        embedding_provider_id: ProviderId::new("fake-embedding"),
-        vector_provider_id: ProviderId::new("fake-vector"),
-        embedding_model: "fake-embedding".to_string(),
-        embedding_dimensions: 8,
-    };
 
-    let output = index_web_source(input, &ledger, &embedder, &vectors)
-        .await
-        .unwrap();
+    let err = index_web_source(
+        input(fixture.root.path(), fixture.manifest_path),
+        &ledger,
+        &embedder,
+        &vectors,
+    )
+    .await
+    .unwrap_err();
 
-    assert_eq!(
-        ledger.committed_generation(&output.source_id).await,
-        Some(output.generation.clone())
+    assert!(
+        err.to_string().contains("lost lease"),
+        "unexpected error: {err:#}"
     );
-    assert_eq!(output.documents_prepared, 0);
-    assert_eq!(output.chunks_prepared, 0);
-    assert_eq!(output.vector_points_written, 0);
-    let generation = ledger
-        .generation(&output.source_id, &output.generation)
-        .await
-        .unwrap();
-    assert_eq!(generation.document_counts.discovered, 2);
-    assert_eq!(generation.document_counts.prepared, 0);
-    assert_eq!(generation.document_counts.embedded, 0);
-    assert_eq!(generation.document_counts.published, 0);
-    assert_eq!(embedder.calls().await.len(), 0);
-    assert!(vectors.calls().await.is_empty());
+    assert!(vectors.calls().await.contains(&"delete"));
+    assert!(vectors.points("axon-web-test").await.is_empty());
+    assert_eq!(ledger.generation_count().await, 1);
 }
 
 #[tokio::test]
-async fn mixed_web_refresh_carries_unchanged_vectors_into_new_generation() {
+async fn vector_commit_failure_rolls_back_web_generation_vectors() {
+    let fixture = web_fixture("# Intro\n\nHello docs.");
+    let ledger = FakeLedgerStore::new();
+    let embedder = FakeEmbeddingProvider::new("fake-embedding", 8);
+    let vectors = FakeVectorStore::new("fake-vector").with_mode(FakeVectorMode::CommitFailure);
+
+    let err = index_web_source(
+        input(fixture.root.path(), fixture.manifest_path),
+        &ledger,
+        &embedder,
+        &vectors,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(
+        err.to_string().contains("commit_failed"),
+        "unexpected error: {err:#}"
+    );
+    assert!(vectors.calls().await.contains(&"delete"));
+    assert!(vectors.points("axon-web-test").await.is_empty());
+    assert_eq!(ledger.generation_count().await, 1);
+}
+
+#[tokio::test]
+async fn partial_unchanged_vector_copy_failure_keeps_previous_web_generation_visible() {
     let fixture = web_fixture_pages(&[
         (
             "docs-intro.md",
@@ -184,26 +137,26 @@ async fn mixed_web_refresh_carries_unchanged_vectors_into_new_generation() {
             ("docs-api.md", "https://example.com/docs/api", "# API\n\nv1"),
         ],
     );
+    let failing_vectors = vectors
+        .clone()
+        .with_mode(FakeVectorMode::PartialCommitFailure);
 
-    let second = index_web_source(
+    let err = index_web_source(
         input(fixture.root.path(), fixture.manifest_path.clone()),
         &ledger,
         &embedder,
-        &vectors,
+        &failing_vectors,
     )
     .await
-    .unwrap();
+    .unwrap_err();
 
-    assert_ne!(second.generation, first.generation);
-    assert_eq!(
-        ledger.committed_generation(&second.source_id).await,
-        Some(second.generation.clone())
-    );
     assert!(
-        vectors
-            .calls()
-            .await
-            .contains(&"mark_unchanged_items_committed")
+        err.to_string().contains("partial_commit_failure"),
+        "unexpected error: {err:#}"
+    );
+    assert_eq!(
+        ledger.committed_generation(&first.source_id).await,
+        Some(first.generation.clone())
     );
     let api_points = vectors
         .points("axon-web-test")
@@ -217,16 +170,53 @@ async fn mixed_web_refresh_carries_unchanged_vectors_into_new_generation() {
                 == Some("docs/api")
         })
         .collect::<Vec<_>>();
-    assert!(api_points.iter().any(|point| {
-        point.payload["committed_generation"].as_str() == Some(second.generation.0.as_str())
+    assert!(!api_points.is_empty());
+    assert!(api_points.iter().all(|point| {
+        point.payload["committed_generation"].as_str() == Some(first.generation.0.as_str())
     }));
 }
 
 #[tokio::test]
-async fn publish_failure_rolls_back_web_vectors() {
-    let fixture = web_fixture("# Intro\n\nHello docs.");
-    let ledger = FakeLedgerStore::new().with_publish_generation_failure();
+async fn web_vectorization_batches_more_than_changed_document_limit() {
+    let pages = (0..65)
+        .map(|idx| {
+            (
+                format!("docs-{idx}.md"),
+                format!("https://example.com/docs/{idx}"),
+                format!("# Page {idx}\n\ncontent"),
+            )
+        })
+        .collect::<Vec<_>>();
+    let page_refs = pages
+        .iter()
+        .map(|(file, url, markdown)| (file.as_str(), url.as_str(), markdown.as_str()))
+        .collect::<Vec<_>>();
+    let fixture = web_fixture_pages(&page_refs);
+    let ledger = FakeLedgerStore::new();
     let embedder = FakeEmbeddingProvider::new("fake-embedding", 8);
+    let vectors = FakeVectorStore::new("fake-vector");
+
+    let output = index_web_source(
+        input(fixture.root.path(), fixture.manifest_path.clone()),
+        &ledger,
+        &embedder,
+        &vectors,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(output.documents_prepared, 65);
+    assert_eq!(embedder.calls().await.len(), 2);
+    assert_eq!(vectors.points("axon-web-test").await.len(), 65);
+}
+
+#[tokio::test]
+async fn missing_embedding_vector_aborts_without_publishing_web_generation() {
+    let fixture = web_fixture("# Intro\n\nHello docs.");
+    let ledger = FakeLedgerStore::new();
+    let embedder = MissingVectorEmbeddingProvider {
+        inner: FakeEmbeddingProvider::new("fake-embedding", 8),
+    };
     let vectors = FakeVectorStore::new("fake-vector");
 
     let err = index_web_source(
@@ -238,17 +228,39 @@ async fn publish_failure_rolls_back_web_vectors() {
     .await
     .unwrap_err();
 
+    let rendered = format!("{err:#}");
     assert!(
-        err.to_string().contains("publish_failed"),
-        "unexpected error: {err:#}"
+        rendered.contains("missing vector"),
+        "unexpected error: {rendered}"
     );
     assert!(vectors.calls().await.contains(&"delete"));
     assert!(vectors.points("axon-web-test").await.is_empty());
+    assert_eq!(ledger.generation_count().await, 1);
 }
 
 struct WebFixture {
     root: tempfile::TempDir,
     manifest_path: std::path::PathBuf,
+}
+
+struct MissingVectorEmbeddingProvider {
+    inner: FakeEmbeddingProvider,
+}
+
+#[async_trait::async_trait]
+impl EmbeddingProvider for MissingVectorEmbeddingProvider {
+    async fn embed(
+        &self,
+        batch: EmbeddingBatch,
+    ) -> axon_embedding::provider::Result<EmbeddingResult> {
+        let mut result = self.inner.embed(batch).await?;
+        result.vectors.pop();
+        Ok(result)
+    }
+
+    async fn capabilities(&self) -> axon_embedding::provider::Result<ProviderCapability> {
+        self.inner.capabilities().await
+    }
 }
 
 fn web_fixture(markdown: &str) -> WebFixture {

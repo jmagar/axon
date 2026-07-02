@@ -24,8 +24,6 @@ pub(super) fn web_metadata(plan: &SourcePlan, web: &WebUrlParts) -> MetadataMap 
         "normalization_version".to_string(),
         json!(NORMALIZATION_VERSION),
     );
-    metadata.insert("visibility".to_string(), json!("public"));
-    metadata.insert("redaction_status".to_string(), json!("clean"));
     metadata.insert("web_url".to_string(), json!(web.normalized_url.clone()));
     metadata.insert(
         "web_seed_url".to_string(),
@@ -82,8 +80,6 @@ pub(super) fn web_source_document(
         json!(acquisition.generation.0.clone()),
     );
     metadata.insert("committed_generation".to_string(), json!("uncommitted"));
-    metadata.insert("visibility".to_string(), json!("public"));
-    metadata.insert("redaction_status".to_string(), json!("clean"));
     metadata.insert(
         "normalization_version".to_string(),
         json!(NORMALIZATION_VERSION),

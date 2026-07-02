@@ -24,7 +24,6 @@ pub(super) struct VectorizeResult {
 struct VectorizeStats {
     documents_prepared: u64,
     chunks_prepared: u64,
-    points_written: u64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -106,11 +105,9 @@ async fn normalize_changed_documents(
     run: &WebAdapterRun,
     diff: &SourceManifestDiff,
 ) -> anyhow::Result<Vec<SourceDocument>> {
-    let acquisition = WebSourceAdapter::new().acquire(&run.plan, diff).await?;
-    Ok(WebSourceAdapter::new()
-        .normalize(&run.plan, acquisition)
-        .await?
-        .data)
+    let adapter = WebSourceAdapter::new();
+    let acquisition = adapter.acquire(&run.plan, diff).await?;
+    Ok(adapter.normalize(&run.plan, acquisition).await?.data)
 }
 
 fn prepare_source_documents(
@@ -266,9 +263,16 @@ async fn vectorize_documents(
     let batch = embedding_batch_for_documents(input, &documents)?;
     let embeddings = embedding_provider.embed(batch).await?;
     let point_batch = vector_point_batch_for_documents(collection, &documents, &embeddings)?;
+    let expected_points = point_batch.points.len() as u64;
     let write = vector_store.upsert(point_batch).await?;
+    if write.points_attempted != write.points_written || write.points_written != expected_points {
+        return Err(anyhow::anyhow!(
+            "upsert wrote {} of {} attempted points; expected {expected_points}",
+            write.points_written,
+            write.points_attempted
+        ));
+    }
     let mut result = VectorizeResultWithStats::default();
-    result.stats.points_written += write.points_written;
     for document in documents {
         result.stats.chunks_prepared += document.chunks.len() as u64;
         result.stats.documents_prepared += 1;

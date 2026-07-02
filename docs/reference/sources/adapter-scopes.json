@@ -517,6 +517,11 @@
     "registry_status": "route-time implemented subset",
     "source_inputs": [
       {
+        "checksum": "sha256:3fdc258530a45c6390485434dae01058d641424b7cbb9a49a54503fb63846c07",
+        "kind": "rust_module",
+        "path": "crates/axon-adapters/src/web.rs"
+      },
+      {
         "checksum": "sha256:7189b435f0277c9fffbcbd1390899b8723b28101f9efbd8157509b54299627e0",
         "kind": "rust_module",
         "path": "crates/axon-route/src/capability.rs"

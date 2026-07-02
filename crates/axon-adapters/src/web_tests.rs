@@ -183,6 +183,107 @@ async fn web_urls_keep_safe_queries_in_item_keys_without_leaking_secrets() {
     }
 }
 
+#[tokio::test]
+async fn web_manifest_rejects_invalid_jsonl() {
+    let adapter = WebSourceAdapter::new();
+    let root = temp_web_dir();
+    let manifest_path = write_manifest(&root, "{not-json}\n");
+    let plan = manifest_plan(&root, &manifest_path);
+
+    let err = adapter.discover(&plan).await.unwrap_err();
+
+    assert!(
+        err.to_string().contains("manifest_invalid"),
+        "unexpected error: {err}"
+    );
+}
+
+#[tokio::test]
+async fn web_manifest_rejects_missing_required_fields() {
+    let adapter = WebSourceAdapter::new();
+    let root = temp_web_dir();
+    let manifest_path = write_manifest(
+        &root,
+        &serde_json::to_string(&json!({
+            "relative_path": "markdown/docs-intro.md"
+        }))
+        .unwrap(),
+    );
+    let plan = manifest_plan(&root, &manifest_path);
+
+    let err = adapter.discover(&plan).await.unwrap_err();
+
+    assert!(
+        err.to_string().contains("manifest_field_missing"),
+        "unexpected error: {err}"
+    );
+
+    let manifest_path = write_manifest(
+        &root,
+        &(serde_json::to_string(&json!({
+            "url": "https://example.com/docs/intro"
+        }))
+        .unwrap()
+            + "\n"),
+    );
+    let plan = manifest_plan(&root, &manifest_path);
+
+    let err = adapter.discover(&plan).await.unwrap_err();
+
+    assert!(
+        err.to_string().contains("manifest_field_missing"),
+        "unexpected error: {err}"
+    );
+}
+
+#[tokio::test]
+async fn web_manifest_rejects_paths_outside_markdown_root() {
+    let adapter = WebSourceAdapter::new();
+    for relative_path in ["/tmp/secret.md", "../secret.md"] {
+        let root = temp_web_dir();
+        let manifest_path = write_manifest(
+            &root,
+            &(serde_json::to_string(&json!({
+                "url": "https://example.com/docs/intro",
+                "relative_path": relative_path,
+                "markdown_chars": 12,
+                "content_hash": "sha256:intro"
+            }))
+            .unwrap()
+                + "\n"),
+        );
+        let plan = manifest_plan(&root, &manifest_path);
+        let manifest = adapter.discover(&plan).await.unwrap();
+        let diff = manifest_diff(&plan, manifest.items);
+
+        let err = adapter.acquire(&plan, &diff).await.unwrap_err();
+
+        assert!(
+            err.to_string().contains("path.escape"),
+            "unexpected error for {relative_path}: {err}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn web_url_errors_redact_userinfo_and_query_values() {
+    let adapter = WebSourceAdapter::new();
+    let mut plan = web_plan("https://example.com/docs", SourceScope::Map);
+    plan.route.validated_options.values.insert(
+        "map_urls".to_string(),
+        json!(["ftp://user:pass@example.com/path?token=secret&q=visible"]),
+    );
+
+    let err = adapter.discover(&plan).await.unwrap_err();
+    let rendered = format!("{err:?}");
+
+    assert!(rendered.contains("unsupported_scheme"));
+    for secret in ["user:pass", "token=secret", "q=visible"] {
+        assert!(!rendered.contains(secret), "leaked {secret}: {rendered}");
+    }
+    assert!(rendered.contains("REDACTED"));
+}
+
 fn web_plan(source: &str, scope: SourceScope) -> SourcePlan {
     SourcePlan {
         job_id: JobId::new(Uuid::from_u128(29812)),
@@ -300,6 +401,27 @@ fn temp_web_dir() -> PathBuf {
     let dir = std::env::temp_dir().join(format!("axon-web-test-{}", Uuid::new_v4()));
     fs::create_dir_all(&dir).unwrap();
     dir
+}
+
+fn write_manifest(root: &std::path::Path, content: &str) -> PathBuf {
+    let manifest_path = root.join("manifest.jsonl");
+    fs::write(&manifest_path, content).unwrap();
+    manifest_path
+}
+
+fn manifest_plan(root: &std::path::Path, manifest_path: &std::path::Path) -> SourcePlan {
+    let markdown_dir = root.join("markdown");
+    fs::create_dir_all(&markdown_dir).unwrap();
+    let mut plan = web_plan("https://example.com/docs", SourceScope::Docs);
+    plan.route.validated_options.values.insert(
+        "manifest_path".to_string(),
+        manifest_path.display().to_string().into(),
+    );
+    plan.route.validated_options.values.insert(
+        "markdown_root".to_string(),
+        root.display().to_string().into(),
+    );
+    plan
 }
 
 fn strip_tracking_query(value: &str) -> String {

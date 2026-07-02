@@ -16,11 +16,19 @@ impl PublishVectorStats {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub(super) struct GenerationDocumentCounts {
+    pub(super) discovered: u64,
+    pub(super) prepared: u64,
+    pub(super) embedded: u64,
+    pub(super) published: u64,
+    pub(super) failed: u64,
+}
+
 pub(super) async fn ensure_lease_before_publish(
     ledger: &dyn LedgerStore,
     input: &WebSourceIndexInput,
     lease: &LeaseGuard,
-    generation: SourceGeneration,
 ) -> anyhow::Result<()> {
     if ledger
         .heartbeat_lease(
@@ -33,7 +41,6 @@ pub(super) async fn ensure_lease_before_publish(
     {
         return Ok(());
     }
-    let _ = ledger.fail_generation(generation).await;
     Err(anyhow::anyhow!(
         "web source refresh lost lease before publish"
     ))
@@ -43,7 +50,7 @@ pub(super) async fn complete_generation(
     ledger: &dyn LedgerStore,
     generation: SourceGeneration,
     diff: &SourceManifestDiff,
-    discovered_count: u64,
+    counts: GenerationDocumentCounts,
 ) -> anyhow::Result<SourceGeneration> {
     Ok(ledger
         .complete_generation(SourceGeneration {
@@ -57,11 +64,11 @@ pub(super) async fn complete_generation(
                 failed: diff.counts.failed,
             },
             document_counts: DocumentCounts {
-                discovered: discovered_count,
-                prepared: discovered_count,
-                embedded: discovered_count,
-                published: discovered_count,
-                failed: 0,
+                discovered: counts.discovered,
+                prepared: counts.prepared,
+                embedded: counts.embedded,
+                published: counts.published,
+                failed: counts.failed,
             },
             ..generation
         })
@@ -74,15 +81,17 @@ pub(super) async fn mark_vectors_for_completed_generation(
     source_id: &SourceId,
     completed: &SourceGeneration,
     diff: &SourceManifestDiff,
+    expected_new_points: u64,
 ) -> anyhow::Result<PublishVectorStats> {
-    let new_points_written = vector_store
+    let new_write = vector_store
         .mark_generation_committed(
             collection.collection.clone(),
             source_id.clone(),
             completed.generation.clone(),
         )
-        .await?
-        .points_written;
+        .await?;
+    ensure_full_write("mark_generation_committed", expected_new_points, &new_write)?;
+    let new_points_written = new_write.points_written;
     let unchanged_points_written = match mark_unchanged_vectors_committed(
         vector_store,
         collection,
@@ -112,6 +121,30 @@ pub(super) async fn mark_vectors_for_completed_generation(
         new_points_written,
         unchanged_points_written,
     })
+}
+
+pub(super) async fn publish_generation_without_vectors(
+    ledger: &dyn LedgerStore,
+    completed: &SourceGeneration,
+) -> anyhow::Result<SourceGeneration> {
+    match ledger
+        .publish_generation(PublishGenerationRequest {
+            source_id: completed.source_id.clone(),
+            generation: completed.generation.clone(),
+            expected_previous_generation: completed.previous_generation.clone(),
+        })
+        .await
+    {
+        Ok(published) => Ok(published),
+        Err(err) => {
+            if let Err(fail) = ledger.fail_generation(completed.clone()).await {
+                return Err(anyhow::Error::new(err).context(format!(
+                    "also failed to mark source generation failed: {fail}"
+                )));
+            }
+            Err(err.into())
+        }
+    }
 }
 
 pub(super) async fn publish_generation_and_rollback_vectors(
@@ -158,6 +191,52 @@ pub(super) async fn publish_generation_and_rollback_vectors(
     }
 }
 
+pub(super) async fn fail_generation_and_rollback_vectors(
+    ledger: &dyn LedgerStore,
+    vector_store: &dyn VectorStore,
+    collection: &CollectionSpec,
+    generation: SourceGeneration,
+    cause: anyhow::Error,
+) -> anyhow::Error {
+    let mut cleanup_errors = Vec::new();
+    if let Err(rollback) = rollback_new_generation_vectors(
+        vector_store,
+        collection,
+        &generation.source_id,
+        &generation,
+    )
+    .await
+    {
+        cleanup_errors.push(format!(
+            "also failed to rollback vector generation {} from collection {}: {rollback}",
+            generation.generation.0, collection.collection
+        ));
+    }
+    if let Err(fail) = ledger.fail_generation(generation).await {
+        cleanup_errors.push(format!(
+            "also failed to mark source generation failed: {fail}"
+        ));
+    }
+    if cleanup_errors.is_empty() {
+        cause
+    } else {
+        cause.context(cleanup_errors.join("; "))
+    }
+}
+
+pub(super) async fn fail_generation(
+    ledger: &dyn LedgerStore,
+    generation: SourceGeneration,
+    cause: anyhow::Error,
+) -> anyhow::Error {
+    match ledger.fail_generation(generation).await {
+        Ok(_) => cause,
+        Err(fail) => cause.context(format!(
+            "also failed to mark source generation failed: {fail}"
+        )),
+    }
+}
+
 pub(super) fn completed_source_summary(
     input: &WebSourceIndexInput,
     run: &WebAdapterRun,
@@ -185,6 +264,21 @@ pub(super) fn completed_source_summary(
     summary
 }
 
+fn ensure_full_write(
+    operation: &str,
+    expected_points: u64,
+    write: &VectorStoreWriteResult,
+) -> anyhow::Result<()> {
+    if write.points_attempted != write.points_written || write.points_written != expected_points {
+        return Err(anyhow::anyhow!(
+            "{operation} wrote {} of {} attempted points; expected {expected_points}",
+            write.points_written,
+            write.points_attempted
+        ));
+    }
+    Ok(())
+}
+
 async fn mark_unchanged_vectors_committed(
     vector_store: &dyn VectorStore,
     collection: &CollectionSpec,
@@ -198,7 +292,7 @@ async fn mark_unchanged_vectors_committed(
     if diff.unchanged.is_empty() {
         return Ok(0);
     }
-    vector_store
+    let write = vector_store
         .mark_unchanged_items_committed(
             collection.collection.clone(),
             source_id.clone(),
@@ -209,8 +303,20 @@ async fn mark_unchanged_vectors_committed(
                 .map(|item| item.source_item_key.clone())
                 .collect(),
         )
-        .await
-        .map(|result| result.points_written)
+        .await?;
+    ensure_full_write(
+        "mark_unchanged_items_committed",
+        write.points_attempted,
+        &write,
+    )
+    .map_err(|err| {
+        ApiError::new(
+            "vector.commit_short_write",
+            ErrorStage::Publishing,
+            err.to_string(),
+        )
+    })?;
+    Ok(write.points_written)
 }
 
 async fn rollback_new_generation_vectors(
