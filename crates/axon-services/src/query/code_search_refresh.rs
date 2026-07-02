@@ -26,7 +26,7 @@ pub enum CodeSearchRefreshBackend {
 pub struct CodeSearchRefreshResult {
     pub project_root: PathBuf,
     pub project_key: String,
-    pub generation: Option<i64>,
+    pub legacy_code_index_generation: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_source_id: Option<SourceId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -98,7 +98,9 @@ pub async fn refresh_code_search_index_with_backend(
     }
 }
 
-fn default_code_search_refresh_backend(ctx: &ServiceContext) -> CodeSearchRefreshBackend {
+pub(crate) fn default_code_search_refresh_backend(
+    ctx: &ServiceContext,
+) -> CodeSearchRefreshBackend {
     if ctx.target_local_source_runtime().is_some() {
         CodeSearchRefreshBackend::TargetLocalSource
     } else {
@@ -120,7 +122,7 @@ async fn refresh_legacy_code_search_index_with_progress(
     Ok(CodeSearchRefreshResult {
         project_root: identity.project_root.clone(),
         project_key: identity.project_key.clone(),
-        generation,
+        legacy_code_index_generation: generation,
         target_source_id: None,
         target_source_generation: None,
         freshness,
@@ -168,7 +170,7 @@ async fn refresh_target_local_code_search_index_with_progress(
             let result = CodeSearchRefreshResult {
                 project_root: project_root.clone(),
                 project_key: project_key.clone(),
-                generation: None,
+                legacy_code_index_generation: None,
                 target_source_id: Some(output.source_id),
                 target_source_generation: Some(output.generation),
                 freshness: code_search_freshness(
@@ -216,7 +218,7 @@ fn target_refresh_failed_result(
     CodeSearchRefreshResult {
         project_root,
         project_key,
-        generation: None,
+        legacy_code_index_generation: None,
         target_source_id: if committed_generation.is_some() {
             source_id
         } else {
@@ -254,22 +256,7 @@ pub(super) async fn target_code_search_committed_state(
     let root = resolve_code_search_root(cwd, caller).await?;
     let identity = code_search_identity(ctx.cfg(), root).await;
     let Some(target) = ctx.target_local_source_runtime() else {
-        return Ok(CodeSearchRefreshResult {
-            project_root: identity.project_root,
-            project_key: identity.project_key,
-            generation: None,
-            target_source_id: None,
-            target_source_generation: None,
-            freshness: code_search_freshness(
-                "stale",
-                Some(FreshnessWarning::Failed {
-                    error: "target local source code-search dependencies are not available"
-                        .to_string(),
-                }),
-                0,
-                0,
-            ),
-        });
+        return Ok(target_refresh_unavailable_result(identity));
     };
     let source_id = local_source_id(&identity.project_root);
     let committed = target
@@ -279,7 +266,7 @@ pub(super) async fn target_code_search_committed_state(
     Ok(CodeSearchRefreshResult {
         project_root: identity.project_root,
         project_key: identity.project_key,
-        generation: None,
+        legacy_code_index_generation: None,
         target_source_id: committed.as_ref().map(|_| source_id),
         target_source_generation: committed,
         freshness: code_search_freshness("skipped", None, 0, 0),

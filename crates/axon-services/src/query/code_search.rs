@@ -21,6 +21,7 @@ use crate::context::ServiceContext;
 use crate::query::wrap_service_error;
 use crate::types::{CodeSearchCaller, CodeSearchFreshness, CodeSearchOptions, CodeSearchResult};
 
+pub(crate) use self::refresh::default_code_search_refresh_backend;
 use self::refresh::resolve_code_search_freshness_with_progress;
 pub use self::refresh::{
     CodeSearchProjectResult, CodeSearchRefreshBackend, CodeSearchRefreshResult,

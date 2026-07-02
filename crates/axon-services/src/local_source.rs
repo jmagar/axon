@@ -144,26 +144,10 @@ async fn index_local_source_with_lease(
     record_progress(progress, PipelinePhase::Discovering, None).await?;
     let diff = ledger.diff_manifest(manifest.clone()).await?;
     record_progress(progress, PipelinePhase::Diffing, None).await?;
-    if !manifest_diff_has_changes(&diff)
-        && let Some(committed_generation) = diff.previous_generation
+    if let Some(output) =
+        unchanged_refresh_output(input, ledger, previous_source, &run, &manifest, &diff).await?
     {
-        ledger
-            .upsert_source(unchanged_source_summary(
-                input,
-                &run,
-                previous_source,
-                manifest.items.len() as u64,
-            ))
-            .await?;
-        return Ok(LocalSourceIndexOutput {
-            job_id: input.job_id,
-            source_id: run.source_id,
-            generation: committed_generation,
-            documents_prepared: 0,
-            chunks_prepared: 0,
-            vector_points_written: 0,
-            removed_files: 0,
-        });
+        return Ok(output);
     }
 
     if let Err(err) = ensure_providers_ready(embedding_provider, vector_store).await {
@@ -174,7 +158,6 @@ async fn index_local_source_with_lease(
     let generation = ledger.create_generation(source_id.clone()).await?;
     manifest.generation = generation.generation.clone();
     ledger.put_manifest(manifest.clone()).await?;
-
     record_progress(progress, PipelinePhase::Preparing, None).await?;
     let collection = collection_spec(&input.collection, input.embedding_dimensions);
     vector_store.ensure_collection(collection.clone()).await?;
@@ -191,10 +174,16 @@ async fn index_local_source_with_lease(
         &collection,
     )
     .await?;
-    if let Err(err) = ensure_lease_before_publish(ledger, input, lease, generation.clone()).await {
-        rollback_new_generation_vectors(vector_store, &collection, &source_id, &generation).await?;
-        return Err(err);
-    }
+    ensure_lease_before_publish_or_rollback_vectors(
+        ledger,
+        input,
+        lease,
+        vector_store,
+        &collection,
+        &source_id,
+        &generation,
+    )
+    .await?;
     let completed =
         complete_generation(ledger, generation, &diff, manifest.items.len() as u64).await?;
     let publish_stats = match mark_vectors_for_completed_generation(
@@ -247,6 +236,61 @@ async fn index_local_source_with_lease(
         vector_points_written: publish_stats.total_points_written(),
         removed_files: diff.counts.removed,
     })
+}
+
+async fn unchanged_refresh_output(
+    input: &LocalSourceIndexInput,
+    ledger: &dyn LedgerStore,
+    previous_source: Option<SourceSummary>,
+    run: &LocalAdapterRun,
+    manifest: &SourceManifest,
+    diff: &SourceManifestDiff,
+) -> anyhow::Result<Option<LocalSourceIndexOutput>> {
+    if manifest_diff_has_changes(diff) {
+        return Ok(None);
+    }
+    let Some(committed_generation) = diff.previous_generation.clone() else {
+        return Ok(None);
+    };
+    ledger
+        .upsert_source(unchanged_source_summary(
+            input,
+            run,
+            previous_source,
+            manifest.items.len() as u64,
+        ))
+        .await?;
+    Ok(Some(LocalSourceIndexOutput {
+        job_id: input.job_id,
+        source_id: run.source_id.clone(),
+        generation: committed_generation,
+        documents_prepared: 0,
+        chunks_prepared: 0,
+        vector_points_written: 0,
+        removed_files: 0,
+    }))
+}
+
+async fn ensure_lease_before_publish_or_rollback_vectors(
+    ledger: &dyn LedgerStore,
+    input: &LocalSourceIndexInput,
+    lease: &LeaseGuard,
+    vector_store: &dyn VectorStore,
+    collection: &CollectionSpec,
+    source_id: &SourceId,
+    generation: &SourceGeneration,
+) -> anyhow::Result<()> {
+    if let Err(err) = ensure_lease_before_publish(ledger, input, lease, generation.clone()).await {
+        if let Err(rollback_err) =
+            rollback_new_generation_vectors(vector_store, collection, source_id, generation).await
+        {
+            return Err(err.context(format!(
+                "also failed to rollback local source generation vectors: {rollback_err}"
+            )));
+        }
+        return Err(err);
+    }
+    Ok(())
 }
 
 async fn vectorize_generation_or_fail(

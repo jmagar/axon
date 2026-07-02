@@ -65,6 +65,7 @@ impl FakeVectorStore {
                 payload_filters: true,
                 payload_indexes,
                 delete_by_filter: true,
+                generation_publish: true,
                 collection_aliases: false,
                 consistency: VectorConsistency::Strong,
             }),

@@ -205,12 +205,8 @@ async fn refresh_code_search_watch_root(
         reason,
     });
     let progress = WatchProgressSink { events };
-    let target_refresh = ctx.target_local_source_runtime().is_some();
-    let backend = if target_refresh {
-        CodeSearchRefreshBackend::TargetLocalSource
-    } else {
-        CodeSearchRefreshBackend::LegacyCodeIndex
-    };
+    let backend = query::default_code_search_refresh_backend(ctx);
+    let target_refresh = matches!(backend, CodeSearchRefreshBackend::TargetLocalSource);
     let refresh = query::refresh_code_search_index_with_backend(
         ctx,
         Some(root),
@@ -225,7 +221,7 @@ async fn refresh_code_search_watch_root(
             let warning = result.freshness.warning;
             let indexed_files = result.freshness.indexed_files;
             let removed_files = result.freshness.removed_files;
-            let generation = result.generation;
+            let generation = result.legacy_code_index_generation;
             let target_source_generation = result.target_source_generation;
             let failed_refresh = status != "fresh" || warning.is_some();
             let failed_initial = reason == "initial" && failed_refresh;

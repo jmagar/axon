@@ -653,5 +653,7 @@ async fn qdrant_vector_store_live_calls_return_not_wired_errors() {
             .values()
             .any(|value| value.contains(raw_url))
     );
-    assert!(capability.vector_store.unwrap().dense);
+    let vector_store = capability.vector_store.unwrap();
+    assert!(vector_store.dense);
+    assert!(!vector_store.generation_publish);
 }

@@ -20,7 +20,9 @@ pub(super) async fn ensure_providers_ready(
     vector_store: &dyn VectorStore,
 ) -> Result<(), ApiError> {
     ensure_provider_capability_ready(embedding_provider.capabilities().await?)?;
-    ensure_provider_capability_ready(vector_store.capabilities().await?)?;
+    let vector_capability = vector_store.capabilities().await?;
+    ensure_provider_capability_ready(vector_capability.clone())?;
+    ensure_vector_generation_publish_supported(vector_capability)?;
     Ok(())
 }
 
@@ -89,6 +91,17 @@ pub(super) async fn record_progress_error(
     Ok(())
 }
 
+pub(super) async fn progress_error_context(
+    progress: Option<&dyn LocalSourceProgress>,
+    phase: PipelinePhase,
+    error: &ApiError,
+) -> Option<String> {
+    record_progress_error(progress, phase, error)
+        .await
+        .err()
+        .map(|progress_err| format!("also failed to record local source progress: {progress_err}"))
+}
+
 fn ensure_provider_capability_ready(capability: ProviderCapability) -> Result<(), ApiError> {
     if matches!(
         capability.health,
@@ -115,6 +128,29 @@ fn ensure_provider_capability_ready(capability: ProviderCapability) -> Result<()
     .with_provider_id(capability.provider_id.0);
     error.retryable = true;
     Err(error)
+}
+
+fn ensure_vector_generation_publish_supported(
+    capability: ProviderCapability,
+) -> Result<(), ApiError> {
+    let provider_id = capability.provider_id.0.clone();
+    let Some(vector_store) = capability.vector_store.as_ref() else {
+        return Err(ApiError::new(
+            "provider.vector.capability_missing",
+            ErrorStage::Planning,
+            "vector provider did not report vector store capabilities",
+        )
+        .with_provider_id(provider_id));
+    };
+    if vector_store.generation_publish {
+        return Ok(());
+    }
+    Err(ApiError::new(
+        "provider.vector.generation_publish_unsupported",
+        ErrorStage::Publishing,
+        "vector provider does not support source generation publish markers",
+    )
+    .with_provider_id(provider_id))
 }
 
 pub(super) fn source_error_from_api_error(error: &ApiError) -> SourceError {

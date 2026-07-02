@@ -3,7 +3,7 @@ use axon_ledger::store::LedgerStore;
 use axon_vectors::store::VectorStore;
 
 use super::local_source_adapter::{LocalAdapterRun, source_summary, timestamp};
-use super::local_source_progress::{LocalSourceProgress, record_progress_error};
+use super::local_source_progress::{LocalSourceProgress, progress_error_context};
 use super::{LOCAL_LEASE_TTL_SECONDS, LocalSourceIndexInput};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -119,8 +119,13 @@ pub(super) async fn mark_vectors_for_completed_generation(
     {
         Ok(result) => result.points_written,
         Err(err) => {
-            record_progress_error(progress, PipelinePhase::Publishing, &err).await?;
-            return Err(anyhow::Error::new(err));
+            let progress_context =
+                progress_error_context(progress, PipelinePhase::Publishing, &err).await;
+            let mut err = anyhow::Error::new(err);
+            if let Some(context) = progress_context {
+                err = err.context(context);
+            }
+            return Err(err);
         }
     };
     let unchanged_points_written = match mark_unchanged_vectors_committed(
@@ -135,9 +140,23 @@ pub(super) async fn mark_vectors_for_completed_generation(
     {
         Ok(points_written) => points_written,
         Err(err) => {
-            record_progress_error(progress, PipelinePhase::Publishing, &err).await?;
-            rollback_new_generation_vectors(vector_store, collection, source_id, completed).await?;
-            return Err(anyhow::Error::new(err));
+            let progress_context =
+                progress_error_context(progress, PipelinePhase::Publishing, &err).await;
+            let rollback_error =
+                rollback_new_generation_vectors(vector_store, collection, source_id, completed)
+                    .await
+                    .err();
+            let mut err = anyhow::Error::new(err);
+            if let Some(context) = progress_context {
+                err = err.context(context);
+            }
+            if let Some(rollback_error) = rollback_error {
+                err = err.context(format!(
+                    "also failed to rollback committed vector generation {} from collection {}: {rollback_error}",
+                    completed.generation.0, collection.collection
+                ));
+            }
+            return Err(err);
         }
     };
     Ok(PublishVectorStats {

@@ -281,6 +281,12 @@ async fn code_search_selection_skips_lockfiles_and_pruned_dirs() {
     tokio::fs::write(dir.path().join(".cache/script.sh"), "echo cache\n")
         .await
         .unwrap();
+    tokio::fs::write(dir.path().join(".env"), "AXON_TOKEN=secret\n")
+        .await
+        .unwrap();
+    tokio::fs::write(dir.path().join("api-token.txt"), "secret\n")
+        .await
+        .unwrap();
     let ledger = FakeLedgerStore::new();
     let embedder = FakeEmbeddingProvider::new("fake-embedding", 8);
     let vectors = FakeVectorStore::new("fake-vector");

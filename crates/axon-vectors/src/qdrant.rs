@@ -134,6 +134,7 @@ impl VectorStore for QdrantVectorStore {
                 payload_filters: true,
                 payload_indexes: Vec::new(),
                 delete_by_filter: true,
+                generation_publish: false,
                 collection_aliases: true,
                 consistency: VectorConsistency::Strong,
             }),

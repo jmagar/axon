@@ -13,6 +13,7 @@ use axon_vector::ops::qdrant::DirectRetrieveResult;
 use std::error::Error;
 use tokio::sync::mpsc;
 
+pub(crate) use self::code_search::default_code_search_refresh_backend;
 pub use self::code_search::{
     CodeSearchProjectResult, CodeSearchRefreshBackend, CodeSearchRefreshResult, code_search,
     code_search_with_progress, refresh_code_search_index, refresh_code_search_index_with_backend,

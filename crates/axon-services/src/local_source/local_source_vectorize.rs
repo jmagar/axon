@@ -11,7 +11,7 @@ use uuid::Uuid;
 use super::LocalSourceIndexInput;
 use super::local_source_adapter::{LocalAdapterRun, normalize_changed_documents, timestamp};
 use super::local_source_progress::{
-    LocalSourceProgress, record_progress_error, record_progress_with_reservations,
+    LocalSourceProgress, progress_error_context, record_progress_with_reservations,
 };
 
 const LOCAL_CHANGED_DOCUMENT_BATCH_SIZE: usize = 64;
@@ -206,8 +206,13 @@ async fn vectorize_documents(
     let embeddings = match embedding_provider.embed(batch).await {
         Ok(embeddings) => embeddings,
         Err(err) => {
-            record_progress_error(progress, PipelinePhase::Embedding, &err).await?;
-            return Err(anyhow::Error::new(err));
+            let progress_context =
+                progress_error_context(progress, PipelinePhase::Embedding, &err).await;
+            let mut err = anyhow::Error::new(err);
+            if let Some(context) = progress_context {
+                err = err.context(context);
+            }
+            return Err(err);
         }
     };
     drop(embedding_reservation);
@@ -223,8 +228,13 @@ async fn vectorize_documents(
     let write = match vector_store.upsert(point_batch).await {
         Ok(write) => write,
         Err(err) => {
-            record_progress_error(progress, PipelinePhase::Vectorizing, &err).await?;
-            return Err(anyhow::Error::new(err));
+            let progress_context =
+                progress_error_context(progress, PipelinePhase::Vectorizing, &err).await;
+            let mut err = anyhow::Error::new(err);
+            if let Some(context) = progress_context {
+                err = err.context(context);
+            }
+            return Err(err);
         }
     };
     drop(vector_reservation);

@@ -159,21 +159,21 @@ fakes for provider/store boundaries.
 - Produces: adapter capability, local manifest, acquired local items,
   normalized `SourceDocument` values.
 
-- [ ] Write failing tests proving the local adapter capability declares scopes:
+- [x] Write failing tests proving the local adapter capability declares scopes:
   `file`, `directory`, `workspace`, `repo`, and `map`.
-- [ ] Write failing tests proving local options exist and validate:
+- [x] Write failing tests proving local options exist and validate:
   `include_globs`, `exclude_globs`, `respect_gitignore`, `follow_symlinks`,
   `max_file_bytes`, `binary_policy`, and `watch_policy`.
-- [ ] Write failing tests proving `map` returns a manifest without embedding
+- [x] Write failing tests proving `map` returns a manifest without embedding
   documents or vector points.
-- [ ] Write failing tests proving local file/directory/repo discovery produces
+- [x] Write failing tests proving local file/directory/repo discovery produces
   stable `source_item_key` values and canonical item URIs without leaking the
   absolute home path.
-- [ ] Implement the local adapter behind `SourceAdapter`.
-- [ ] Preserve current local file selection policy where possible:
+- [x] Implement the local adapter behind `SourceAdapter`.
+- [x] Preserve current local file selection policy where possible:
   ignored/generated/cache/binary/bulk files skipped, source/docs/config files
   included, Git-aware repo walking for `.git` directories.
-- [ ] Run `cargo test -p axon-adapters local --locked`.
+- [x] Run `cargo test -p axon-adapters local --locked`.
 
 ## Task 2: Local Source Pipeline Service
 

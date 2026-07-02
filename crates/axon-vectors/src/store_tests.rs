@@ -316,6 +316,7 @@ async fn fake_vector_store_reports_capabilities_and_records_calls() {
     assert!(!vector_store.sparse);
     assert!(!vector_store.hybrid);
     assert!(vector_store.delete_by_filter);
+    assert!(vector_store.generation_publish);
 
     store.ensure_collection(collection()).await.unwrap();
     store.upsert(batch()).await.unwrap();
