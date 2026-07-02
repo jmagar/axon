@@ -1,5 +1,7 @@
 use axon_api::source::*;
 
+use crate::boundary::WatchStore;
+
 use super::*;
 
 #[tokio::test]
@@ -244,7 +246,7 @@ async fn fake_job_store_filters_events_and_resets_job_ids_only() {
             job_id: job.job_id,
             phase: Some(PipelinePhase::Embedding),
             severity: Some(Severity::Warning),
-            visibility: None,
+            visibility: Some(Visibility::Internal),
             since_sequence: Some(1),
             limit: Some(10),
             cursor: None,
@@ -317,6 +319,117 @@ async fn fake_job_store_enforces_event_sequence() {
     JobStore::append_event(&store, progress_event(job.job_id, 2))
         .await
         .unwrap();
+}
+
+#[tokio::test]
+async fn fake_job_store_defaults_events_to_public_visibility_and_clamps_limits() {
+    let store = FakeJobWatchStore::new();
+    let job = JobStore::create(&store, job_create()).await.unwrap();
+    let mut internal = progress_event(job.job_id, 1);
+    internal.visibility = Visibility::Internal;
+    let mut public = progress_event(job.job_id, 2);
+    public.visibility = Visibility::Public;
+    JobStore::append_event(&store, internal).await.unwrap();
+    JobStore::append_event(&store, public).await.unwrap();
+
+    let events = JobStore::events(
+        &store,
+        JobEventListRequest {
+            job_id: job.job_id,
+            phase: None,
+            severity: None,
+            visibility: None,
+            since_sequence: None,
+            limit: Some(u32::MAX),
+            cursor: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(events.events.len(), 1);
+    assert_eq!(events.events[0].visibility, Visibility::Public);
+    assert_eq!(events.limit, crate::limits::MAX_PAGE_LIMIT);
+}
+
+#[tokio::test]
+async fn fake_job_store_heartbeat_cannot_resurrect_terminal_job() {
+    let store = FakeJobWatchStore::new();
+    let job = JobStore::create(&store, job_create()).await.unwrap();
+    drive_job_to(&store, job.job_id, LifecycleStatus::Completed).await;
+
+    let err = JobStore::heartbeat(
+        &store,
+        JobHeartbeat {
+            job_id: job.job_id,
+            attempt: 1,
+            worker_id: Some("late-worker".to_string()),
+            phase: PipelinePhase::Embedding,
+            status: LifecycleStatus::Running,
+            stage_id: None,
+            heartbeat_at: Timestamp("2026-07-01T00:10:00Z".to_string()),
+            last_event_sequence: None,
+            counts: None,
+            provider_reservations: Vec::new(),
+        },
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(err.code.to_string(), "job.invalid_transition");
+    assert_eq!(
+        JobStore::get(&store, job.job_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .status,
+        LifecycleStatus::Completed
+    );
+}
+
+#[tokio::test]
+async fn fake_job_store_recovery_honors_staleness_cutoff() {
+    let store = FakeJobWatchStore::new();
+    let job = JobStore::create(&store, job_create()).await.unwrap();
+    drive_job_to(&store, job.job_id, LifecycleStatus::Running).await;
+    JobStore::heartbeat(
+        &store,
+        JobHeartbeat {
+            job_id: job.job_id,
+            attempt: 1,
+            worker_id: Some("fresh-worker".to_string()),
+            phase: PipelinePhase::Embedding,
+            status: LifecycleStatus::Running,
+            stage_id: None,
+            heartbeat_at: Timestamp("2026-07-01T00:00:10Z".to_string()),
+            last_event_sequence: None,
+            counts: None,
+            provider_reservations: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+
+    let recovery = JobStore::recover(
+        &store,
+        JobRecoveryRequest {
+            kind: Some(JobKind::Source),
+            older_than_seconds: Some(360),
+            dry_run: false,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(recovery.jobs_scanned, 0);
+    assert_eq!(
+        JobStore::get(&store, job.job_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .status,
+        LifecycleStatus::Running
+    );
 }
 
 #[tokio::test]

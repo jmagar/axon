@@ -5,7 +5,21 @@ use crate::store::open_sqlite_pool;
 use crate::unified::SqliteUnifiedJobStore;
 
 async fn store() -> SqliteUnifiedJobStore {
-    SqliteUnifiedJobStore::new(open_sqlite_pool(":memory:").await.expect("open sqlite"))
+    let pool = open_sqlite_pool(":memory:").await.expect("open sqlite");
+    seed_source(&pool).await;
+    SqliteUnifiedJobStore::new(pool)
+}
+
+async fn seed_source(pool: &sqlx::SqlitePool) {
+    sqlx::query(
+        "INSERT OR IGNORE INTO axon_source_sources (
+            source_id, source_kind, collection, index_version,
+            committed_generation, max_generation, updated_at_ms
+        ) VALUES ('src_local', 'local_code', 'axon', 1, 0, 0, 1)",
+    )
+    .execute(pool)
+    .await
+    .expect("seed source row");
 }
 
 fn create_request() -> JobCreateRequest {
@@ -72,6 +86,27 @@ async fn create_is_idempotent_and_get_returns_summary() {
     assert_eq!(summary.status, LifecycleStatus::Queued);
     assert_eq!(summary.phase, PipelinePhase::Queued);
     assert_eq!(summary.source_id, Some(SourceId::new("src_local")));
+
+    store
+        .create(JobCreateRequest {
+            idempotency_key: Some("idem-local-second".to_string()),
+            ..create_request()
+        })
+        .await
+        .expect("create second job");
+    let page = store
+        .list(JobListRequest {
+            status: Some(LifecycleStatus::Queued),
+            kind: Some(JobKind::Source),
+            source_id: None,
+            watch_id: None,
+            limit: Some(1),
+            cursor: None,
+        })
+        .await
+        .expect("list jobs");
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.total, Some(2));
 }
 
 #[tokio::test]
@@ -131,8 +166,39 @@ async fn status_update_enforces_state_machine_and_persists_progress() {
         .expect("job exists");
     assert_eq!(summary.status, LifecycleStatus::Running);
     assert_eq!(summary.phase, PipelinePhase::Embedding);
-    assert_eq!(summary.counts, Some(counts));
+    assert_eq!(summary.counts, Some(counts.clone()));
     assert!(summary.started_at.is_some());
+
+    let stage = store
+        .stages(job.job_id)
+        .await
+        .expect("stages")
+        .into_iter()
+        .next()
+        .expect("stage plan created");
+    store
+        .update_status(JobStatusUpdate {
+            job_id: job.job_id,
+            status: LifecycleStatus::Waiting,
+            phase: PipelinePhase::Embedding,
+            stage_id: Some(stage.stage_id),
+            counts: Some(counts.clone()),
+            current: None,
+            message: Some("waiting on provider".to_string()),
+            error: None,
+        })
+        .await
+        .expect("running -> waiting updates stage");
+
+    let stage = store
+        .stages(job.job_id)
+        .await
+        .expect("stages")
+        .into_iter()
+        .next()
+        .expect("stage exists");
+    assert_eq!(stage.status, LifecycleStatus::Waiting);
+    assert_eq!(stage.counts, counts);
 }
 
 #[tokio::test]
@@ -169,6 +235,50 @@ async fn append_event_requires_monotonic_sequences_and_filters_events() {
     assert_eq!(public_events.events.len(), 1);
     assert_eq!(public_events.events[0].sequence, 2);
     assert_eq!(public_events.last_sequence, Some(2));
+
+    let default_events = store
+        .events(JobEventListRequest {
+            job_id: job.job_id,
+            phase: None,
+            severity: None,
+            visibility: None,
+            since_sequence: None,
+            limit: Some(u32::MAX),
+            cursor: None,
+        })
+        .await
+        .expect("list default-visible events");
+    assert_eq!(default_events.events.len(), 1);
+    assert_eq!(default_events.events[0].visibility, Visibility::Public);
+    assert_eq!(default_events.limit, crate::limits::MAX_PAGE_LIMIT);
+
+    let mut duplicate = progress_event(job.job_id, 3, Visibility::Public);
+    duplicate.event_id = "event-dedupe-a".to_string();
+    duplicate.dedupe_key = Some("embedding:src/lib.rs".to_string());
+    store
+        .append_event(duplicate.clone())
+        .await
+        .expect("append dedupe event");
+    duplicate.event_id = "event-dedupe-b".to_string();
+    store
+        .append_event(duplicate)
+        .await
+        .expect("duplicate dedupe event is idempotent");
+
+    let public_events = store
+        .events(JobEventListRequest {
+            job_id: job.job_id,
+            phase: None,
+            severity: None,
+            visibility: Some(Visibility::Public),
+            since_sequence: None,
+            limit: Some(10),
+            cursor: None,
+        })
+        .await
+        .expect("list events");
+    assert_eq!(public_events.events.len(), 2);
+    assert_eq!(public_events.events[1].sequence, 3);
 }
 
 #[tokio::test]
@@ -202,8 +312,136 @@ async fn heartbeat_updates_latest_job_summary_and_history() {
 }
 
 #[tokio::test]
+async fn heartbeat_cannot_resurrect_terminal_job() {
+    let store = store().await;
+    let job = store.create(create_request()).await.expect("create job");
+    store
+        .update_status(JobStatusUpdate {
+            job_id: job.job_id,
+            status: LifecycleStatus::Running,
+            phase: PipelinePhase::Embedding,
+            stage_id: None,
+            counts: None,
+            current: None,
+            message: None,
+            error: None,
+        })
+        .await
+        .expect("running");
+    store
+        .update_status(JobStatusUpdate {
+            job_id: job.job_id,
+            status: LifecycleStatus::Completed,
+            phase: PipelinePhase::Complete,
+            stage_id: None,
+            counts: None,
+            current: None,
+            message: None,
+            error: None,
+        })
+        .await
+        .expect("completed");
+
+    let err = store
+        .heartbeat(JobHeartbeat {
+            job_id: job.job_id,
+            attempt: 1,
+            worker_id: Some("late-worker".to_string()),
+            phase: PipelinePhase::Embedding,
+            status: LifecycleStatus::Running,
+            stage_id: None,
+            heartbeat_at: Timestamp("2026-07-01T12:05:00Z".to_string()),
+            last_event_sequence: None,
+            counts: None,
+            provider_reservations: Vec::new(),
+        })
+        .await
+        .unwrap_err();
+
+    assert_eq!(err.code.to_string(), "job.invalid_transition");
+    assert_eq!(
+        store.get(job.job_id).await.unwrap().unwrap().status,
+        LifecycleStatus::Completed
+    );
+}
+
+#[tokio::test]
+async fn recovery_honors_staleness_cutoff() {
+    let store = store().await;
+    let job = store
+        .create(JobCreateRequest {
+            idempotency_key: Some("fresh-recovery-cutoff".to_string()),
+            ..create_request()
+        })
+        .await
+        .expect("create job");
+    store
+        .update_status(JobStatusUpdate {
+            job_id: job.job_id,
+            status: LifecycleStatus::Running,
+            phase: PipelinePhase::Embedding,
+            stage_id: None,
+            counts: None,
+            current: None,
+            message: None,
+            error: None,
+        })
+        .await
+        .expect("running");
+    store
+        .heartbeat(JobHeartbeat {
+            job_id: job.job_id,
+            attempt: 1,
+            worker_id: Some("fresh-worker".to_string()),
+            phase: PipelinePhase::Embedding,
+            status: LifecycleStatus::Running,
+            stage_id: None,
+            heartbeat_at: Timestamp::from(chrono::Utc::now()),
+            last_event_sequence: None,
+            counts: None,
+            provider_reservations: Vec::new(),
+        })
+        .await
+        .expect("fresh heartbeat");
+
+    let recovery = store
+        .recover(JobRecoveryRequest {
+            kind: Some(JobKind::Source),
+            older_than_seconds: Some(360),
+            dry_run: false,
+        })
+        .await
+        .expect("recover");
+
+    assert_eq!(recovery.jobs_scanned, 0);
+    assert_eq!(
+        store.get(job.job_id).await.unwrap().unwrap().status,
+        LifecycleStatus::Running
+    );
+}
+
+#[tokio::test]
 async fn control_operations_cancel_retry_recover_cleanup_and_list_artifacts() {
     let store = store().await;
+    let queued = store
+        .create(JobCreateRequest {
+            idempotency_key: Some("cancel-queued".to_string()),
+            ..create_request()
+        })
+        .await
+        .expect("create queued job");
+    let queued_cancel = store
+        .cancel(
+            queued.job_id,
+            JobCancelRequest {
+                reason: Some("queued no longer needed".to_string()),
+                force_after_ms: None,
+            },
+        )
+        .await
+        .expect("cancel queued");
+    assert_eq!(queued_cancel.status, LifecycleStatus::Canceling);
+
     let job = store.create(create_request()).await.expect("create job");
     store
         .update_status(JobStatusUpdate {
@@ -260,6 +498,34 @@ async fn control_operations_cancel_retry_recover_cleanup_and_list_artifacts() {
     assert_eq!(retry.original_job_id, job.job_id);
     assert_eq!(retry.retry_job.status, LifecycleStatus::Queued);
 
+    sqlx::query(
+        "INSERT INTO job_artifacts (
+            artifact_id, job_id, artifact_kind, uri, size_bytes, content_hash, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind("artifact-local-path")
+    .bind(job.job_id.0.to_string())
+    .bind("report")
+    .bind("file:///home/jmagar/.axon/artifacts/private/report.json")
+    .bind(128_i64)
+    .bind("sha256:abc")
+    .bind("2026-07-01T12:30:00Z")
+    .execute(&store.pool)
+    .await
+    .expect("insert artifact");
+    let artifacts = store
+        .artifacts(JobArtifactListRequest {
+            job_id: job.job_id,
+            kind: None,
+            limit: Some(7),
+            cursor: None,
+        })
+        .await
+        .expect("artifacts");
+    assert_eq!(artifacts.artifacts.len(), 1);
+    assert_eq!(artifacts.artifacts[0].uri, "artifact://artifact-local-path");
+    assert_eq!(artifacts.limit, 7);
+
     let running = store
         .create(JobCreateRequest {
             idempotency_key: Some("recover-running".to_string()),
@@ -291,18 +557,6 @@ async fn control_operations_cancel_retry_recover_cleanup_and_list_artifacts() {
     assert_eq!(recovery.jobs_scanned, 1);
     assert_eq!(recovery.jobs_failed, 1);
 
-    let artifacts = store
-        .artifacts(JobArtifactListRequest {
-            job_id: retry.retry_job.job_id,
-            kind: None,
-            limit: Some(7),
-            cursor: None,
-        })
-        .await
-        .expect("artifacts");
-    assert!(artifacts.artifacts.is_empty());
-    assert_eq!(artifacts.limit, 7);
-
     let cleanup = store
         .cleanup(JobCleanupRequest {
             older_than_seconds: None,
@@ -311,6 +565,7 @@ async fn control_operations_cancel_retry_recover_cleanup_and_list_artifacts() {
         .await
         .expect("cleanup");
     assert_eq!(cleanup.jobs_pruned, 2);
+    assert_eq!(cleanup.artifacts_pruned, 1);
 }
 
 fn progress_event(job_id: JobId, sequence: u64, visibility: Visibility) -> SourceProgressEvent {

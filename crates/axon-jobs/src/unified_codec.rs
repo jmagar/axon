@@ -136,16 +136,66 @@ pub(crate) fn row_to_event(row: sqlx::sqlite::SqliteRow) -> Result<JobEvent> {
 }
 
 pub(crate) fn row_to_artifact(row: sqlx::sqlite::SqliteRow) -> Result<ArtifactRef> {
+    let artifact_id = ArtifactId::new(row.get::<String, _>("artifact_id"));
     Ok(ArtifactRef {
-        artifact_id: ArtifactId::new(row.get::<String, _>("artifact_id")),
+        uri: format!("artifact://{}", artifact_id.0),
+        artifact_id,
         artifact_kind: parse_enum(row.get::<String, _>("artifact_kind"))?,
-        uri: row.get("uri"),
         size_bytes: row
             .get::<Option<i64>, _>("size_bytes")
             .map(|value| value as u64),
         content_hash: row.get("content_hash"),
         created_at: Timestamp(row.get("created_at")),
     })
+}
+
+pub(crate) fn row_to_attempt(row: sqlx::sqlite::SqliteRow) -> Result<JobAttemptSnapshot> {
+    Ok(JobAttemptSnapshot {
+        attempt: row.get::<i64, _>("attempt") as u32,
+        status: parse_enum(row.get::<String, _>("status"))?,
+        worker_id: row.get("worker_id"),
+        started_at: Timestamp(row.get("started_at")),
+        finished_at: row.get::<Option<String>, _>("finished_at").map(Timestamp),
+        heartbeat_at: row.get::<Option<String>, _>("heartbeat_at").map(Timestamp),
+        error: from_optional_json(row.get::<Option<String>, _>("error_json"))?,
+    })
+}
+
+pub(crate) fn row_to_stage(row: sqlx::sqlite::SqliteRow) -> Result<JobStageSnapshot> {
+    Ok(JobStageSnapshot {
+        stage_id: StageId::new(parse_uuid(row.get::<String, _>("stage_id"))?),
+        phase: parse_enum(row.get::<String, _>("phase"))?,
+        status: parse_enum(row.get::<String, _>("status"))?,
+        required: row.get::<i64, _>("required") != 0,
+        provider_requirements: from_json(row.get::<String, _>("provider_requirements_json"))?,
+        counts: from_optional_json(row.get::<Option<String>, _>("counts_json"))?.unwrap_or(
+            StageCounts {
+                items_total: None,
+                items_done: 0,
+                documents_total: None,
+                documents_done: 0,
+                chunks_total: None,
+                chunks_done: 0,
+                bytes_total: None,
+                bytes_done: 0,
+            },
+        ),
+        started_at: row.get::<Option<String>, _>("started_at").map(Timestamp),
+        completed_at: row.get::<Option<String>, _>("completed_at").map(Timestamp),
+        error: from_optional_json(row.get::<Option<String>, _>("error_json"))?,
+    })
+}
+
+pub(crate) fn event_details(event: &SourceProgressEvent) -> MetadataMap {
+    let mut details = MetadataMap::new();
+    details.insert(
+        "source_progress_event".to_string(),
+        serde_json::to_value(event).unwrap_or(serde_json::Value::Null),
+    );
+    if let Some(dedupe_key) = &event.dedupe_key {
+        details.insert("dedupe_key".to_string(), serde_json::json!(dedupe_key));
+    }
+    details
 }
 
 pub(crate) async fn count_with_optional_cutoff(
@@ -232,6 +282,15 @@ pub(crate) fn sql_error(error: sqlx::Error) -> ApiError {
         "job.sqlite_error",
         ErrorStage::Publishing,
         error.to_string(),
+    )
+}
+
+pub(crate) fn is_sqlite_unique_violation(error: &sqlx::Error) -> bool {
+    matches!(
+        error,
+        sqlx::Error::Database(database_error)
+            if database_error.code().as_deref() == Some("2067")
+                || database_error.message().contains("UNIQUE constraint failed")
     )
 }
 

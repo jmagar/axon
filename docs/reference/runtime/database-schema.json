@@ -1,33 +1,146 @@
 {
   "$defs": {
-    "SchemaFamilyContract": {
+    "UnifiedJobsObservabilitySchema": {
       "additionalProperties": false,
+      "description": "SQLite tables introduced by migration 0018_unified_jobs_observability.sql.",
       "properties": {
-        "family": {
-          "const": "database"
-        },
-        "future_registry": {
-          "type": "string"
-        },
-        "owner_crates": {
+        "tables": {
+          "const": [
+            "jobs",
+            "job_attempts",
+            "job_stages",
+            "job_events",
+            "job_heartbeats",
+            "job_artifacts"
+          ],
           "items": {
             "type": "string"
           },
           "type": "array"
-        },
-        "status": {
-          "const": "skeleton"
         }
       },
       "required": [
-        "family",
-        "status",
-        "owner_crates"
+        "tables"
       ],
       "type": "object",
       "x-axon": {
-        "replaced_by": "crate-owned registry generator in the matching implementation PR",
-        "skeleton": true
+        "migration": "crates/axon-jobs/src/migrations/0018_unified_jobs_observability.sql",
+        "primary_owner": "axon-jobs",
+        "tables": {
+          "job_artifacts": {
+            "foreign_keys": [
+              "job_id"
+            ],
+            "indexes": [
+              "job_artifacts_job_id_idx",
+              "job_artifacts_job_kind_idx"
+            ],
+            "primary_key": [
+              "artifact_id"
+            ]
+          },
+          "job_attempts": {
+            "foreign_keys": [
+              "job_id"
+            ],
+            "json_columns": [
+              "error_json"
+            ],
+            "primary_key": [
+              "job_id",
+              "attempt"
+            ]
+          },
+          "job_events": {
+            "foreign_keys": [
+              "job_id",
+              "stage_id"
+            ],
+            "indexes": [
+              "job_events_job_sequence_idx",
+              "job_events_job_phase_idx",
+              "job_events_job_severity_idx",
+              "job_events_job_visibility_idx"
+            ],
+            "json_columns": [
+              "details_json"
+            ],
+            "primary_key": [
+              "event_id"
+            ],
+            "unique": [
+              [
+                "job_id",
+                "sequence"
+              ],
+              [
+                "job_id",
+                "dedupe_key"
+              ]
+            ]
+          },
+          "job_heartbeats": {
+            "foreign_keys": [
+              "job_id"
+            ],
+            "indexes": [
+              "job_heartbeats_job_id_idx",
+              "job_heartbeats_heartbeat_at_idx"
+            ],
+            "json_columns": [
+              "heartbeat_json"
+            ],
+            "primary_key": [
+              "job_id",
+              "attempt"
+            ]
+          },
+          "job_stages": {
+            "foreign_keys": [
+              "job_id"
+            ],
+            "indexes": [
+              "job_stages_job_id_idx"
+            ],
+            "json_columns": [
+              "provider_requirements_json",
+              "counts_json",
+              "error_json"
+            ],
+            "primary_key": [
+              "stage_id"
+            ]
+          },
+          "jobs": {
+            "foreign_keys": [
+              "source_id",
+              "watch_id",
+              "parent_job_id",
+              "root_job_id"
+            ],
+            "indexes": [
+              "jobs_idempotency_key_idx",
+              "jobs_created_at_desc_idx",
+              "jobs_status_created_at_idx",
+              "jobs_kind_status_created_at_idx",
+              "jobs_status_updated_at_idx",
+              "jobs_source_id_idx",
+              "jobs_watch_id_idx"
+            ],
+            "json_columns": [
+              "counts_json",
+              "current_json",
+              "heartbeat_json",
+              "last_error_json",
+              "warnings_json",
+              "request_json",
+              "metadata_json"
+            ],
+            "primary_key": [
+              "job_id"
+            ]
+          }
+        }
       }
     }
   },
@@ -47,7 +160,7 @@
     ],
     "source_inputs": [
       {
-        "checksum": "sha256:b559b3f999e544e412161334ab0ef50dba12661f8ae6dc16c1ed1113602b81cd",
+        "checksum": "sha256:f5040fccade667e49c039a302e1864f974b7efd09ecf2e1e2404febe85058e99",
         "kind": "sql_migration_directory",
         "path": "crates/axon-jobs/src/migrations"
       },

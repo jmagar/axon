@@ -1,12 +1,12 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::boundary::JobHeartbeat;
 use super::common::*;
 use super::document::*;
 use super::enums::*;
 use super::graph::*;
 use super::ids::*;
+use super::job::JobHeartbeat;
 use super::lifecycle::WatchSchedule;
 use super::stage::{ManifestItem, StageCounts};
 use super::status::{ApiError, ProgressCurrent};

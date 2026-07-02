@@ -13,8 +13,10 @@ pub(crate) fn validate_transition(
         (from, to),
         (LifecycleStatus::Queued, LifecycleStatus::Pending)
             | (LifecycleStatus::Queued, LifecycleStatus::Running)
+            | (LifecycleStatus::Queued, LifecycleStatus::Canceling)
             | (LifecycleStatus::Queued, LifecycleStatus::Skipped)
             | (LifecycleStatus::Pending, LifecycleStatus::Running)
+            | (LifecycleStatus::Pending, LifecycleStatus::Canceling)
             | (LifecycleStatus::Pending, LifecycleStatus::Expired)
             | (LifecycleStatus::Running, LifecycleStatus::Waiting)
             | (LifecycleStatus::Running, LifecycleStatus::Canceling)

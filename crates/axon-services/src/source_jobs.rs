@@ -15,38 +15,14 @@ pub async fn job_status(
     let Some(summary) = store.get(job_id).await? else {
         return Ok(None);
     };
-    let events = store
-        .events(JobEventListRequest {
-            job_id,
-            phase: None,
-            severity: None,
-            visibility: None,
-            since_sequence: None,
-            limit: Some(100),
-            cursor: None,
-        })
-        .await?;
+    let attempts = store.attempts(job_id).await?;
+    let stages = store.stages(job_id).await?;
+    let latest_event_sequence = store.latest_event_sequence(job_id).await?;
     Ok(Some(SourceJobStatus {
         summary: summary.clone(),
-        attempts: summary
-            .heartbeat
-            .as_ref()
-            .map(|heartbeat| JobAttemptSnapshot {
-                attempt: heartbeat.attempt,
-                status: heartbeat.status,
-                worker_id: heartbeat.worker_id.clone(),
-                started_at: summary
-                    .started_at
-                    .clone()
-                    .unwrap_or_else(|| summary.created_at.clone()),
-                finished_at: summary.finished_at.clone(),
-                heartbeat_at: Some(heartbeat.heartbeat_at.clone()),
-                error: None,
-            })
-            .into_iter()
-            .collect(),
-        stages: Vec::new(),
-        latest_event_sequence: events.last_sequence,
+        attempts,
+        stages,
+        latest_event_sequence,
         poll_after_ms: Some(1000),
         metadata: MetadataMap::new(),
     }))

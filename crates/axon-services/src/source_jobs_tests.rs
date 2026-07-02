@@ -103,7 +103,7 @@ async fn target_source_job_services_delegate_to_job_store() {
             job_id: job.job_id,
             phase: None,
             severity: None,
-            visibility: None,
+            visibility: Some(Visibility::Internal),
             since_sequence: None,
             limit: Some(10),
             cursor: None,
