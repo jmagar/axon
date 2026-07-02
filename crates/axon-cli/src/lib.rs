@@ -204,6 +204,11 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
     // and exit; operator `worker` subcommands spawn workers in this process.
     let command_mode = job_command_mode(&cfg_arc);
     let needs_workers = cfg_arc.wait
+        // `source` indexes synchronously in the foreground but needs the
+        // data-plane runtime (ledger/embedding/vector stores), which is only
+        // attached to a worker-bearing ServiceContext. Always build one so
+        // `axon source <path>` works without an explicit `--wait`.
+        || cfg_arc.command == CommandKind::Source
         || matches!(
             command_mode,
             Some(JobCommandMode::Subcommand {
