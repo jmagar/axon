@@ -1,12 +1,13 @@
 //! Local filesystem source adapter.
 
+mod local_io;
+
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use async_trait::async_trait;
 use axon_api::source::*;
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use ignore::{DirEntry, WalkBuilder};
 use serde_json::json;
 use uuid::Uuid;
@@ -15,6 +16,8 @@ use crate::adapter::{Result, SourceAdapter};
 use crate::capability::AdapterCapability;
 use crate::local_select::{LocalOptions, is_binary_path, validate_options};
 use crate::manifest::item_identity;
+
+use self::local_io::{content_hash_for_file, fs_error, read_content_ref, safe_item_path};
 
 pub const MODULE_NAME: &str = "local";
 
@@ -39,98 +42,14 @@ impl SourceAdapter for LocalSourceAdapter {
     }
 
     async fn capabilities(&self) -> Result<AdapterCapability> {
-        Ok(AdapterCapability::new(
-            AdapterRef {
-                name: ADAPTER_NAME.to_string(),
-                version: self.version().to_string(),
-            },
-            SourceKind::Local,
-            SourceScope::Directory,
-        )
-        .with_scope(SourceScope::File)
-        .with_scope(SourceScope::Workspace)
-        .with_scope(SourceScope::Repo)
-        .with_scope(SourceScope::Map))
+        Ok(local_capability(self.version()))
     }
 
     async fn discover(&self, plan: &SourcePlan) -> Result<SourceManifest> {
-        let capability = self.capabilities().await?;
-        capability.validate_scope(plan.route.scope)?;
-        validate_adapter(plan)?;
-        let options = validate_options(&plan.route.validated_options)?;
-
-        let root = PathBuf::from(&plan.request.source);
-        let mut files = Vec::new();
-        match plan.route.scope {
-            SourceScope::File => files.push(root.clone()),
-            SourceScope::Directory
-            | SourceScope::Workspace
-            | SourceScope::Repo
-            | SourceScope::Map => {
-                files = collect_files(&root, &options)?;
-            }
-            _ => {
-                return Err(ApiError::new(
-                    "adapter.local.scope.unsupported",
-                    axon_error::ErrorStage::Routing,
-                    "local adapter only discovers file-like local scopes",
-                )
-                .with_context("scope", format!("{:?}", plan.route.scope)));
-            }
-        }
-        files.sort();
-
-        let base_uri = public_base_uri(&plan.route.source.canonical_uri);
-        let root_for_keys = if root.is_file() {
-            root.parent().unwrap_or_else(|| Path::new(""))
-        } else {
-            root.as_path()
-        };
-        let mut items = Vec::new();
-        for file in files {
-            let metadata = fs::metadata(&file)
-                .map_err(|err| fs_error("adapter.local.stat_failed", &file, err))?;
-            if let Some(max_file_bytes) = options.max_file_bytes {
-                if metadata.len() > max_file_bytes {
-                    continue;
-                }
-            }
-            if !metadata.is_file() {
-                continue;
-            }
-            let key = relative_key(root_for_keys, &file)?;
-            if !options.should_include_file(plan.route.scope, &key, &file) {
-                continue;
-            }
-            let identity = item_identity(SourceKind::Local, &base_uri, &key)?;
-            items.push(ManifestItem {
-                source_id: plan.route.source.source_id.clone(),
-                source_item_key: identity.source_item_key,
-                canonical_uri: identity.canonical_uri,
-                item_kind: ItemKind::LocalFile,
-                content_kind: Some(content_kind_for(&file)),
-                display_path: Some(key),
-                parent_key: None,
-                size_bytes: Some(metadata.len()),
-                content_hash: None,
-                mtime: None,
-                version: None,
-                fetch_plan: None,
-                metadata: MetadataMap::new(),
-                graph_hints: Vec::new(),
-            });
-        }
-        items.sort_by(|left, right| left.source_item_key.cmp(&right.source_item_key));
-
-        Ok(SourceManifest {
-            source_id: plan.route.source.source_id.clone(),
-            generation: SourceGenerationId::from("gen_local_discovery"),
-            adapter: plan.route.adapter.clone(),
-            scope: plan.route.scope,
-            items,
-            created_at: Timestamp("2026-07-01T00:00:00Z".to_string()),
-            metadata: MetadataMap::new(),
-        })
+        let plan = plan.clone();
+        tokio::task::spawn_blocking(move || discover_sync(&plan))
+            .await
+            .map_err(blocking_join_error)?
     }
 
     async fn acquire(
@@ -138,90 +57,11 @@ impl SourceAdapter for LocalSourceAdapter {
         plan: &SourcePlan,
         diff: &SourceManifestDiff,
     ) -> Result<SourceAcquisition> {
-        validate_adapter(plan)?;
-        if plan.route.scope == SourceScope::Map {
-            return Ok(SourceAcquisition {
-                header: stage_header(plan.job_id, "local_fetch", PipelinePhase::Fetching, 0),
-                source_id: plan.route.source.source_id.clone(),
-                generation: diff.next_generation.clone(),
-                adapter: plan.route.adapter.clone(),
-                scope: plan.route.scope,
-                manifest: SourceManifest {
-                    source_id: plan.route.source.source_id.clone(),
-                    generation: diff.next_generation.clone(),
-                    adapter: plan.route.adapter.clone(),
-                    scope: plan.route.scope,
-                    items: diff
-                        .added
-                        .iter()
-                        .chain(diff.modified.iter())
-                        .cloned()
-                        .collect(),
-                    created_at: timestamp(),
-                    metadata: MetadataMap::new(),
-                },
-                fetched_items: Vec::new(),
-                artifacts: Vec::new(),
-            });
-        }
-        let root = PathBuf::from(&plan.request.source);
-        let root_for_keys = if root.is_file() {
-            root.parent().unwrap_or_else(|| Path::new(""))
-        } else {
-            root.as_path()
-        };
-        let manifest_items = diff
-            .added
-            .iter()
-            .chain(diff.modified.iter())
-            .cloned()
-            .collect::<Vec<_>>();
-        let options = validate_options(&plan.route.validated_options)?;
-        let mut fetched_items = Vec::with_capacity(manifest_items.len());
-        for item in &manifest_items {
-            let path = root_for_keys.join(&item.source_item_key.0);
-            if !options.fetches_body(&path) {
-                continue;
-            }
-            let content_ref = read_content_ref(&path, &options)?;
-            fetched_items.push(AcquiredSourceItem {
-                manifest_item: item.clone(),
-                fetch_status: LifecycleStatus::Completed,
-                content_ref,
-                raw_artifact_id: None,
-                headers: RedactedHeaders {
-                    headers: Vec::new(),
-                },
-                fetched_at: timestamp(),
-                metadata: MetadataMap::new(),
-            });
-        }
-
-        let manifest = SourceManifest {
-            source_id: plan.route.source.source_id.clone(),
-            generation: diff.next_generation.clone(),
-            adapter: plan.route.adapter.clone(),
-            scope: plan.route.scope,
-            items: manifest_items,
-            created_at: timestamp(),
-            metadata: MetadataMap::new(),
-        };
-
-        Ok(SourceAcquisition {
-            header: stage_header(
-                plan.job_id,
-                "local_fetch",
-                PipelinePhase::Fetching,
-                fetched_items.len(),
-            ),
-            source_id: manifest.source_id.clone(),
-            generation: manifest.generation.clone(),
-            adapter: manifest.adapter.clone(),
-            scope: manifest.scope,
-            manifest,
-            fetched_items,
-            artifacts: Vec::new(),
-        })
+        let plan = plan.clone();
+        let diff = diff.clone();
+        tokio::task::spawn_blocking(move || acquire_sync(&plan, &diff))
+            .await
+            .map_err(blocking_join_error)?
     }
 
     async fn normalize(
@@ -244,6 +84,194 @@ impl SourceAdapter for LocalSourceAdapter {
             data: documents,
         })
     }
+}
+
+fn local_capability(version: &str) -> AdapterCapability {
+    AdapterCapability::new(
+        AdapterRef {
+            name: ADAPTER_NAME.to_string(),
+            version: version.to_string(),
+        },
+        SourceKind::Local,
+        SourceScope::Directory,
+    )
+    .with_scope(SourceScope::File)
+    .with_scope(SourceScope::Workspace)
+    .with_scope(SourceScope::Repo)
+    .with_scope(SourceScope::Map)
+}
+
+fn discover_sync(plan: &SourcePlan) -> Result<SourceManifest> {
+    let capability = local_capability(env!("CARGO_PKG_VERSION"));
+    capability.validate_scope(plan.route.scope)?;
+    validate_adapter(plan)?;
+    let options = validate_options(&plan.route.validated_options)?;
+
+    let root = PathBuf::from(&plan.request.source);
+    let mut files = Vec::new();
+    match plan.route.scope {
+        SourceScope::File => files.push(root.clone()),
+        SourceScope::Directory | SourceScope::Workspace | SourceScope::Repo | SourceScope::Map => {
+            files = collect_files(&root, &options)?;
+        }
+        _ => {
+            return Err(ApiError::new(
+                "adapter.local.scope.unsupported",
+                axon_error::ErrorStage::Routing,
+                "local adapter only discovers file-like local scopes",
+            )
+            .with_context("scope", format!("{:?}", plan.route.scope)));
+        }
+    }
+    files.sort();
+
+    let base_uri = public_base_uri(&plan.route.source.canonical_uri);
+    let root_for_keys = if root.is_file() {
+        root.parent().unwrap_or_else(|| Path::new(""))
+    } else {
+        root.as_path()
+    };
+    let mut items = Vec::new();
+    for file in files {
+        let metadata =
+            fs::metadata(&file).map_err(|err| fs_error("adapter.local.stat_failed", &file, err))?;
+        if let Some(max_file_bytes) = options.max_file_bytes {
+            if metadata.len() > max_file_bytes {
+                continue;
+            }
+        }
+        if !metadata.is_file() {
+            continue;
+        }
+        let key = relative_key(root_for_keys, &file)?;
+        if !options.should_include_file(plan.route.scope, &key, &file) {
+            continue;
+        }
+        let content_hash = content_hash_for_file(&file, &options)?;
+        let identity = item_identity(SourceKind::Local, &base_uri, &key)?;
+        items.push(ManifestItem {
+            source_id: plan.route.source.source_id.clone(),
+            source_item_key: identity.source_item_key,
+            canonical_uri: identity.canonical_uri,
+            item_kind: ItemKind::LocalFile,
+            content_kind: Some(content_kind_for(&file)),
+            display_path: Some(key),
+            parent_key: None,
+            size_bytes: Some(metadata.len()),
+            content_hash: Some(content_hash),
+            mtime: modified_at(metadata.modified().ok()),
+            version: None,
+            fetch_plan: None,
+            metadata: MetadataMap::new(),
+            graph_hints: Vec::new(),
+        });
+    }
+    items.sort_by(|left, right| left.source_item_key.cmp(&right.source_item_key));
+
+    Ok(SourceManifest {
+        source_id: plan.route.source.source_id.clone(),
+        generation: SourceGenerationId::from("gen_local_discovery"),
+        adapter: plan.route.adapter.clone(),
+        scope: plan.route.scope,
+        items,
+        created_at: Timestamp("2026-07-01T00:00:00Z".to_string()),
+        metadata: MetadataMap::new(),
+    })
+}
+
+fn acquire_sync(plan: &SourcePlan, diff: &SourceManifestDiff) -> Result<SourceAcquisition> {
+    validate_adapter(plan)?;
+    if plan.route.scope == SourceScope::Map {
+        return Ok(SourceAcquisition {
+            header: stage_header(plan.job_id, "local_fetch", PipelinePhase::Fetching, 0),
+            source_id: plan.route.source.source_id.clone(),
+            generation: diff.next_generation.clone(),
+            adapter: plan.route.adapter.clone(),
+            scope: plan.route.scope,
+            manifest: SourceManifest {
+                source_id: plan.route.source.source_id.clone(),
+                generation: diff.next_generation.clone(),
+                adapter: plan.route.adapter.clone(),
+                scope: plan.route.scope,
+                items: diff
+                    .added
+                    .iter()
+                    .chain(diff.modified.iter())
+                    .cloned()
+                    .collect(),
+                created_at: timestamp(),
+                metadata: MetadataMap::new(),
+            },
+            fetched_items: Vec::new(),
+            artifacts: Vec::new(),
+        });
+    }
+    let root = PathBuf::from(&plan.request.source);
+    let root_for_keys = if root.is_file() {
+        root.parent().unwrap_or_else(|| Path::new(""))
+    } else {
+        root.as_path()
+    };
+    let manifest_items = diff
+        .added
+        .iter()
+        .chain(diff.modified.iter())
+        .cloned()
+        .collect::<Vec<_>>();
+    let options = validate_options(&plan.route.validated_options)?;
+    let mut fetched_items = Vec::with_capacity(manifest_items.len());
+    for item in &manifest_items {
+        let path = safe_item_path(root_for_keys, &item.source_item_key.0)?;
+        if !options.fetches_body(&path) {
+            continue;
+        }
+        let content_ref = read_content_ref(&path, &options)?;
+        fetched_items.push(AcquiredSourceItem {
+            manifest_item: item.clone(),
+            fetch_status: LifecycleStatus::Completed,
+            content_ref,
+            raw_artifact_id: None,
+            headers: RedactedHeaders {
+                headers: Vec::new(),
+            },
+            fetched_at: timestamp(),
+            metadata: MetadataMap::new(),
+        });
+    }
+
+    let manifest = SourceManifest {
+        source_id: plan.route.source.source_id.clone(),
+        generation: diff.next_generation.clone(),
+        adapter: plan.route.adapter.clone(),
+        scope: plan.route.scope,
+        items: manifest_items,
+        created_at: timestamp(),
+        metadata: MetadataMap::new(),
+    };
+
+    Ok(SourceAcquisition {
+        header: stage_header(
+            plan.job_id,
+            "local_fetch",
+            PipelinePhase::Fetching,
+            fetched_items.len(),
+        ),
+        source_id: manifest.source_id.clone(),
+        generation: manifest.generation.clone(),
+        adapter: manifest.adapter.clone(),
+        scope: manifest.scope,
+        manifest,
+        fetched_items,
+        artifacts: Vec::new(),
+    })
+}
+
+fn blocking_join_error(err: tokio::task::JoinError) -> ApiError {
+    ApiError::new(
+        "adapter.local.blocking_task_failed",
+        axon_error::ErrorStage::Planning,
+        err.to_string(),
+    )
 }
 
 fn validate_adapter(plan: &SourcePlan) -> Result<()> {
@@ -295,20 +323,6 @@ fn should_descend_entry(entry: &DirEntry) -> bool {
         return true;
     };
     !crate::local_select::is_pruned_dir(name)
-}
-
-fn read_content_ref(path: &Path, options: &LocalOptions) -> Result<ContentRef> {
-    if options.includes_binary_body(path) {
-        let bytes =
-            fs::read(path).map_err(|err| fs_error("adapter.local.read_failed", path, err))?;
-        return Ok(ContentRef::InlineBytes {
-            bytes_base64: BASE64_STANDARD.encode(bytes),
-            mime_type: "application/octet-stream".to_string(),
-        });
-    }
-    let text =
-        fs::read_to_string(path).map_err(|err| fs_error("adapter.local.read_failed", path, err))?;
-    Ok(ContentRef::InlineText { text })
 }
 
 fn relative_key(root: &Path, file: &Path) -> Result<String> {
@@ -437,14 +451,6 @@ fn sanitize_document_key(key: &str) -> String {
         .collect()
 }
 
-fn fs_error(code: &'static str, path: &Path, err: std::io::Error) -> ApiError {
-    ApiError::new(code, axon_error::ErrorStage::Discovering, err.to_string())
-        .with_context("path_hint", public_path_hint(path))
-}
-
-fn public_path_hint(path: &Path) -> String {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .map(ToString::to_string)
-        .unwrap_or_else(|| "local-source-item".to_string())
+fn modified_at(modified: Option<SystemTime>) -> Option<Timestamp> {
+    modified.map(|time| Timestamp(chrono::DateTime::<chrono::Utc>::from(time).to_rfc3339()))
 }

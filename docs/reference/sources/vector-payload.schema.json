@@ -1432,7 +1432,7 @@
       "x-qdrant-index": "keyword"
     },
     "manifest": {
-      "type": "string"
+      "type": "boolean"
     },
     "memory_id": {
       "type": "string"
@@ -1649,7 +1649,7 @@
         "embedding_provider": "tei",
         "item_canonical_uri": "item_canonical_uri",
         "job_id": "job-code",
-        "manifest": "manifest",
+        "manifest": true,
         "payload_contract_version": "2026-07-01",
         "redaction_status": "clean",
         "source_adapter": "source_adapter",

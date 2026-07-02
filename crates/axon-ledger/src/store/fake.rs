@@ -19,6 +19,14 @@ use cleanup::record_removed_item_cleanup_debt;
 #[derive(Debug, Clone, Default)]
 pub struct FakeLedgerStore {
     state: Arc<Mutex<FakeLedgerState>>,
+    mode: FakeLedgerMode,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum FakeLedgerMode {
+    #[default]
+    Success,
+    PublishFailure,
 }
 
 #[derive(Debug, Default)]
@@ -37,6 +45,11 @@ struct FakeLedgerState {
 impl FakeLedgerStore {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_publish_generation_failure(mut self) -> Self {
+        self.mode = FakeLedgerMode::PublishFailure;
+        self
     }
 
     pub async fn committed_generation(&self, source_id: &SourceId) -> Option<SourceGenerationId> {
@@ -284,6 +297,14 @@ impl LedgerStore for FakeLedgerStore {
         &self,
         request: PublishGenerationRequest,
     ) -> Result<SourceGeneration> {
+        if self.mode == FakeLedgerMode::PublishFailure {
+            return Err(ApiError::new(
+                "source.ledger.publish_failed",
+                ErrorStage::Publishing,
+                "fake ledger failed to publish generation",
+            )
+            .with_source_id(request.source_id.0));
+        }
         let mut state = self.state.lock().await;
         let Some(generation) = state
             .generations

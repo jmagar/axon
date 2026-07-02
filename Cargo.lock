@@ -434,9 +434,11 @@ dependencies = [
  "axon-api",
  "axon-error",
  "base64",
+ "chrono",
  "globset",
  "ignore",
  "serde_json",
+ "sha2 0.10.9",
  "tokio",
  "uuid",
 ]
@@ -875,6 +877,7 @@ version = "6.2.1"
 dependencies = [
  "anyhow",
  "async-trait",
+ "axon-adapters",
  "axon-api",
  "axon-code-index",
  "axon-core",

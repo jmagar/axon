@@ -100,7 +100,10 @@ pub(super) fn source_error_from_api_error(error: &ApiError) -> SourceError {
         code: error.code.0.clone(),
         severity: Severity::Failed,
         message: error.message.clone(),
-        source_item_key: None,
+        source_item_key: error
+            .details
+            .get("path_hint")
+            .map(|hint| SourceItemKey::new(hint.clone())),
         retryable: error.retryable,
         provider_id: error
             .provider_id

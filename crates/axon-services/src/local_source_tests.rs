@@ -252,7 +252,110 @@ async fn source_job_terminal_failure_preserves_provider_retryability() {
 }
 
 #[tokio::test]
-async fn vector_commit_marker_failure_leaves_generation_uncommitted() {
+async fn source_job_public_failure_does_not_expose_absolute_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("bad.rs");
+    tokio::fs::write(&path, [0xff, 0xfe, 0xfd]).await.unwrap();
+    let jobs = FakeJobWatchStore::new();
+    let ledger = FakeLedgerStore::new();
+    let embedder = FakeEmbeddingProvider::new("fake-embedding", 8);
+    let vectors = FakeVectorStore::new("fake-vector");
+
+    let err = index_local_source_with_job(
+        input(dir.path().to_path_buf()),
+        &jobs,
+        &ledger,
+        &embedder,
+        &vectors,
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        !err.to_string()
+            .contains(dir.path().to_string_lossy().as_ref()),
+        "unexpected absolute root leak in returned error: {err:#}"
+    );
+
+    let summary = JobStore::list(
+        &jobs,
+        JobListRequest {
+            status: None,
+            kind: Some(JobKind::Source),
+            source_id: None,
+            watch_id: None,
+            limit: Some(1),
+            cursor: None,
+        },
+    )
+    .await
+    .unwrap()
+    .items
+    .pop()
+    .expect("job summary");
+    let summary_json = serde_json::to_string(&summary).unwrap();
+    assert!(
+        !summary_json.contains(dir.path().to_string_lossy().as_ref()),
+        "unexpected absolute root leak in job summary: {summary_json}"
+    );
+    assert!(
+        summary_json.contains("bad.rs"),
+        "public errors should keep a small item hint: {summary_json}"
+    );
+
+    let events = JobStore::events(
+        &jobs,
+        JobEventListRequest {
+            job_id: summary.job_id,
+            phase: None,
+            severity: Some(Severity::Failed),
+            visibility: Some(Visibility::Public),
+            since_sequence: None,
+            limit: Some(10),
+            cursor: None,
+        },
+    )
+    .await
+    .unwrap();
+    let events_json = serde_json::to_string(&events).unwrap();
+    assert!(
+        !events_json.contains(dir.path().to_string_lossy().as_ref()),
+        "unexpected absolute root leak in public events: {events_json}"
+    );
+}
+
+#[tokio::test]
+async fn publish_generation_failure_leaves_vectors_uncommitted() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lib.rs");
+    tokio::fs::write(&path, "pub fn answer() -> i32 {\n    42\n}\n")
+        .await
+        .unwrap();
+    let ledger = FakeLedgerStore::new().with_publish_generation_failure();
+    let embedder = FakeEmbeddingProvider::new("fake-embedding", 8);
+    let vectors = FakeVectorStore::new("fake-vector");
+
+    let err = index_local_source(input(path.clone()), &ledger, &embedder, &vectors)
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("failed to publish generation"),
+        "unexpected error: {err:#}"
+    );
+
+    let source_id = super::local_source_id(&tokio::fs::canonicalize(&path).await.unwrap());
+    assert_eq!(ledger.committed_generation(&source_id).await, None);
+    assert_eq!(vectors.calls().await, vec!["ensure_collection", "upsert"]);
+    assert!(
+        vectors
+            .points("axon-test")
+            .await
+            .iter()
+            .all(|point| point.payload["committed_generation"].as_str() == Some("uncommitted"))
+    );
+}
+
+#[tokio::test]
+async fn vector_commit_marker_failure_leaves_vectors_uncommitted() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("lib.rs");
     tokio::fs::write(&path, "pub fn answer() -> i32 {\n    42\n}\n")
@@ -271,7 +374,10 @@ async fn vector_commit_marker_failure_leaves_generation_uncommitted() {
     );
 
     let source_id = super::local_source_id(&tokio::fs::canonicalize(&path).await.unwrap());
-    assert_eq!(ledger.committed_generation(&source_id).await, None);
+    assert_eq!(
+        ledger.committed_generation(&source_id).await,
+        Some(SourceGenerationId::new("gen_1"))
+    );
     assert_eq!(ledger.generation_count().await, 1);
     assert!(
         vectors
@@ -369,6 +475,23 @@ async fn refresh_vectorizes_added_and_modified_docs_and_debts_removed_and_replac
             .filter(|call| *call == "upsert")
             .count(),
         4
+    );
+    assert_eq!(
+        vectors
+            .calls()
+            .await
+            .into_iter()
+            .filter(|call| *call == "delete")
+            .count(),
+        2
+    );
+    assert!(
+        vectors
+            .points("axon-test")
+            .await
+            .iter()
+            .all(|point| point.payload["source_generation"].as_str()
+                != Some(first.generation.0.as_str()))
     );
     assert_eq!(ledger.cleanup_debt_count().await, 2);
     assert_eq!(

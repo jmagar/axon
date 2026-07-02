@@ -1,10 +1,9 @@
-mod local_source_discovery;
+mod local_source_adapter;
 mod local_source_job;
 mod local_source_progress;
 
 use std::path::PathBuf;
 
-use anyhow::Context;
 use axon_api::source::*;
 use axon_document::{DocumentPreparer, PrepareSourceDocumentRequest};
 use axon_embedding::batch::EmbeddingBatchBuilder;
@@ -12,12 +11,13 @@ use axon_embedding::provider::EmbeddingProvider;
 use axon_ledger::store::LedgerStore;
 use axon_vectors::point::{VectorPointBatchBuildContext, VectorPointBatchBuilder};
 use axon_vectors::store::VectorStore;
-use serde_json::json;
 use uuid::Uuid;
 
-use self::local_source_discovery::{
-    LocalItem, collection_spec, discover_items, local_adapter_ref, local_source_id, source_summary,
-    source_token, stable_token, timestamp,
+#[cfg(test)]
+pub(super) use self::local_source_adapter::local_source_id;
+use self::local_source_adapter::{
+    LocalAdapterRun, collection_spec, discover_manifest, normalize_changed_documents,
+    resolve_adapter_run, source_summary, timestamp,
 };
 pub use self::local_source_job::index_local_source_with_job;
 use self::local_source_progress::{
@@ -72,28 +72,12 @@ async fn index_local_source_with_progress(
     vector_store: &dyn VectorStore,
     progress: Option<&dyn LocalSourceProgress>,
 ) -> anyhow::Result<LocalSourceIndexOutput> {
-    let root = tokio::fs::canonicalize(&input.root)
-        .await
-        .with_context(|| format!("invalid local source root {}", input.root.display()))?;
-    let root_is_file = tokio::fs::metadata(&root)
-        .await
-        .with_context(|| format!("failed to stat local source root {}", root.display()))?
-        .is_file();
-    let source_id = local_source_id(&root);
-    let source_token = source_token(&root);
-    let adapter = local_adapter_ref();
-    let scope = if root_is_file {
-        SourceScope::File
-    } else {
-        SourceScope::Directory
-    };
+    let run = resolve_adapter_run(&input).await?;
 
-    ledger
-        .upsert_source(source_summary(&input, &source_id, &source_token, scope))
-        .await?;
+    ledger.upsert_source(source_summary(&input, &run)).await?;
     let lease = ledger
         .acquire_lease(LeaseRequest {
-            lease_key: format!("source:{}", source_id.0),
+            lease_key: format!("source:{}", run.source_id.0),
             owner_id: input.owner_id.clone(),
             ttl_seconds: LOCAL_LEASE_TTL_SECONDS,
             job_id: Some(input.job_id),
@@ -101,7 +85,10 @@ async fn index_local_source_with_progress(
         })
         .await?
         .ok_or_else(|| {
-            anyhow::anyhow!("local source refresh already running for {}", source_id.0)
+            anyhow::anyhow!(
+                "local source refresh already running for {}",
+                run.source_id.0
+            )
         })?;
 
     let result = index_local_source_with_lease(
@@ -110,12 +97,7 @@ async fn index_local_source_with_progress(
         embedding_provider,
         vector_store,
         progress,
-        &root,
-        root_is_file,
-        source_id.clone(),
-        source_token,
-        adapter,
-        scope,
+        run,
     )
     .await;
 
@@ -132,44 +114,24 @@ async fn index_local_source_with_progress(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn index_local_source_with_lease(
     input: &LocalSourceIndexInput,
     ledger: &dyn LedgerStore,
     embedding_provider: &dyn EmbeddingProvider,
     vector_store: &dyn VectorStore,
     progress: Option<&dyn LocalSourceProgress>,
-    root: &std::path::Path,
-    root_is_file: bool,
-    source_id: SourceId,
-    source_token: String,
-    adapter: AdapterRef,
-    scope: SourceScope,
+    run: LocalAdapterRun,
 ) -> anyhow::Result<LocalSourceIndexOutput> {
-    let items = discover_items(
-        root,
-        root_is_file,
-        &source_id,
-        &source_token,
-        input.selection_policy,
-    )
-    .await?;
+    let mut manifest = discover_manifest(&run).await?;
     record_progress(progress, PipelinePhase::Discovering, None).await?;
-    let diff_manifest = source_manifest(
-        source_id.clone(),
-        SourceGenerationId::new("diff_probe"),
-        adapter.clone(),
-        scope,
-        &items,
-    );
-    let diff = ledger.diff_manifest(diff_manifest).await?;
+    let diff = ledger.diff_manifest(manifest.clone()).await?;
     record_progress(progress, PipelinePhase::Diffing, None).await?;
     if !manifest_diff_has_changes(&diff)
         && let Some(committed_generation) = diff.previous_generation
     {
         return Ok(LocalSourceIndexOutput {
             job_id: input.job_id,
-            source_id,
+            source_id: run.source_id,
             generation: committed_generation,
             documents_prepared: 0,
             chunks_prepared: 0,
@@ -181,17 +143,12 @@ async fn index_local_source_with_lease(
         record_progress_error(progress, phase_for_api_error(&err), &err).await?;
         return Err(anyhow::Error::new(err));
     }
+    let source_id = run.source_id.clone();
     let generation = ledger.create_generation(source_id.clone()).await?;
-    let manifest = source_manifest(
-        source_id.clone(),
-        generation.generation.clone(),
-        adapter,
-        scope,
-        &items,
-    );
-    ledger.put_manifest(manifest).await?;
+    manifest.generation = generation.generation.clone();
+    ledger.put_manifest(manifest.clone()).await?;
 
-    let documents = prepare_changed_documents(&items, &diff, &generation.generation, scope)?;
+    let documents = prepare_changed_documents(&run, &diff, &generation.generation).await?;
     record_progress(progress, PipelinePhase::Preparing, None).await?;
     let collection = collection_spec(&input.collection, input.embedding_dimensions);
     vector_store.ensure_collection(collection.clone()).await?;
@@ -205,21 +162,33 @@ async fn index_local_source_with_lease(
         documents,
     )
     .await?;
-    let completed =
-        complete_generation(ledger, generation, &diff, items.len() as u64, &vectorized).await?;
+    let completed = complete_generation(
+        ledger,
+        generation,
+        &diff,
+        manifest.items.len() as u64,
+        &vectorized,
+    )
+    .await?;
+    let published = publish_completed_generation(ledger, completed).await?;
     if let Err(err) = vector_store
         .mark_generation_committed(
             collection.collection.clone(),
             source_id.clone(),
-            completed.generation.clone(),
+            published.generation.clone(),
         )
         .await
     {
         record_progress_error(progress, PipelinePhase::Publishing, &err).await?;
         return Err(anyhow::Error::new(err));
     }
-    let published = publish_completed_generation(ledger, completed).await?;
     record_progress(progress, PipelinePhase::Publishing, None).await?;
+    if let Err(err) =
+        cleanup_replaced_vector_points(vector_store, &collection.collection, &diff).await
+    {
+        record_progress_error(progress, PipelinePhase::Cleaning, &err).await?;
+        return Err(anyhow::Error::new(err));
+    }
     record_progress(progress, PipelinePhase::Cleaning, None).await?;
 
     Ok(LocalSourceIndexOutput {
@@ -232,27 +201,38 @@ async fn index_local_source_with_lease(
     })
 }
 
-fn prepare_changed_documents(
-    items: &[LocalItem],
+async fn cleanup_replaced_vector_points(
+    vector_store: &dyn VectorStore,
+    collection: &str,
+    diff: &SourceManifestDiff,
+) -> Result<u64, ApiError> {
+    let Some(previous_generation) = diff.previous_generation.clone() else {
+        return Ok(0);
+    };
+    let mut deleted = 0;
+    for item in diff.removed.iter().chain(diff.modified.iter()) {
+        let result = vector_store
+            .delete(VectorDeleteSelector::Document {
+                collection: collection.to_string(),
+                document_id: local_document_id(&item.source_item_key),
+                generation: Some(previous_generation.clone()),
+            })
+            .await?;
+        deleted += result.points_deleted;
+    }
+    Ok(deleted)
+}
+
+async fn prepare_changed_documents(
+    run: &LocalAdapterRun,
     diff: &SourceManifestDiff,
     generation: &SourceGenerationId,
-    scope: SourceScope,
 ) -> anyhow::Result<Vec<PreparedDocument>> {
-    let changed = diff
-        .added
-        .iter()
-        .chain(diff.modified.iter())
-        .filter_map(|manifest_item| {
-            items
-                .iter()
-                .find(|item| item.manifest_item.source_item_key == manifest_item.source_item_key)
-        })
-        .collect::<Vec<_>>();
-
-    let mut documents = Vec::with_capacity(changed.len());
+    let source_documents = normalize_changed_documents(run, diff).await?;
+    let mut documents = Vec::with_capacity(source_documents.len());
     let preparer = DocumentPreparer::default();
-    for item in changed {
-        let document = source_document_for_item(item, scope)?;
+    for document in source_documents {
+        let item_key = document.source_item_key.0.clone();
         let prepared = preparer
             .prepare(PrepareSourceDocumentRequest {
                 document,
@@ -263,7 +243,7 @@ fn prepare_changed_documents(
                 warnings: Vec::new(),
                 errors: Vec::new(),
             })
-            .map_err(|err| anyhow::anyhow!("failed to prepare {}: {err}", item.item_key))?
+            .map_err(|err| anyhow::anyhow!("failed to prepare {item_key}: {err}"))?
             .document;
         documents.push(prepared);
     }
@@ -367,74 +347,12 @@ async fn publish_completed_generation(
         .await?)
 }
 
-fn source_manifest(
-    source_id: SourceId,
-    generation: SourceGenerationId,
-    adapter: AdapterRef,
-    scope: SourceScope,
-    items: &[LocalItem],
-) -> SourceManifest {
-    SourceManifest {
-        source_id: source_id.clone(),
-        generation,
-        adapter,
-        scope,
-        items: items
-            .iter()
-            .map(|item| item.manifest_item.clone())
-            .collect(),
-        created_at: timestamp(),
-        metadata: MetadataMap::new(),
-    }
-}
-
 fn manifest_diff_has_changes(diff: &SourceManifestDiff) -> bool {
     diff.counts.added > 0
         || diff.counts.modified > 0
         || diff.counts.removed > 0
         || diff.counts.skipped > 0
         || diff.counts.failed > 0
-}
-
-fn source_document_for_item(
-    item: &LocalItem,
-    scope: SourceScope,
-) -> anyhow::Result<SourceDocument> {
-    let document_id = DocumentId::new(format!("doc_{}", stable_token(&item.canonical_uri)));
-    let mut metadata = MetadataMap::new();
-    metadata.insert("source_family".to_string(), json!("code"));
-    metadata.insert("source_kind".to_string(), json!("local"));
-    metadata.insert("source_adapter".to_string(), json!("local"));
-    metadata.insert("source_scope".to_string(), json!(scope));
-    metadata.insert(
-        "item_canonical_uri".to_string(),
-        json!(item.canonical_uri.clone()),
-    );
-    metadata.insert("committed_generation".to_string(), json!("uncommitted"));
-    metadata.insert("visibility".to_string(), json!("internal"));
-    metadata.insert("redaction_status".to_string(), json!("clean"));
-    if let Some(language) = &item.language {
-        metadata.insert("code_language".to_string(), json!(language));
-    }
-    Ok(SourceDocument {
-        document_id,
-        source_id: item.manifest_item.source_id.clone(),
-        source_item_key: item.manifest_item.source_item_key.clone(),
-        canonical_uri: item.canonical_uri.clone(),
-        content_kind: item.content_kind,
-        content: ContentRef::InlineText {
-            text: item.content.clone(),
-        },
-        metadata,
-        title: Some(item.item_key.clone()),
-        language: item.language.clone(),
-        path: Some(item.item_key.clone()),
-        mime_type: None,
-        structured_payload: None,
-        artifact_id: None,
-        chunk_hints: Vec::new(),
-        parser_hints: Vec::new(),
-    })
 }
 
 fn embedding_batch_for_document(
@@ -468,6 +386,16 @@ fn embedding_batch_for_document(
         });
     }
     Ok(builder.build()?)
+}
+
+fn local_document_id(item_key: &SourceItemKey) -> DocumentId {
+    DocumentId::from(format!("doc_{}", sanitize_document_key(&item_key.0)))
+}
+
+fn sanitize_document_key(key: &str) -> String {
+    key.chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
+        .collect()
 }
 
 fn document_status(document: &PreparedDocument, points_written: u64) -> DocumentStatus {

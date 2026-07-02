@@ -5,9 +5,10 @@ use axon_embedding::provider::EmbeddingProvider;
 use axon_jobs::boundary::JobStore;
 use axon_ledger::store::LedgerStore;
 use axon_vectors::store::VectorStore;
+use std::path::Path;
 use tokio::sync::Mutex;
 
-use super::local_source_discovery::{local_source_id, timestamp};
+use super::local_source_adapter::{local_source_id, timestamp};
 use super::local_source_progress::{LocalSourceProgress, source_error_from_api_error};
 use super::{LocalSourceIndexInput, LocalSourceIndexOutput, index_local_source_with_progress};
 
@@ -20,7 +21,12 @@ pub async fn index_local_source_with_job(
 ) -> anyhow::Result<LocalSourceIndexOutput> {
     let root = tokio::fs::canonicalize(&input.root)
         .await
-        .with_context(|| format!("invalid local source root {}", input.root.display()))?;
+        .with_context(|| {
+            format!(
+                "invalid local source root {}",
+                public_path_hint(&input.root)
+            )
+        })?;
     let source_id = local_source_id(&root);
     let descriptor = jobs
         .create(job_create_request(&input, source_id.clone()))
@@ -69,11 +75,11 @@ fn terminal_source_error(err: &anyhow::Error) -> SourceError {
     SourceError {
         code: "source.local.index_failed".to_string(),
         severity: Severity::Failed,
-        message: err.to_string(),
+        message: "local source indexing failed".to_string(),
         source_item_key: None,
         retryable: false,
         provider_id: None,
-        cause: Some(err.to_string()),
+        cause: None,
     }
 }
 
@@ -89,13 +95,23 @@ fn job_create_request(input: &LocalSourceIndexInput, source_id: SourceId) -> Job
         priority: JobPriority::Background,
         idempotency_key: None,
         stage_plan: Vec::new(),
-        request: Some(serde_json::json!({ "root": input.root })),
+        request: Some(serde_json::json!({
+            "source_kind": "local",
+            "root_hint": public_path_hint(&input.root),
+        })),
         auth_snapshot: MetadataMap::new(),
         config_snapshot_id: Some(ConfigSnapshotId::new("cfg_local_source")),
         requirements: MetadataMap::new(),
         result_schema: Some("source_result".to_string()),
         metadata: MetadataMap::new(),
     }
+}
+
+fn public_path_hint(path: &Path) -> String {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(ToString::to_string)
+        .unwrap_or_else(|| "local-source".to_string())
 }
 
 struct JobProgressSink<'a> {

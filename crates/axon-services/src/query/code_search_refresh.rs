@@ -16,27 +16,10 @@ use super::{
     resolve_code_search_root,
 };
 
-const CODE_SEARCH_REFRESH_BACKEND_ENV: &str = "AXON_CODE_SEARCH_REFRESH_BACKEND";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodeSearchRefreshBackend {
     LegacyCodeIndex,
     TargetLocalSource,
-}
-
-impl CodeSearchRefreshBackend {
-    pub(crate) fn from_config_value(value: Option<&str>) -> Result<Self, String> {
-        let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
-            return Ok(Self::LegacyCodeIndex);
-        };
-        match value {
-            "legacy" | "legacy-code-index" | "code-index" => Ok(Self::LegacyCodeIndex),
-            "target-local" | "target-local-source" | "source-local" => Ok(Self::TargetLocalSource),
-            _ => Err(format!(
-                "unsupported {CODE_SEARCH_REFRESH_BACKEND_ENV} value `{value}`"
-            )),
-        }
-    }
 }
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct CodeSearchRefreshResult {
@@ -86,7 +69,7 @@ pub async fn refresh_code_search_index_with_progress(
         ctx,
         cwd,
         caller,
-        selected_code_search_refresh_backend()?,
+        CodeSearchRefreshBackend::LegacyCodeIndex,
         progress,
     )
     .await
@@ -108,14 +91,6 @@ pub async fn refresh_code_search_index_with_backend(
             refresh_target_local_code_search_index_with_progress(ctx, cwd, caller).await
         }
     }
-}
-
-fn selected_code_search_refresh_backend()
--> Result<CodeSearchRefreshBackend, Box<dyn Error + Send + Sync>> {
-    let value = std::env::var(CODE_SEARCH_REFRESH_BACKEND_ENV).ok();
-    Ok(CodeSearchRefreshBackend::from_config_value(
-        value.as_deref(),
-    )?)
 }
 
 async fn refresh_legacy_code_search_index_with_progress(
@@ -206,34 +181,20 @@ async fn refresh_target_local_code_search_index_with_progress(
             ),
         },
     };
-    match refresh_legacy_code_search_index_with_progress(ctx, Some(&project_root), caller, None)
-        .await
-    {
-        Ok(legacy) => {
-            if target_result.freshness.status == "fresh" {
-                tracing::debug!(
-                    project_key,
-                    target_indexed_files = target_result.freshness.indexed_files,
-                    "target local source refresh completed before legacy code-search refresh"
-                );
-            } else {
-                tracing::warn!(
-                    project_key,
-                    warning = ?target_result.freshness.warning,
-                    "target local source refresh degraded; preserving legacy code-search freshness"
-                );
-            }
-            Ok(legacy)
-        }
-        Err(legacy_err) => {
-            tracing::warn!(
-                project_key,
-                error = %legacy_err,
-                "legacy code-search refresh failed after target local source refresh"
-            );
-            Ok(target_result)
-        }
+    if target_result.freshness.status == "fresh" {
+        tracing::debug!(
+            project_key,
+            target_indexed_files = target_result.freshness.indexed_files,
+            "target local source refresh completed"
+        );
+    } else {
+        tracing::warn!(
+            project_key,
+            warning = ?target_result.freshness.warning,
+            "target local source refresh degraded"
+        );
     }
+    Ok(target_result)
 }
 
 pub(super) async fn resolve_code_search_freshness_with_progress(

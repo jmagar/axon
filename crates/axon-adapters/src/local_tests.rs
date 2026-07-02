@@ -135,6 +135,45 @@ async fn local_adapter_acquires_and_normalizes_source_documents() {
 }
 
 #[tokio::test]
+async fn local_adapter_rejects_diff_item_keys_that_escape_root() {
+    let adapter = LocalSourceAdapter::new();
+    let root = temp_source_dir();
+    fs::write(root.join("README.md"), "# Axon").unwrap();
+    fs::write(root.join("..outside.md"), "# not this").unwrap();
+    let plan = source_plan(root, SourceScope::Directory);
+    let mut item = adapter.discover(&plan).await.unwrap().items[0].clone();
+    item.source_item_key = SourceItemKey::from("../..outside.md");
+    let diff = manifest_diff(&plan, vec![item]);
+
+    let err = adapter
+        .acquire(&plan, &diff)
+        .await
+        .expect_err("escaped source item key must not be read");
+
+    assert_eq!(err.code.0, "adapter.local.item_key.escape");
+}
+
+#[tokio::test]
+async fn local_manifest_hash_changes_for_same_size_file_edits() {
+    let adapter = LocalSourceAdapter::new();
+    let root = temp_source_dir();
+    let file = root.join("README.md");
+    fs::write(&file, "abcd").unwrap();
+    let plan = source_plan(root, SourceScope::Directory);
+
+    let first = adapter.discover(&plan).await.unwrap();
+    fs::write(&file, "wxyz").unwrap();
+    let second = adapter.discover(&plan).await.unwrap();
+
+    assert_eq!(
+        first.items[0].source_item_key,
+        second.items[0].source_item_key
+    );
+    assert_ne!(first.items[0].content_hash, second.items[0].content_hash);
+    assert!(second.items[0].mtime.is_some());
+}
+
+#[tokio::test]
 async fn local_adapter_applies_include_exclude_gitignore_and_binary_policy() {
     let adapter = LocalSourceAdapter::new();
     let root = temp_source_dir();

@@ -12,47 +12,6 @@ use axon_vectors::store::FakeVectorStore;
 use std::process::Command;
 use std::sync::Arc;
 
-// ── code-search backend selection ─────────────────────────────────────────
-
-#[test]
-fn code_search_refresh_backend_defaults_to_legacy() {
-    assert_eq!(
-        CodeSearchRefreshBackend::from_config_value(None).unwrap(),
-        CodeSearchRefreshBackend::LegacyCodeIndex
-    );
-    assert_eq!(
-        CodeSearchRefreshBackend::from_config_value(Some("")).unwrap(),
-        CodeSearchRefreshBackend::LegacyCodeIndex
-    );
-}
-
-#[test]
-fn code_search_refresh_backend_accepts_explicit_legacy_aliases() {
-    for value in ["legacy", "legacy-code-index", "code-index"] {
-        assert_eq!(
-            CodeSearchRefreshBackend::from_config_value(Some(value)).unwrap(),
-            CodeSearchRefreshBackend::LegacyCodeIndex
-        );
-    }
-}
-
-#[test]
-fn code_search_refresh_backend_accepts_explicit_target_gate() {
-    for value in ["target-local", "target-local-source", "source-local"] {
-        assert_eq!(
-            CodeSearchRefreshBackend::from_config_value(Some(value)).unwrap(),
-            CodeSearchRefreshBackend::TargetLocalSource
-        );
-    }
-}
-
-#[test]
-fn code_search_refresh_backend_rejects_unknown_values() {
-    let err = CodeSearchRefreshBackend::from_config_value(Some("target")).unwrap_err();
-    assert!(err.contains("AXON_CODE_SEARCH_REFRESH_BACKEND"));
-    assert!(err.contains("target"));
-}
-
 #[tokio::test]
 async fn target_code_search_refresh_uses_local_source_runtime_when_available() {
     let repo = tempfile::tempdir().expect("repo");
@@ -118,6 +77,47 @@ async fn target_code_search_refresh_uses_local_source_runtime_when_available() {
     .await
     .expect("jobs");
     assert_eq!(jobs.items.len(), 1);
+}
+
+#[tokio::test]
+async fn target_code_search_refresh_reports_stale_when_runtime_missing() {
+    let repo = tempfile::tempdir().expect("repo");
+    Command::new("git")
+        .arg("-C")
+        .arg(repo.path())
+        .args(["init", "-q"])
+        .status()
+        .expect("git init");
+    std::fs::write(
+        repo.path().join("lib.rs"),
+        "pub fn answer() -> i32 { 42 }\n",
+    )
+    .expect("source file");
+
+    let cfg = Arc::new(Config::test_default());
+    let service_jobs = Arc::new(NoopServiceRuntime);
+    let ctx = ServiceContext::from_runtime(cfg, service_jobs);
+
+    let refreshed = refresh_code_search_index_with_backend(
+        &ctx,
+        Some(repo.path()),
+        CodeSearchCaller::Cli,
+        CodeSearchRefreshBackend::TargetLocalSource,
+        None,
+    )
+    .await
+    .expect("target refresh");
+
+    assert_eq!(refreshed.freshness.status, "stale");
+    assert_eq!(refreshed.freshness.indexed_files, 0);
+    assert!(
+        refreshed
+            .freshness
+            .warning
+            .as_deref()
+            .unwrap_or_default()
+            .contains("target local source code-search refresh dependencies are not available")
+    );
 }
 #[test]
 fn code_search_result_marks_snippets_untrusted() {
