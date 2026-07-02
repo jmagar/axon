@@ -2,6 +2,7 @@ mod event;
 mod roots;
 use crate::context::ServiceContext;
 use crate::query;
+use crate::query::CodeSearchRefreshBackend;
 use crate::types::CodeSearchCaller;
 use anyhow::Result;
 use axon_core::config::CodeSearchWatchConfig;
@@ -206,10 +207,17 @@ async fn refresh_code_search_watch_root(
         reason,
     });
     let progress = WatchProgressSink { events };
-    let refresh = query::refresh_code_search_index_with_progress(
+    let target_refresh = ctx.target_local_source_runtime().is_some();
+    let backend = if target_refresh {
+        CodeSearchRefreshBackend::TargetLocalSource
+    } else {
+        CodeSearchRefreshBackend::LegacyCodeIndex
+    };
+    let refresh = query::refresh_code_search_index_with_backend(
         ctx,
         Some(root),
         CodeSearchCaller::Cli,
+        backend,
         Some(&progress),
     )
     .await;
@@ -220,7 +228,8 @@ async fn refresh_code_search_watch_root(
             let indexed_files = result.freshness.indexed_files;
             let removed_files = result.freshness.removed_files;
             let generation = result.generation;
-            let failed_initial = reason == "initial" && (status != "fresh" || warning.is_some());
+            let failed_initial =
+                !target_refresh && reason == "initial" && (status != "fresh" || warning.is_some());
             let warning_message = warning.clone();
             events.emit(CodeSearchWatchEvent::RefreshFinished {
                 root: root.to_path_buf(),

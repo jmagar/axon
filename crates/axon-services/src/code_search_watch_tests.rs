@@ -67,7 +67,7 @@ fn watcher_event_storm_coalesces_to_one_refresh() {
 }
 
 #[tokio::test]
-async fn watch_refresh_stays_on_legacy_until_target_search_is_wired() {
+async fn watch_refresh_uses_target_local_source_runtime_when_available() {
     let repo = tempfile::tempdir().expect("repo");
     init_git_repo(repo.path());
     tokio::fs::write(
@@ -81,10 +81,9 @@ async fn watch_refresh_stays_on_legacy_until_target_search_is_wired() {
     let ctx = target_context(source_jobs.clone(), vectors.clone());
     let events = CaptureEvents::default();
 
-    let err = refresh_code_search_watch_root(&ctx, &events, repo.path(), "file_change")
+    refresh_code_search_watch_root(&ctx, &events, repo.path(), "file_change")
         .await
-        .expect_err("legacy refresh lacks sqlite runtime in this unit test");
-    assert!(err.to_string().contains("SQLite service runtime"));
+        .expect("target refresh");
 
     assert!(
         events
@@ -94,7 +93,10 @@ async fn watch_refresh_stays_on_legacy_until_target_search_is_wired() {
             .iter()
             .any(|event| matches!(event, CodeSearchWatchEvent::RefreshStarted { .. }))
     );
-    assert!(vectors.calls().await.is_empty());
+    assert_eq!(
+        vectors.calls().await,
+        vec!["ensure_collection", "upsert", "mark_generation_committed"]
+    );
 
     let jobs = JobStore::list(
         source_jobs.as_ref(),
@@ -109,5 +111,69 @@ async fn watch_refresh_stays_on_legacy_until_target_search_is_wired() {
     )
     .await
     .expect("jobs");
-    assert!(jobs.items.is_empty());
+    assert_eq!(jobs.items.len(), 1);
+    let job = &jobs.items[0];
+    assert_eq!(job.kind, JobKind::Source);
+    assert_eq!(job.status, LifecycleStatus::Completed);
+    assert!(
+        job.heartbeat.is_some(),
+        "source job should record heartbeat"
+    );
+
+    let source_events = JobStore::events(
+        source_jobs.as_ref(),
+        JobEventListRequest {
+            job_id: job.job_id,
+            phase: None,
+            severity: None,
+            visibility: Some(Visibility::Public),
+            since_sequence: None,
+            limit: Some(20),
+            cursor: None,
+        },
+    )
+    .await
+    .expect("source events");
+    assert!(!source_events.events.is_empty());
+    assert!(
+        source_events
+            .events
+            .iter()
+            .all(|event| event.job_id == job.job_id)
+    );
+    assert!(
+        source_events
+            .events
+            .iter()
+            .any(|event| event.phase == PipelinePhase::Complete)
+    );
+}
+
+#[tokio::test]
+async fn watch_refresh_preserves_legacy_backend_when_target_runtime_is_absent() {
+    let repo = tempfile::tempdir().expect("repo");
+    init_git_repo(repo.path());
+    tokio::fs::write(
+        repo.path().join("lib.rs"),
+        "pub fn answer() -> i32 { 42 }\n",
+    )
+    .await
+    .expect("source file");
+    let cfg = Arc::new(axon_core::config::Config::test_default());
+    let ctx = ServiceContext::from_runtime(cfg, Arc::new(NoopServiceRuntime));
+    let events = CaptureEvents::default();
+
+    let err = refresh_code_search_watch_root(&ctx, &events, repo.path(), "file_change")
+        .await
+        .expect_err("legacy refresh still requires sqlite runtime");
+    assert!(err.to_string().contains("SQLite service runtime"));
+
+    assert!(
+        events
+            .events
+            .lock()
+            .expect("events")
+            .iter()
+            .any(|event| matches!(event, CodeSearchWatchEvent::RefreshStarted { .. }))
+    );
 }
