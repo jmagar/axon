@@ -7,7 +7,7 @@ use axon_vector::ops::input::classify::path_extension;
 use sha2::{Digest, Sha256};
 use url::Url;
 
-use super::{LOCAL_ADAPTER_VERSION, LocalSourceIndexInput};
+use super::{LOCAL_ADAPTER_VERSION, LocalSourceIndexInput, LocalSourceSelectionPolicy};
 
 #[derive(Debug, Clone)]
 pub(super) struct LocalItem {
@@ -24,11 +24,12 @@ pub(super) async fn discover_items(
     root_is_file: bool,
     source_id: &SourceId,
     source_token: &str,
+    selection_policy: LocalSourceSelectionPolicy,
 ) -> anyhow::Result<Vec<LocalItem>> {
     let paths = if root_is_file {
         vec![root.to_path_buf()]
     } else {
-        collect_files(root, SelectionPolicy::Permissive).await?
+        collect_files(root, selection_policy.into_file_policy()).await?
     };
     let mut items = Vec::with_capacity(paths.len());
     for path in paths {
@@ -36,6 +37,15 @@ pub(super) async fn discover_items(
     }
     items.sort_by(|a, b| a.item_key.cmp(&b.item_key));
     Ok(items)
+}
+
+impl LocalSourceSelectionPolicy {
+    fn into_file_policy(self) -> SelectionPolicy {
+        match self {
+            Self::Permissive => SelectionPolicy::Permissive,
+            Self::CodeSearch => SelectionPolicy::CodeSearch,
+        }
+    }
 }
 
 async fn local_item(

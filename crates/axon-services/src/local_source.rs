@@ -30,6 +30,7 @@ pub struct LocalSourceIndexInput {
     pub embedding_provider_id: ProviderId,
     pub embedding_model: String,
     pub embedding_dimensions: u32,
+    pub selection_policy: LocalSourceSelectionPolicy,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,6 +40,12 @@ pub struct LocalSourceIndexOutput {
     pub documents_prepared: u64,
     pub chunks_prepared: u64,
     pub vector_points_written: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocalSourceSelectionPolicy {
+    Permissive,
+    CodeSearch,
 }
 
 pub async fn index_local_source(
@@ -119,7 +126,14 @@ async fn index_local_source_with_lease(
     adapter: AdapterRef,
     scope: SourceScope,
 ) -> anyhow::Result<LocalSourceIndexOutput> {
-    let items = discover_items(root, root_is_file, &source_id, &source_token).await?;
+    let items = discover_items(
+        root,
+        root_is_file,
+        &source_id,
+        &source_token,
+        input.selection_policy,
+    )
+    .await?;
     let diff_manifest = source_manifest(
         source_id.clone(),
         SourceGenerationId::new("diff_probe"),

@@ -413,6 +413,7 @@ pub const VECTOR_SOURCE_FAMILY_FIELDS: &[(&str, &[&str])] = &[
             "code_symbol_name",
             "code_symbol_kind",
             "code_file_type",
+            "manifest",
         ],
     ),
     (
