@@ -350,6 +350,10 @@ fn build_payload(
         json!(document.source_item_key.0),
     );
     metadata.insert(
+        "item_canonical_uri".to_string(),
+        json!(document.canonical_uri),
+    );
+    metadata.insert(
         "source_generation".to_string(),
         json!(document.generation.0),
     );

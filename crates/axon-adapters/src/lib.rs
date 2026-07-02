@@ -11,6 +11,7 @@ pub mod cli_tool;
 pub mod feed;
 pub mod git;
 pub mod local;
+mod local_select;
 pub mod manifest;
 pub mod mcp_tool;
 pub mod reddit;
@@ -36,3 +37,7 @@ mod adapter_tests;
 #[cfg(test)]
 #[path = "manifest_tests.rs"]
 mod manifest_tests;
+
+#[cfg(test)]
+#[path = "local_tests.rs"]
+mod local_tests;

@@ -32,6 +32,7 @@ use tokio::sync::mpsc;
 const RETRIEVE_STALE_AFTER: Duration = Duration::from_secs(24 * 60 * 60);
 const MAX_CODE_SEARCH_QUERY_LEN_BYTES: usize = 64 * 1024;
 const CODE_SEARCH_GIT_TIMEOUT: Duration = Duration::from_secs(5);
+const CODE_SEARCH_REFRESH_BACKEND_ENV: &str = "AXON_CODE_SEARCH_REFRESH_BACKEND";
 
 struct ResolvedDocument {
     backend: DocumentBackend,
@@ -42,6 +43,27 @@ struct ResolvedDocument {
     variant_errors: Vec<ServiceRetrieveVariantError>,
     source_truncated: bool,
     refresh_status: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CodeSearchRefreshBackend {
+    LegacyCodeIndex,
+    TargetLocalSource,
+}
+
+impl CodeSearchRefreshBackend {
+    fn from_config_value(value: Option<&str>) -> Result<Self, String> {
+        let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+            return Ok(Self::LegacyCodeIndex);
+        };
+        match value {
+            "legacy" | "legacy-code-index" | "code-index" => Ok(Self::LegacyCodeIndex),
+            "target-local" | "target-local-source" | "source-local" => Ok(Self::TargetLocalSource),
+            _ => Err(format!(
+                "unsupported {CODE_SEARCH_REFRESH_BACKEND_ENV} value `{value}`"
+            )),
+        }
+    }
 }
 
 fn wrap_service_error(
@@ -296,6 +318,30 @@ pub async fn refresh_code_search_index_with_progress(
     caller: CodeSearchCaller,
     progress: Option<&dyn ReindexProgressSink>,
 ) -> Result<CodeSearchRefreshResult, Box<dyn Error + Send + Sync>> {
+    match selected_code_search_refresh_backend()? {
+        CodeSearchRefreshBackend::LegacyCodeIndex => {
+            refresh_legacy_code_search_index_with_progress(ctx, cwd, caller, progress).await
+        }
+        CodeSearchRefreshBackend::TargetLocalSource => {
+            refresh_target_local_code_search_index_with_progress(ctx, cwd, caller).await
+        }
+    }
+}
+
+fn selected_code_search_refresh_backend()
+-> Result<CodeSearchRefreshBackend, Box<dyn Error + Send + Sync>> {
+    let value = std::env::var(CODE_SEARCH_REFRESH_BACKEND_ENV).ok();
+    Ok(CodeSearchRefreshBackend::from_config_value(
+        value.as_deref(),
+    )?)
+}
+
+async fn refresh_legacy_code_search_index_with_progress(
+    ctx: &ServiceContext,
+    cwd: Option<&Path>,
+    caller: CodeSearchCaller,
+    progress: Option<&dyn ReindexProgressSink>,
+) -> Result<CodeSearchRefreshResult, Box<dyn Error + Send + Sync>> {
     let root = resolve_code_search_root(cwd, caller).await?;
     let identity = code_search_identity(ctx.cfg(), root).await;
     let freshness =
@@ -306,6 +352,28 @@ pub async fn refresh_code_search_index_with_progress(
         project_key: identity.project_key.clone(),
         generation,
         freshness,
+    })
+}
+
+async fn refresh_target_local_code_search_index_with_progress(
+    ctx: &ServiceContext,
+    cwd: Option<&Path>,
+    caller: CodeSearchCaller,
+) -> Result<CodeSearchRefreshResult, Box<dyn Error + Send + Sync>> {
+    let root = resolve_code_search_root(cwd, caller).await?;
+    let identity = code_search_identity(ctx.cfg(), root).await;
+    Ok(CodeSearchRefreshResult {
+        project_root: identity.project_root,
+        project_key: identity.project_key,
+        generation: None,
+        freshness: code_search_freshness(
+            "stale",
+            Some(FreshnessWarning::Failed {
+                error: "target local source code-search refresh is not wired yet".to_string(),
+            }),
+            0,
+            0,
+        ),
     })
 }
 

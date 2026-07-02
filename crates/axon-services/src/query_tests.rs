@@ -9,6 +9,47 @@ use crate::types::{
 use axon_core::config::Config;
 use serde_json::json;
 
+// ── code-search backend selection ─────────────────────────────────────────
+
+#[test]
+fn code_search_refresh_backend_defaults_to_legacy() {
+    assert_eq!(
+        CodeSearchRefreshBackend::from_config_value(None).unwrap(),
+        CodeSearchRefreshBackend::LegacyCodeIndex
+    );
+    assert_eq!(
+        CodeSearchRefreshBackend::from_config_value(Some("")).unwrap(),
+        CodeSearchRefreshBackend::LegacyCodeIndex
+    );
+}
+
+#[test]
+fn code_search_refresh_backend_accepts_explicit_legacy_aliases() {
+    for value in ["legacy", "legacy-code-index", "code-index"] {
+        assert_eq!(
+            CodeSearchRefreshBackend::from_config_value(Some(value)).unwrap(),
+            CodeSearchRefreshBackend::LegacyCodeIndex
+        );
+    }
+}
+
+#[test]
+fn code_search_refresh_backend_accepts_explicit_target_gate() {
+    for value in ["target-local", "target-local-source", "source-local"] {
+        assert_eq!(
+            CodeSearchRefreshBackend::from_config_value(Some(value)).unwrap(),
+            CodeSearchRefreshBackend::TargetLocalSource
+        );
+    }
+}
+
+#[test]
+fn code_search_refresh_backend_rejects_unknown_values() {
+    let err = CodeSearchRefreshBackend::from_config_value(Some("target")).unwrap_err();
+    assert!(err.contains("AXON_CODE_SEARCH_REFRESH_BACKEND"));
+    assert!(err.contains("target"));
+}
+
 // ── map_retrieve_result ───────────────────────────────────────────────────
 
 #[test]
