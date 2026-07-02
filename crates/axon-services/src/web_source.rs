@@ -39,7 +39,6 @@ pub struct WebSourceIndexOutput {
     pub removed_pages: u64,
 }
 
-#[cfg(test)]
 pub async fn index_web_source(
     input: WebSourceIndexInput,
     ledger: &dyn LedgerStore,

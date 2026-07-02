@@ -40,7 +40,7 @@ pub mod system;
 pub mod transport;
 pub mod types;
 pub mod watch;
-pub(crate) mod web_source;
+pub mod web_source;
 
 #[cfg(test)]
 #[path = "client_contract_tests.rs"]
