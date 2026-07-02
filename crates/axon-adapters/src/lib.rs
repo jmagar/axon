@@ -36,3 +36,7 @@ mod adapter_tests;
 #[cfg(test)]
 #[path = "manifest_tests.rs"]
 mod manifest_tests;
+
+#[cfg(test)]
+#[path = "local_tests.rs"]
+mod local_tests;

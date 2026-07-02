@@ -1,0 +1,196 @@
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use axon_api::source::*;
+use uuid::Uuid;
+
+use crate::SourceAdapter;
+use crate::local::LocalSourceAdapter;
+
+#[tokio::test]
+async fn local_adapter_declares_task1_scopes_and_accepts_options() {
+    let adapter = LocalSourceAdapter::new();
+
+    let capability = adapter.capabilities().await.unwrap();
+    assert_eq!(capability.adapter.name, "local");
+    assert_eq!(capability.source_kind, SourceKind::Local);
+    assert_eq!(capability.default_scope, SourceScope::Directory);
+    for scope in [
+        SourceScope::File,
+        SourceScope::Directory,
+        SourceScope::Workspace,
+        SourceScope::Repo,
+        SourceScope::Map,
+    ] {
+        assert!(
+            capability.scopes.contains(&scope),
+            "missing local scope {scope:?}"
+        );
+    }
+
+    let mut plan = source_plan(temp_source_dir(), SourceScope::Directory);
+    plan.route.validated_options.values = local_options();
+
+    adapter
+        .discover(&plan)
+        .await
+        .expect("task1 local options should validate");
+}
+
+#[tokio::test]
+async fn local_adapter_rejects_unknown_options() {
+    let adapter = LocalSourceAdapter::new();
+    let mut plan = source_plan(temp_source_dir(), SourceScope::Directory);
+    plan.route
+        .validated_options
+        .values
+        .insert("surprise".to_string(), "nope".into());
+
+    let err = adapter
+        .discover(&plan)
+        .await
+        .expect_err("unknown local options should fail validation");
+
+    assert_eq!(err.code.0, "adapter.local.option.unsupported");
+    assert_eq!(err.stage, axon_error::ErrorStage::Routing);
+}
+
+#[tokio::test]
+async fn local_file_discovery_uses_public_stable_identity() {
+    let adapter = LocalSourceAdapter::new();
+    let root = temp_source_dir();
+    let file_path = root.join("notes.md");
+    fs::write(&file_path, "# local").unwrap();
+
+    let plan = source_plan(file_path, SourceScope::File);
+    let manifest = adapter.discover(&plan).await.unwrap();
+
+    assert_eq!(manifest.items.len(), 1);
+    let item = &manifest.items[0];
+    assert_eq!(item.source_item_key, SourceItemKey::from("notes.md"));
+    assert_eq!(
+        item.canonical_uri,
+        format!("{}/notes.md", plan.route.source.canonical_uri)
+    );
+    assert!(!item.source_item_key.0.contains("/home/"));
+    assert!(!item.canonical_uri.contains("/home/"));
+}
+
+#[tokio::test]
+async fn local_directory_discovery_emits_sorted_relative_file_items() {
+    let adapter = LocalSourceAdapter::new();
+    let root = temp_source_dir();
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::write(root.join("README.md"), "# Axon").unwrap();
+    fs::write(root.join("src/lib.rs"), "pub fn local() {}").unwrap();
+
+    let plan = source_plan(root, SourceScope::Directory);
+    let manifest = adapter.discover(&plan).await.unwrap();
+    let keys = manifest
+        .items
+        .iter()
+        .map(|item| item.source_item_key.0.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(keys, vec!["README.md", "src/lib.rs"]);
+    for item in &manifest.items {
+        assert!(item.canonical_uri.starts_with("local://"));
+        assert!(!item.canonical_uri.contains("/home/"));
+        assert!(!item.source_item_key.0.starts_with('/'));
+    }
+}
+
+fn local_options() -> MetadataMap {
+    let mut values = MetadataMap::new();
+    values.insert("include_globs".to_string(), vec!["**/*.rs"].into());
+    values.insert("exclude_globs".to_string(), vec!["target/**"].into());
+    values.insert("respect_gitignore".to_string(), true.into());
+    values.insert("follow_symlinks".to_string(), false.into());
+    values.insert("max_file_bytes".to_string(), 1024.into());
+    values.insert("binary_policy".to_string(), "skip".into());
+    values.insert("watch_policy".to_string(), "manual".into());
+    values
+}
+
+fn source_plan(path: PathBuf, scope: SourceScope) -> SourcePlan {
+    let canonical_uri = format!("local://{}", slug(&path));
+    SourcePlan {
+        job_id: JobId::new(Uuid::from_u128(298)),
+        request: SourceRequest::new(path.to_string_lossy().to_string()),
+        route: RoutePlan {
+            source: ResolvedSource {
+                requested_uri: path.to_string_lossy().to_string(),
+                canonical_uri: canonical_uri.clone(),
+                source_id: SourceId::from("src_local_test"),
+                source_kind: SourceKind::Local,
+                display_name: "local test".to_string(),
+                candidate_adapters: vec![AdapterCandidate {
+                    adapter: AdapterRef {
+                        name: "local".to_string(),
+                        version: env!("CARGO_PKG_VERSION").to_string(),
+                    },
+                    supported_scopes: vec![scope],
+                    confidence: 1.0,
+                    reason: "test".to_string(),
+                }],
+                default_scope: scope,
+                available_scopes: vec![scope],
+                authority: AuthorityLevel::Inferred,
+                confidence: 1.0,
+                reason: "test".to_string(),
+                authority_hint: None,
+                warnings: Vec::new(),
+            },
+            adapter: AdapterRef {
+                name: "local".to_string(),
+                version: env!("CARGO_PKG_VERSION").to_string(),
+            },
+            scope,
+            provider_requirements: Vec::new(),
+            credential_requirements: Vec::new(),
+            execution_affinity: ExecutionAffinity::Worker,
+            safety_class: SafetyClass::LocalFilesystem,
+            option_schema_id: "adapter:local:options:v1".to_string(),
+            validated_options: AdapterOptions::default(),
+            chunking_hints: Vec::new(),
+            parser_hints: Vec::new(),
+            graph_fact_kinds: Vec::new(),
+            watch_supported: true,
+            refresh_supported: true,
+        },
+        stage_plan: Vec::new(),
+        limits: EffectiveLimits {
+            request: SourceLimits::default(),
+            adapter_defaults: SourceLimits::default(),
+            config_defaults: SourceLimits::default(),
+            effective: SourceLimits::default(),
+        },
+        config_snapshot_id: ConfigSnapshotId::from("cfg_local_test"),
+        provider_reservations: Vec::new(),
+    }
+}
+
+fn temp_source_dir() -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("axon-local-test-{}", Uuid::new_v4()));
+    fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+fn slug(path: &Path) -> String {
+    let mut counts = BTreeMap::new();
+    path.components()
+        .filter_map(|component| component.as_os_str().to_str())
+        .filter(|part| !part.is_empty() && *part != "/")
+        .map(|part| {
+            let count = counts.entry(part.to_string()).or_insert(0);
+            *count += 1;
+            if *count == 1 {
+                part.to_string()
+            } else {
+                format!("{part}-{count}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("-")
+}

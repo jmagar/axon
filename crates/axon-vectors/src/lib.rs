@@ -38,5 +38,9 @@ mod payload_tests;
 mod point_tests;
 
 #[cfg(test)]
+#[path = "local_payload_tests.rs"]
+mod local_payload_tests;
+
+#[cfg(test)]
 #[path = "qdrant_tests.rs"]
 mod qdrant_tests;
