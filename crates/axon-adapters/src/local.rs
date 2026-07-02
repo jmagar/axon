@@ -127,15 +127,16 @@ fn discover_sync(plan: &SourcePlan) -> Result<SourceManifest> {
     files.sort();
 
     let base_uri = public_base_uri(&plan.route.source.canonical_uri);
-    let root_for_keys = if root.is_file() {
-        root.parent().unwrap_or_else(|| Path::new(""))
-    } else {
-        root.as_path()
-    };
+    let root_for_keys = root_for_item_keys(&root, plan.route.scope);
     let mut items = Vec::new();
     for file in files {
-        let metadata =
-            fs::metadata(&file).map_err(|err| fs_error("adapter.local.stat_failed", &file, err))?;
+        let key = relative_key(root_for_keys, &file)?;
+        if !options.should_include_file(plan.route.scope, &key, &file) {
+            continue;
+        }
+        let safe_path = safe_item_path(root_for_keys, &key)?;
+        let metadata = fs::metadata(&safe_path)
+            .map_err(|err| fs_error("adapter.local.stat_failed", &safe_path, err))?;
         if let Some(max_file_bytes) = options.max_file_bytes {
             if metadata.len() > max_file_bytes {
                 continue;
@@ -144,11 +145,7 @@ fn discover_sync(plan: &SourcePlan) -> Result<SourceManifest> {
         if !metadata.is_file() {
             continue;
         }
-        let key = relative_key(root_for_keys, &file)?;
-        if !options.should_include_file(plan.route.scope, &key, &file) {
-            continue;
-        }
-        let content_hash = content_fingerprint(&file)?;
+        let content_hash = content_fingerprint(&safe_path)?;
         let identity = item_identity(SourceKind::Local, &base_uri, &key)?;
         items.push(ManifestItem {
             source_id: plan.route.source.source_id.clone(),
@@ -208,11 +205,7 @@ fn acquire_sync(plan: &SourcePlan, diff: &SourceManifestDiff) -> Result<SourceAc
         });
     }
     let root = PathBuf::from(&plan.request.source);
-    let root_for_keys = if root.is_file() {
-        root.parent().unwrap_or_else(|| Path::new(""))
-    } else {
-        root.as_path()
-    };
+    let root_for_keys = root_for_item_keys(&root, plan.route.scope);
     let manifest_items = diff
         .added
         .iter()
@@ -342,6 +335,17 @@ fn relative_key(root: &Path, file: &Path) -> Result<String> {
         ));
     }
     Ok(key)
+}
+
+fn root_for_item_keys(root: &Path, scope: SourceScope) -> &Path {
+    if scope == SourceScope::File {
+        return root.parent().unwrap_or_else(|| Path::new(""));
+    }
+    if root.is_file() {
+        root.parent().unwrap_or_else(|| Path::new(""))
+    } else {
+        root
+    }
 }
 
 fn public_base_uri(canonical_uri: &str) -> String {

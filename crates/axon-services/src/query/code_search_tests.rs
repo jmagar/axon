@@ -3,7 +3,7 @@ use crate::context::{ServiceContext, TargetLocalSourceRuntime};
 use crate::test_support::NoopServiceRuntime;
 use crate::types::{CodeSearchCaller, CodeSearchFreshness, CodeSearchResult};
 use axon_api::source::*;
-use axon_code_index::FreshnessWarning;
+use axon_code_index::{FreshnessWarning, ReindexProgress, ReindexProgressSink};
 use axon_core::config::Config;
 use axon_embedding::fake::FakeEmbeddingProvider;
 use axon_jobs::boundary::{FakeJobWatchStore, JobStore};
@@ -11,7 +11,18 @@ use axon_ledger::store::FakeLedgerStore;
 use axon_vectors::store::FakeVectorStore;
 use axon_vectors::store::VectorStore;
 use std::process::Command;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+
+#[derive(Default)]
+struct RecordingReindexProgress {
+    events: Mutex<Vec<ReindexProgress>>,
+}
+
+impl ReindexProgressSink for RecordingReindexProgress {
+    fn emit(&self, progress: ReindexProgress) {
+        self.events.lock().expect("progress lock").push(progress);
+    }
+}
 
 #[tokio::test]
 async fn target_code_search_refresh_uses_local_source_runtime_when_available() {
@@ -79,6 +90,62 @@ async fn target_code_search_refresh_uses_local_source_runtime_when_available() {
     .await
     .expect("jobs");
     assert_eq!(jobs.items.len(), 1);
+}
+
+#[tokio::test]
+async fn target_code_search_refresh_emits_progress_events_when_sink_is_present() {
+    let repo = tempfile::tempdir().expect("repo");
+    Command::new("git")
+        .arg("-C")
+        .arg(repo.path())
+        .args(["init", "-q"])
+        .status()
+        .expect("git init");
+    std::fs::write(
+        repo.path().join("lib.rs"),
+        "pub fn answer() -> i32 { 42 }\n",
+    )
+    .expect("source file");
+
+    let cfg = Arc::new(Config::test_default());
+    let service_jobs = Arc::new(NoopServiceRuntime);
+    let source_jobs = Arc::new(FakeJobWatchStore::new());
+    let ledger = Arc::new(FakeLedgerStore::new());
+    let embedder = Arc::new(FakeEmbeddingProvider::new("fake-embedding", 8));
+    let vectors = Arc::new(FakeVectorStore::new("fake-vector"));
+    let ctx = ServiceContext::from_runtime(cfg, service_jobs).with_target_local_source_runtime(
+        TargetLocalSourceRuntime::new(
+            source_jobs,
+            ledger,
+            embedder,
+            vectors,
+            ProviderId::new("fake-embedding"),
+            "fake-embedding",
+            8,
+        ),
+    );
+    let progress = RecordingReindexProgress::default();
+
+    let refreshed = refresh_code_search_index_with_backend(
+        &ctx,
+        Some(repo.path()),
+        CodeSearchCaller::Cli,
+        CodeSearchRefreshBackend::TargetLocalSource,
+        Some(&progress),
+    )
+    .await
+    .expect("target refresh");
+
+    assert_eq!(refreshed.freshness.status, "fresh");
+    let events = progress.events.lock().expect("progress lock").clone();
+    assert!(matches!(
+        events.first(),
+        Some(ReindexProgress::Started { .. })
+    ));
+    assert!(matches!(
+        events.last(),
+        Some(ReindexProgress::Finished { .. })
+    ));
 }
 
 #[tokio::test]

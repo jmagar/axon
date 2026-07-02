@@ -175,6 +175,28 @@ async fn local_adapter_rejects_diff_item_keys_that_escape_root() {
     assert_eq!(err.code.0, "adapter.local.item_key.escape");
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn local_discovery_rejects_followed_symlink_that_escapes_root() {
+    let adapter = LocalSourceAdapter::new();
+    let root = temp_source_dir();
+    let outside = temp_source_dir();
+    fs::write(outside.join("secret.rs"), "pub fn leaked() {}\n").unwrap();
+    std::os::unix::fs::symlink(outside.join("secret.rs"), root.join("linked.rs")).unwrap();
+    let mut plan = source_plan(root, SourceScope::Directory);
+    plan.route
+        .validated_options
+        .values
+        .insert("follow_symlinks".to_string(), true.into());
+
+    let err = adapter
+        .discover(&plan)
+        .await
+        .expect_err("followed symlinks must remain contained in the source root");
+
+    assert_eq!(err.code.0, "adapter.local.item_key.escape");
+}
+
 #[tokio::test]
 async fn local_manifest_fingerprint_changes_for_same_size_file_edits() {
     let adapter = LocalSourceAdapter::new();

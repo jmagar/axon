@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
 use axon_api::source::{ApiError, ContentRef};
@@ -54,9 +55,19 @@ pub(super) fn safe_item_path(root: &Path, item_key: &str) -> Result<PathBuf> {
 }
 
 pub(super) fn content_fingerprint(path: &Path) -> Result<String> {
-    let bytes = fs::read(path).map_err(|err| fs_error("adapter.local.read_failed", path, err))?;
     let mut hasher = Sha256::new();
-    hasher.update(&bytes);
+    let mut file =
+        fs::File::open(path).map_err(|err| fs_error("adapter.local.read_failed", path, err))?;
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|err| fs_error("adapter.local.read_failed", path, err))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
     Ok(format!("sha256:{:x}", hasher.finalize()))
 }
 

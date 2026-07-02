@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use axon_api::source::JobId;
 use axon_api::source::{SourceGenerationId, SourceId};
 use axon_code_index::ensure::{EnsureFreshOptions, ensure_fresh_with_progress};
-use axon_code_index::{CodeIndexIdentity, FreshnessWarning, ReindexProgressSink};
+use axon_code_index::{CodeIndexIdentity, FreshnessWarning, ReindexProgress, ReindexProgressSink};
 
 use crate::context::ServiceContext;
 use crate::local_source::{
@@ -93,7 +93,7 @@ pub async fn refresh_code_search_index_with_backend(
             refresh_legacy_code_search_index_with_progress(ctx, cwd, caller, progress).await
         }
         CodeSearchRefreshBackend::TargetLocalSource => {
-            refresh_target_local_code_search_index_with_progress(ctx, cwd, caller).await
+            refresh_target_local_code_search_index_with_progress(ctx, cwd, caller, progress).await
         }
     }
 }
@@ -123,26 +123,12 @@ async fn refresh_target_local_code_search_index_with_progress(
     ctx: &ServiceContext,
     cwd: Option<&Path>,
     caller: CodeSearchCaller,
+    progress: Option<&dyn ReindexProgressSink>,
 ) -> Result<CodeSearchRefreshResult, Box<dyn Error + Send + Sync>> {
     let root = resolve_code_search_root(cwd, caller).await?;
     let identity = code_search_identity(ctx.cfg(), root).await;
     let Some(target) = ctx.target_local_source_runtime() else {
-        return Ok(CodeSearchRefreshResult {
-            project_root: identity.project_root,
-            project_key: identity.project_key,
-            generation: None,
-            target_source_id: None,
-            target_source_generation: None,
-            freshness: code_search_freshness(
-                "stale",
-                Some(FreshnessWarning::Failed {
-                    error: "target local source code-search refresh dependencies are not available"
-                        .to_string(),
-                }),
-                0,
-                0,
-            ),
-        });
+        return Ok(target_refresh_unavailable_result(identity));
     };
     let project_root = identity.project_root.clone();
     let project_key = identity.project_key.clone();
@@ -159,6 +145,7 @@ async fn refresh_target_local_code_search_index_with_progress(
         embedding_reservations: Some(target.embedding_reservations.clone()),
         vector_reservations: Some(target.vector_reservations.clone()),
     };
+    emit_target_progress_started(progress);
     match index_local_source_with_job(
         input,
         target.jobs.as_ref(),
@@ -169,6 +156,7 @@ async fn refresh_target_local_code_search_index_with_progress(
     .await
     {
         Ok(output) => {
+            emit_target_progress_finished(progress);
             let result = CodeSearchRefreshResult {
                 project_root: project_root.clone(),
                 project_key: project_key.clone(),
@@ -197,21 +185,13 @@ async fn refresh_target_local_code_search_index_with_progress(
                 .await
                 .ok()
                 .flatten();
-            let result = CodeSearchRefreshResult {
-                project_root: project_root.clone(),
-                project_key: project_key.clone(),
-                generation: None,
-                target_source_id: committed_generation.as_ref().map(|_| source_id),
-                target_source_generation: committed_generation,
-                freshness: code_search_freshness(
-                    "stale",
-                    Some(FreshnessWarning::Failed {
-                        error: err.to_string(),
-                    }),
-                    0,
-                    0,
-                ),
-            };
+            let result = target_refresh_failed_result(
+                project_root.clone(),
+                project_key.clone(),
+                Some(source_id),
+                committed_generation,
+                err.to_string(),
+            );
             tracing::warn!(
             project_key,
                 warning = ?result.freshness.warning,
@@ -219,6 +199,56 @@ async fn refresh_target_local_code_search_index_with_progress(
             );
             Ok(result)
         }
+    }
+}
+
+fn target_refresh_unavailable_result(identity: CodeIndexIdentity) -> CodeSearchRefreshResult {
+    target_refresh_failed_result(
+        identity.project_root,
+        identity.project_key,
+        None,
+        None,
+        "target local source code-search refresh dependencies are not available".to_string(),
+    )
+}
+
+fn target_refresh_failed_result(
+    project_root: PathBuf,
+    project_key: String,
+    source_id: Option<SourceId>,
+    committed_generation: Option<SourceGenerationId>,
+    error: String,
+) -> CodeSearchRefreshResult {
+    CodeSearchRefreshResult {
+        project_root,
+        project_key,
+        generation: None,
+        target_source_id: if committed_generation.is_some() {
+            source_id
+        } else {
+            None
+        },
+        target_source_generation: committed_generation,
+        freshness: code_search_freshness("stale", Some(FreshnessWarning::Failed { error }), 0, 0),
+    }
+}
+
+fn emit_target_progress_started(progress: Option<&dyn ReindexProgressSink>) {
+    if let Some(progress) = progress {
+        progress.emit(ReindexProgress::Started {
+            generation: 0,
+            total_files: 0,
+            added_files: 0,
+            modified_files: 0,
+            removed_files: 0,
+            total_batches: 0,
+        });
+    }
+}
+
+fn emit_target_progress_finished(progress: Option<&dyn ReindexProgressSink>) {
+    if let Some(progress) = progress {
+        progress.emit(ReindexProgress::Finished { generation: 0 });
     }
 }
 

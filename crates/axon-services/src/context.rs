@@ -5,7 +5,9 @@ use crate::runtime::{ServiceJobRuntime, resolve_runtime_with_workers};
 use axon_api::source::ProviderId;
 use axon_core::config::Config;
 use axon_embedding::provider::EmbeddingProvider;
-use axon_embedding::reservation::{ProviderReservationConfig, ProviderReservationManager};
+#[cfg(test)]
+use axon_embedding::reservation::ProviderReservationConfig;
+use axon_embedding::reservation::ProviderReservationManager;
 use axon_jobs::backend::JobKind;
 use axon_jobs::boundary::JobStore;
 use axon_ledger::store::LedgerStore;
@@ -33,6 +35,7 @@ pub struct TargetLocalSourceRuntime {
 }
 
 impl TargetLocalSourceRuntime {
+    #[cfg(test)]
     pub fn new(
         jobs: Arc<dyn JobStore>,
         ledger: Arc<dyn LedgerStore>,
@@ -138,6 +141,11 @@ impl ServiceContext {
         self
     }
 
+    /// Inject the target source runtime for PR11 tests.
+    ///
+    /// Production contexts intentionally leave this unset until the target
+    /// Qdrant/vector provider wiring lands in the provider/backend phase.
+    #[cfg(test)]
     pub fn with_target_local_source_runtime(mut self, runtime: TargetLocalSourceRuntime) -> Self {
         self.target_local_source = Some(Arc::new(runtime));
         self

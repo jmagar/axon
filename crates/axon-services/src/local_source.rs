@@ -78,6 +78,7 @@ async fn index_local_source_with_progress(
 ) -> anyhow::Result<LocalSourceIndexOutput> {
     let run = resolve_adapter_run(&input).await?;
 
+    let previous_source = ledger.get_source(run.source_id.clone()).await?;
     ledger.upsert_source(source_summary(&input, &run)).await?;
     let lease = ledger
         .acquire_lease(LeaseRequest {
@@ -101,6 +102,7 @@ async fn index_local_source_with_progress(
         embedding_provider,
         vector_store,
         progress,
+        previous_source,
         run,
     )
     .await;
@@ -124,6 +126,7 @@ async fn index_local_source_with_lease(
     embedding_provider: &dyn EmbeddingProvider,
     vector_store: &dyn VectorStore,
     progress: Option<&dyn LocalSourceProgress>,
+    previous_source: Option<SourceSummary>,
     run: LocalAdapterRun,
 ) -> anyhow::Result<LocalSourceIndexOutput> {
     let mut manifest = discover_manifest(&run).await?;
@@ -133,6 +136,14 @@ async fn index_local_source_with_lease(
     if !manifest_diff_has_changes(&diff)
         && let Some(committed_generation) = diff.previous_generation
     {
+        ledger
+            .upsert_source(unchanged_source_summary(
+                input,
+                &run,
+                previous_source,
+                manifest.items.len() as u64,
+            ))
+            .await?;
         return Ok(LocalSourceIndexOutput {
             job_id: input.job_id,
             source_id: run.source_id,
@@ -217,6 +228,27 @@ async fn index_local_source_with_lease(
         chunks_prepared: vectorized.stats.chunks_prepared,
         vector_points_written: vectorized.stats.points_written,
     })
+}
+
+fn unchanged_source_summary(
+    input: &LocalSourceIndexInput,
+    run: &LocalAdapterRun,
+    previous: Option<SourceSummary>,
+    item_count: u64,
+) -> SourceSummary {
+    if let Some(mut summary) = previous {
+        summary.status = LifecycleStatus::Completed;
+        summary.counts.items_total = item_count;
+        summary.counts.items_changed = 0;
+        summary.updated_at = timestamp();
+        return summary;
+    }
+
+    let mut summary = source_summary(input, run);
+    summary.status = LifecycleStatus::Completed;
+    summary.counts.items_total = item_count;
+    summary.updated_at = timestamp();
+    summary
 }
 
 fn completed_source_summary(
@@ -449,6 +481,12 @@ fn manifest_diff_has_changes(diff: &SourceManifestDiff) -> bool {
         || diff.counts.failed > 0
 }
 
+#[cfg(test)]
+#[path = "local_source_failure_tests.rs"]
+mod failure_tests;
+#[cfg(test)]
+#[path = "local_source_refresh_tests.rs"]
+mod refresh_tests;
 #[cfg(test)]
 #[path = "local_source_tests.rs"]
 mod tests;

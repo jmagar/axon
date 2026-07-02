@@ -15,6 +15,7 @@ use super::local_source_progress::{
 };
 
 const LOCAL_CHANGED_DOCUMENT_BATCH_SIZE: usize = 64;
+const LOCAL_CHANGED_CHUNK_BATCH_SIZE: usize = 512;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub(super) struct VectorizeStats {
@@ -51,20 +52,22 @@ pub(super) async fn vectorize_changed_documents(
     let mut result = VectorizeResult::default();
     for batch_diff in changed_diff_batches(diff, LOCAL_CHANGED_DOCUMENT_BATCH_SIZE) {
         let documents = prepare_changed_documents(run, &batch_diff, generation).await?;
-        let batch_result = vectorize_documents(
-            input,
-            ledger,
-            embedding_provider,
-            vector_store,
-            progress,
-            collection.clone(),
-            documents,
-        )
-        .await?;
-        result.stats.add(batch_result.stats);
-        result
-            .document_statuses
-            .extend(batch_result.document_statuses);
+        for prepared_batch in prepared_document_batches(documents, LOCAL_CHANGED_CHUNK_BATCH_SIZE) {
+            let batch_result = vectorize_documents(
+                input,
+                ledger,
+                embedding_provider,
+                vector_store,
+                progress,
+                collection.clone(),
+                prepared_batch,
+            )
+            .await?;
+            result.stats.add(batch_result.stats);
+            result
+                .document_statuses
+                .extend(batch_result.document_statuses);
+        }
     }
     Ok(result)
 }
@@ -130,6 +133,29 @@ fn push_changed_batch(
     current.counts.added = current.added.len() as u64;
     current.counts.modified = current.modified.len() as u64;
     batches.push(std::mem::replace(current, empty_diff_like(diff)));
+}
+
+fn prepared_document_batches(
+    documents: Vec<PreparedDocument>,
+    max_chunks: usize,
+) -> Vec<Vec<PreparedDocument>> {
+    let max_chunks = max_chunks.max(1);
+    let mut batches = Vec::new();
+    let mut current = Vec::new();
+    let mut current_chunks = 0_usize;
+    for document in documents {
+        let document_chunks = document.chunks.len().max(1);
+        if !current.is_empty() && current_chunks + document_chunks > max_chunks {
+            batches.push(std::mem::take(&mut current));
+            current_chunks = 0;
+        }
+        current_chunks += document_chunks;
+        current.push(document);
+    }
+    if !current.is_empty() {
+        batches.push(current);
+    }
+    batches
 }
 
 fn empty_diff_like(diff: &SourceManifestDiff) -> SourceManifestDiff {
