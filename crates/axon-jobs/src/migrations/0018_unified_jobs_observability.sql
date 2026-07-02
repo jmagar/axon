@@ -114,7 +114,7 @@ CREATE TABLE provider_reservations (
     granted_units INTEGER NOT NULL CHECK (granted_units >= 0),
     acquired_at TEXT,
     expires_at TEXT,
-    status TEXT NOT NULL CHECK (status IN ('queued', 'pending', 'running', 'waiting', 'blocked', 'canceling', 'completed', 'completed_degraded', 'failed', 'canceled', 'expired', 'skipped')),
+    status TEXT NOT NULL CHECK (status IN ('requested', 'queued', 'granted', 'active', 'released', 'expired', 'canceled', 'failed')),
     queue_depth INTEGER CHECK (queue_depth IS NULL OR queue_depth >= 0),
     cooling_json TEXT CHECK (cooling_json IS NULL OR json_valid(cooling_json)),
     updated_at TEXT NOT NULL

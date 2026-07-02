@@ -24,6 +24,7 @@ async fn seed_source(pool: &sqlx::SqlitePool) {
 
 fn create_request() -> JobCreateRequest {
     JobCreateRequest {
+        request_id: Some("req_local".to_string()),
         job_kind: JobKind::Source,
         job_intent: JobIntent::Run,
         source_id: Some(SourceId::new("src_local")),
@@ -39,6 +40,10 @@ fn create_request() -> JobCreateRequest {
             estimated_items: Some(3),
         }],
         request: Some(serde_json::json!({"source": "/tmp/project"})),
+        auth_snapshot: MetadataMap::new(),
+        config_snapshot_id: Some(ConfigSnapshotId::new("cfg_test")),
+        requirements: MetadataMap::new(),
+        result_schema: Some("source_result".to_string()),
         metadata: MetadataMap::new(),
     }
 }
@@ -292,6 +297,11 @@ async fn append_event_requires_monotonic_sequences_and_filters_events() {
         public_events.events[2].details.get("dedupe_duplicate"),
         Some(&serde_json::json!(true))
     );
+    let mut gap_duplicate = progress_event(job.job_id, 99, Visibility::Public);
+    gap_duplicate.event_id = "event-dedupe-gap".to_string();
+    gap_duplicate.dedupe_key = Some("embedding:src/lib.rs".to_string());
+    let gap = store.append_event(gap_duplicate).await.unwrap_err();
+    assert_eq!(gap.code.to_string(), "job_event.sequence_invalid");
 }
 
 #[tokio::test]
@@ -317,7 +327,7 @@ async fn heartbeat_updates_latest_job_summary_and_history() {
             granted_units: 1,
             acquired_at: Some(Timestamp("2026-07-01T11:59:59Z".to_string())),
             expires_at: Some(Timestamp("2026-07-01T12:05:00Z".to_string())),
-            status: LifecycleStatus::Running,
+            status: ProviderReservationStatus::Active,
             queue_depth: Some(3),
             cooling: None,
         }],
@@ -441,6 +451,7 @@ async fn recovery_honors_staleness_cutoff() {
             kind: Some(JobKind::Source),
             older_than_seconds: Some(360),
             dry_run: false,
+            allow_without_cutoff: false,
         })
         .await
         .expect("recover");
@@ -614,6 +625,7 @@ async fn control_operations_cancel_retry_recover_cleanup_and_list_artifacts() {
             kind: Some(JobKind::Source),
             older_than_seconds: None,
             dry_run: false,
+            allow_without_cutoff: true,
         })
         .await
         .expect("recover");
@@ -622,16 +634,68 @@ async fn control_operations_cancel_retry_recover_cleanup_and_list_artifacts() {
     let attempts = store.attempts(running.job_id).await.expect("attempts");
     assert_eq!(attempts[0].status, LifecycleStatus::Failed);
     assert!(attempts[0].finished_at.is_some());
+    let recovered = store
+        .get(running.job_id)
+        .await
+        .expect("get recovered")
+        .expect("recovered job");
+    assert_eq!(recovered.status, LifecycleStatus::Failed);
+    assert_eq!(
+        recovered
+            .heartbeat
+            .as_ref()
+            .map(|heartbeat| heartbeat.status),
+        Some(LifecycleStatus::Failed)
+    );
+    assert!(
+        store
+            .stages(running.job_id)
+            .await
+            .expect("recovered stages")
+            .iter()
+            .all(|stage| stage.status == LifecycleStatus::Failed)
+    );
+    sqlx::query(
+        "INSERT INTO job_artifacts (
+            artifact_id, job_id, artifact_kind, uri, size_bytes, content_hash, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind("artifact-recovered-job")
+    .bind(running.job_id.0.to_string())
+    .bind("report")
+    .bind("file:///home/jmagar/.axon/artifacts/private/recovered.json")
+    .bind(64_i64)
+    .bind("sha256:def")
+    .bind("2026-07-01T12:31:00Z")
+    .execute(&store.pool)
+    .await
+    .expect("insert recovered artifact");
 
     let cleanup = store
         .cleanup(JobCleanupRequest {
             older_than_seconds: None,
             dry_run: false,
+            confirm_all_terminal: true,
         })
         .await
         .expect("cleanup");
-    assert_eq!(cleanup.jobs_pruned, 3);
+    assert_eq!(cleanup.jobs_pruned, 2);
     assert_eq!(cleanup.artifacts_pruned, 1);
+    for table in [
+        "job_events",
+        "job_heartbeats",
+        "job_attempts",
+        "job_stages",
+        "job_artifacts",
+    ] {
+        let sql = format!("SELECT COUNT(*) FROM {table} WHERE job_id = ?");
+        let remaining = sqlx::query_scalar::<_, i64>(&sql)
+            .bind(running.job_id.0.to_string())
+            .fetch_one(&store.pool)
+            .await
+            .expect("count child rows");
+        assert_eq!(remaining, 0, "{table} rows should be pruned");
+    }
 }
 
 fn progress_event(job_id: JobId, sequence: u64, visibility: Visibility) -> SourceProgressEvent {

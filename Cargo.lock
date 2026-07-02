@@ -821,6 +821,7 @@ dependencies = [
  "axon-api",
  "axon-error",
  "chrono",
+ "serde_json",
  "tokio",
  "uuid",
 ]

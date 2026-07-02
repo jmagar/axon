@@ -61,6 +61,7 @@ impl JobStore for FakeJobWatchStore {
         }
         state.next_job += 1;
         let job_id = JobId::new(Uuid::from_u128(state.next_job));
+        let root_job_id = request.root_job_id.unwrap_or(job_id);
         let created_at = state.timestamp();
         let summary = JobSummary {
             job_id,
@@ -75,7 +76,7 @@ impl JobStore for FakeJobWatchStore {
             source_id: request.source_id.clone(),
             watch_id: request.watch_id.clone(),
             parent_job_id: request.parent_job_id,
-            root_job_id: request.root_job_id,
+            root_job_id: Some(root_job_id),
             attempt: 0,
             priority: request.priority,
             counts: None,
@@ -318,6 +319,16 @@ impl JobStore for FakeJobWatchStore {
         if target == LifecycleStatus::Canceled {
             job.finished_at = Some(updated_at.clone());
         }
+        if target == LifecycleStatus::Canceled
+            && let Some(stages) = state.stages.get_mut(&job_id)
+        {
+            for stage in stages {
+                if !is_terminal_status(stage.status) {
+                    stage.status = LifecycleStatus::Canceled;
+                    stage.completed_at = Some(updated_at.clone());
+                }
+            }
+        }
         Ok(JobCancelResult {
             job_id,
             status: target,
@@ -326,46 +337,19 @@ impl JobStore for FakeJobWatchStore {
         })
     }
 
-    async fn retry(&self, job_id: JobId, _request: JobRetryRequest) -> Result<JobRetryResult> {
-        let original = JobStore::get(self, job_id)
-            .await?
-            .ok_or_else(|| missing_job(job_id))?;
-        let attempt = original.attempt + 1;
-        let retry = JobStore::create(
-            self,
-            JobCreateRequest {
-                job_kind: original.kind,
-                job_intent: JobIntent::Retry,
-                source_id: original.source_id,
-                watch_id: original.watch_id,
-                parent_job_id: Some(job_id),
-                root_job_id: Some(original.root_job_id.unwrap_or(job_id)),
-                priority: original.priority,
-                idempotency_key: None,
-                stage_plan: self
-                    .stages(job_id)
-                    .await?
-                    .into_iter()
-                    .map(|stage| JobStagePlan {
-                        phase: stage.phase,
-                        required: stage.required,
-                        provider_requirements: stage.provider_requirements,
-                        estimated_items: stage.counts.items_total,
-                    })
-                    .collect(),
-                request: None,
-                metadata: MetadataMap::new(),
-            },
-        )
-        .await?;
-        Ok(JobRetryResult {
-            original_job_id: job_id,
-            retry_job: retry,
-            attempt,
-        })
+    async fn retry(&self, job_id: JobId, request: JobRetryRequest) -> Result<JobRetryResult> {
+        let mut state = self.state.lock().await;
+        retry_locked(&mut state, job_id, request)
     }
 
     async fn recover(&self, request: JobRecoveryRequest) -> Result<JobRecoveryResult> {
+        if request.older_than_seconds.is_none() && !request.allow_without_cutoff {
+            return Err(ApiError::new(
+                "job_recovery.cutoff_required",
+                ErrorStage::Planning,
+                "recovery requires older_than_seconds unless allow_without_cutoff is explicit",
+            ));
+        }
         let mut state = self.state.lock().await;
         let now = state.timestamp();
         let mut scanned = 0;
@@ -427,11 +411,21 @@ impl JobStore for FakeJobWatchStore {
     }
 
     async fn cleanup(&self, request: JobCleanupRequest) -> Result<JobCleanupResult> {
+        if request.older_than_seconds.is_none() && !request.confirm_all_terminal {
+            return Err(ApiError::new(
+                "job_cleanup.cutoff_required",
+                ErrorStage::Planning,
+                "cleanup requires older_than_seconds unless confirm_all_terminal is explicit",
+            ));
+        }
         let mut state = self.state.lock().await;
+        let now = state.timestamp();
         let terminal_ids = state
             .jobs
             .iter()
-            .filter_map(|(job_id, job)| is_terminal_status(job.status).then_some(*job_id))
+            .filter_map(|(job_id, job)| {
+                terminal_cleanup_eligible(job, &now, request.older_than_seconds).then_some(*job_id)
+            })
             .collect::<Vec<_>>();
         let events_pruned = terminal_ids
             .iter()

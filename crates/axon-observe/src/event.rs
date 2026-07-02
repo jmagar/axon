@@ -8,6 +8,7 @@ use axon_api::source::{
     Visibility,
 };
 use chrono::Utc;
+use uuid::Uuid;
 
 pub fn stage_started(
     job_id: JobId,
@@ -131,8 +132,8 @@ fn base_event(
 ) -> axon_api::source::SourceProgressEvent {
     let now = Timestamp::from(Utc::now());
     axon_api::source::SourceProgressEvent {
-        event_id: "evt_pending".to_string(),
-        sequence: 0,
+        event_id: format!("evt_{}", Uuid::new_v4()),
+        sequence: 1,
         job_id,
         attempt: 1,
         stage_id: None,
@@ -191,5 +192,8 @@ fn zero_counts() -> StageCounts {
 }
 
 fn provider_key(provider_kind: ProviderKind) -> String {
-    format!("{provider_kind:?}").to_ascii_lowercase()
+    serde_json::to_value(provider_kind)
+        .ok()
+        .and_then(|value| value.as_str().map(ToOwned::to_owned))
+        .unwrap_or_else(|| format!("{provider_kind:?}").to_ascii_lowercase())
 }

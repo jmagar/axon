@@ -5,8 +5,8 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use axon_api::source::{
-    ApiError, HealthStatus, JobId, JobPriority, LifecycleStatus, ProviderCoolingSnapshot,
-    ProviderId, ProviderKind, ProviderReservationSnapshot, ReservationId, ReservationState,
+    ApiError, HealthStatus, JobId, JobPriority, ProviderCoolingSnapshot, ProviderId, ProviderKind,
+    ProviderReservationSnapshot, ProviderReservationStatus, ReservationId, ReservationState,
     ReservationStateSnapshot, StageId, Timestamp,
 };
 use axon_error::ErrorStage;
@@ -37,6 +37,7 @@ struct ReservationStateInner {
     active_by_priority: BTreeMap<String, u32>,
     consecutive_failures: u32,
     health: HealthStatus,
+    cooldown_started_at: Option<Timestamp>,
     cooldown_until: Option<Timestamp>,
     cooldown_deadline: Option<DateTime<Utc>>,
     last_error_code: Option<String>,
@@ -84,6 +85,7 @@ impl ProviderReservationManager {
                 active_by_priority: BTreeMap::new(),
                 consecutive_failures: 0,
                 health: HealthStatus::Healthy,
+                cooldown_started_at: None,
                 cooldown_until: None,
                 cooldown_deadline: None,
                 last_error_code: None,
@@ -223,6 +225,7 @@ impl ProviderReservationManager {
         state.last_error_code = Some(code.into());
         if !retryable {
             state.health = HealthStatus::Unavailable;
+            state.cooldown_started_at = None;
             state.cooldown_until = None;
             state.cooldown_deadline = None;
             return ProviderReservationOutcome::Recorded;
@@ -231,7 +234,11 @@ impl ProviderReservationManager {
         state.consecutive_failures += 1;
         if state.consecutive_failures >= state.config.cooldown_after_failures {
             state.health = HealthStatus::Cooling;
-            let deadline = Utc::now() + Duration::seconds(state.config.cooldown_secs as i64);
+            let now = Utc::now();
+            if state.cooldown_started_at.is_none() {
+                state.cooldown_started_at = Some(Timestamp::from(now));
+            }
+            let deadline = now + Duration::seconds(state.config.cooldown_secs as i64);
             state.cooldown_until = Some(Timestamp::from(deadline));
             state.cooldown_deadline = Some(deadline);
             ProviderReservationOutcome::Cooling
@@ -245,6 +252,7 @@ impl ProviderReservationManager {
         let mut state = self.state.lock().expect("reservation state mutex poisoned");
         state.consecutive_failures = 0;
         state.health = HealthStatus::Healthy;
+        state.cooldown_started_at = None;
         state.cooldown_until = None;
         state.cooldown_deadline = None;
         state.last_error_code = None;
@@ -273,7 +281,10 @@ impl ProviderReservationManager {
                 .last_error_code
                 .clone()
                 .unwrap_or_else(|| "provider.cooling".to_string()),
-            started_at: Timestamp::from(Utc::now()),
+            started_at: state
+                .cooldown_started_at
+                .clone()
+                .unwrap_or_else(|| Timestamp::from(Utc::now())),
             retry_after: state.cooldown_until.clone(),
             degraded: true,
         })
@@ -315,7 +326,7 @@ impl ProviderReservation {
             granted_units: self.granted_units,
             acquired_at: Some(self.acquired_at.clone()),
             expires_at: self.expires_at.clone(),
-            status: LifecycleStatus::Running,
+            status: ProviderReservationStatus::Active,
             queue_depth: None,
             cooling: None,
         }
@@ -348,6 +359,7 @@ impl ReservationStateInner {
         {
             self.consecutive_failures = 0;
             self.health = HealthStatus::Degraded;
+            self.cooldown_started_at = None;
             self.cooldown_until = None;
             self.cooldown_deadline = None;
         }

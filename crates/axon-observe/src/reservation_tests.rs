@@ -1,6 +1,6 @@
 use axon_api::source::{
     HealthStatus, JobId, JobPriority, LifecycleStatus, PipelinePhase, ProviderId, ProviderKind,
-    ReservationState, StageId,
+    ProviderReservationStatus, ReservationState, StageId,
 };
 use axon_error::ErrorStage;
 use chrono::DateTime;
@@ -231,7 +231,7 @@ async fn job_aware_reservation_snapshot_carries_observable_context() {
     assert_eq!(snapshot.granted_units, 1);
     assert!(snapshot.acquired_at.is_some());
     assert!(snapshot.expires_at.is_some());
-    assert_eq!(snapshot.status, LifecycleStatus::Running);
+    assert_eq!(snapshot.status, ProviderReservationStatus::Active);
     assert_eq!(reservation.job_id(), Some(job_id));
     assert_eq!(reservation.stage_id(), Some(stage_id));
 }
@@ -291,11 +291,23 @@ async fn cooldown_snapshot_is_heartbeat_ready() {
         granted_units: 0,
         acquired_at: None,
         expires_at: None,
-        status: LifecycleStatus::Waiting,
+        status: ProviderReservationStatus::Queued,
         queue_depth: Some(1),
         cooling: Some(snapshot),
     }]);
 
     assert_eq!(heartbeat.provider_reservations.len(), 1);
     assert!(heartbeat.provider_reservations[0].cooling.is_some());
+}
+
+#[tokio::test]
+async fn cooldown_snapshot_keeps_original_started_at() {
+    let manager = manager();
+    manager.record_failure("provider.timeout", true).await;
+    manager.record_failure("provider.timeout", true).await;
+
+    let first = manager.cooling_snapshot().await.expect("cooling snapshot");
+    let second = manager.cooling_snapshot().await.expect("cooling snapshot");
+
+    assert_eq!(first.started_at, second.started_at);
 }

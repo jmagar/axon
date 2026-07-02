@@ -313,15 +313,6 @@ pub(crate) fn sql_error(error: sqlx::Error) -> ApiError {
     )
 }
 
-pub(crate) fn is_sqlite_unique_violation(error: &sqlx::Error) -> bool {
-    matches!(
-        error,
-        sqlx::Error::Database(database_error)
-            if database_error.code().as_deref() == Some("2067")
-                || database_error.message().contains("UNIQUE constraint failed")
-    )
-}
-
 fn parse_optional_enum<T: serde::de::DeserializeOwned>(value: Option<String>) -> Result<Option<T>> {
     value.map(parse_enum).transpose()
 }

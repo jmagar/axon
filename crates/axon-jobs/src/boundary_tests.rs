@@ -103,18 +103,26 @@ async fn fake_job_store_rejects_unknown_jobs_and_terminal_restarts() {
 #[tokio::test]
 async fn fake_job_store_allows_declared_state_machine_edges() {
     for (from, to) in [
-        (LifecycleStatus::Queued, LifecycleStatus::Pending),
+        (LifecycleStatus::Queued, LifecycleStatus::Blocked),
         (LifecycleStatus::Queued, LifecycleStatus::Running),
-        (LifecycleStatus::Pending, LifecycleStatus::Running),
+        (LifecycleStatus::Queued, LifecycleStatus::Canceling),
+        (LifecycleStatus::Queued, LifecycleStatus::Expired),
+        (LifecycleStatus::Blocked, LifecycleStatus::Queued),
+        (LifecycleStatus::Blocked, LifecycleStatus::Running),
+        (LifecycleStatus::Blocked, LifecycleStatus::Canceling),
+        (LifecycleStatus::Blocked, LifecycleStatus::Failed),
+        (LifecycleStatus::Blocked, LifecycleStatus::Expired),
         (LifecycleStatus::Running, LifecycleStatus::Waiting),
         (LifecycleStatus::Waiting, LifecycleStatus::Running),
         (LifecycleStatus::Running, LifecycleStatus::Canceling),
         (LifecycleStatus::Canceling, LifecycleStatus::Canceled),
+        (LifecycleStatus::Canceling, LifecycleStatus::Failed),
         (LifecycleStatus::Running, LifecycleStatus::Completed),
         (LifecycleStatus::Running, LifecycleStatus::CompletedDegraded),
         (LifecycleStatus::Running, LifecycleStatus::Failed),
-        (LifecycleStatus::Pending, LifecycleStatus::Expired),
-        (LifecycleStatus::Queued, LifecycleStatus::Skipped),
+        (LifecycleStatus::Waiting, LifecycleStatus::Canceling),
+        (LifecycleStatus::Waiting, LifecycleStatus::Failed),
+        (LifecycleStatus::Waiting, LifecycleStatus::Expired),
     ] {
         let store = FakeJobWatchStore::new();
         let job = JobStore::create(&store, job_create()).await.unwrap();
@@ -432,6 +440,7 @@ async fn fake_job_store_recovery_honors_staleness_cutoff() {
             kind: Some(JobKind::Source),
             older_than_seconds: Some(360),
             dry_run: false,
+            allow_without_cutoff: false,
         },
     )
     .await
@@ -523,6 +532,7 @@ async fn fake_job_store_controls_cancel_retry_recover_cleanup_and_artifacts() {
             kind: Some(JobKind::Source),
             older_than_seconds: None,
             dry_run: false,
+            allow_without_cutoff: true,
         },
     )
     .await
@@ -549,11 +559,12 @@ async fn fake_job_store_controls_cancel_retry_recover_cleanup_and_artifacts() {
         JobCleanupRequest {
             older_than_seconds: None,
             dry_run: false,
+            confirm_all_terminal: true,
         },
     )
     .await
     .unwrap();
-    assert_eq!(cleanup.jobs_pruned, 2);
+    assert_eq!(cleanup.jobs_pruned, 1);
 }
 
 fn empty_counts() -> StageCounts {
@@ -595,7 +606,7 @@ fn status_update(job_id: JobId, status: LifecycleStatus) -> JobStatusUpdate {
 async fn drive_job_to(store: &FakeJobWatchStore, job_id: JobId, status: LifecycleStatus) {
     let steps: &[LifecycleStatus] = match status {
         LifecycleStatus::Queued => &[],
-        LifecycleStatus::Pending => &[LifecycleStatus::Pending],
+        LifecycleStatus::Pending => &[LifecycleStatus::Running, LifecycleStatus::Waiting],
         LifecycleStatus::Running => &[LifecycleStatus::Running],
         LifecycleStatus::Waiting => &[LifecycleStatus::Running, LifecycleStatus::Waiting],
         LifecycleStatus::Canceling => &[LifecycleStatus::Running, LifecycleStatus::Canceling],
@@ -609,9 +620,9 @@ async fn drive_job_to(store: &FakeJobWatchStore, job_id: JobId, status: Lifecycl
             &[LifecycleStatus::Running, LifecycleStatus::CompletedDegraded]
         }
         LifecycleStatus::Failed => &[LifecycleStatus::Running, LifecycleStatus::Failed],
-        LifecycleStatus::Expired => &[LifecycleStatus::Pending, LifecycleStatus::Expired],
-        LifecycleStatus::Skipped => &[LifecycleStatus::Skipped],
-        LifecycleStatus::Blocked => &[LifecycleStatus::Running, LifecycleStatus::Blocked],
+        LifecycleStatus::Expired => &[LifecycleStatus::Queued, LifecycleStatus::Expired],
+        LifecycleStatus::Skipped => &[LifecycleStatus::Running, LifecycleStatus::Completed],
+        LifecycleStatus::Blocked => &[LifecycleStatus::Blocked],
     };
 
     for step in steps {
@@ -655,6 +666,7 @@ fn progress_event(job_id: JobId, sequence: u64) -> SourceProgressEvent {
 
 fn job_create() -> JobCreateRequest {
     JobCreateRequest {
+        request_id: Some("req_fake".to_string()),
         job_kind: JobKind::Source,
         job_intent: JobIntent::Run,
         source_id: None,
@@ -665,6 +677,10 @@ fn job_create() -> JobCreateRequest {
         idempotency_key: None,
         stage_plan: Vec::new(),
         request: None,
+        auth_snapshot: MetadataMap::new(),
+        config_snapshot_id: Some(ConfigSnapshotId::new("cfg_test")),
+        requirements: MetadataMap::new(),
+        result_schema: Some("source_result".to_string()),
         metadata: MetadataMap::new(),
     }
 }

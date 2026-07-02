@@ -1,5 +1,8 @@
 use axon_api::source::*;
 use sqlx::Row;
+use sqlx::Sqlite;
+use sqlx::query::Query;
+use sqlx::sqlite::SqliteArguments;
 use uuid::Uuid;
 
 use super::SqliteUnifiedJobStore;
@@ -17,6 +20,7 @@ impl SqliteUnifiedJobStore {
         }
 
         let job_id = JobId::new(Uuid::new_v4());
+        let root_job_id = request.root_job_id.unwrap_or(job_id);
         let now = now_timestamp();
         let request_json = request.request.clone();
         let mut tx = self.pool.begin().await.map_err(sql_error)?;
@@ -36,7 +40,7 @@ impl SqliteUnifiedJobStore {
         .bind(request.source_id.as_ref().map(|id| id.0.as_str()))
         .bind(request.watch_id.as_ref().map(|id| id.0.as_str()))
         .bind(request.parent_job_id.map(|id| id.0.to_string()))
-        .bind(request.root_job_id.map(|id| id.0.to_string()))
+        .bind(root_job_id.0.to_string())
         .bind(to_json(&Vec::<SourceWarning>::new())?)
         .bind(optional_to_json(&request_json)?)
         .bind(to_json(&request.metadata)?)
@@ -108,9 +112,10 @@ impl SqliteUnifiedJobStore {
         let current = parse_enum::<LifecycleStatus>(row.get::<String, _>("status"))?;
         validate_transition(status.job_id, current, status.status)?;
         let now = now_timestamp();
-        let started_at = (row.get::<Option<String>, _>("started_at").is_none()
+        let job_started_at = (row.get::<Option<String>, _>("started_at").is_none()
             && status.status == LifecycleStatus::Running)
             .then(|| now.0.clone());
+        let stage_started_at = (status.status == LifecycleStatus::Running).then(|| now.0.clone());
         let finished_at = is_terminal(status.status).then(|| now.0.clone());
 
         sqlx::query(
@@ -127,7 +132,7 @@ impl SqliteUnifiedJobStore {
         .bind(optional_to_json(&status.current)?)
         .bind(optional_to_json(&status.error)?)
         .bind(now.0.as_str())
-        .bind(started_at.as_deref())
+        .bind(job_started_at.as_deref())
         .bind(finished_at.as_deref())
         .bind(status.job_id.0.to_string())
         .execute(&mut *tx)
@@ -135,7 +140,7 @@ impl SqliteUnifiedJobStore {
         .map_err(sql_error)?;
 
         if let Some(stage_id) = status.stage_id {
-            self.update_stage_status(&mut tx, &status, stage_id, &started_at, &finished_at)
+            self.update_stage_status(&mut tx, &status, stage_id, &stage_started_at, &finished_at)
                 .await?;
         }
         tx.commit().await.map_err(sql_error)
@@ -143,7 +148,7 @@ impl SqliteUnifiedJobStore {
 
     async fn update_stage_status(
         &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+        tx: &mut sqlx::Transaction<'_, Sqlite>,
         status: &JobStatusUpdate,
         stage_id: StageId,
         started_at: &Option<String>,
@@ -192,15 +197,15 @@ impl SqliteUnifiedJobStore {
         let expected = max_sequence + 1;
         if event.sequence != expected {
             if let Some(dedupe_key) = event.dedupe_key.as_deref() {
-                let duplicate = sqlx::query_scalar::<_, i64>(
-                    "SELECT COUNT(*) FROM job_events WHERE job_id = ? AND dedupe_key = ?",
+                let duplicate_sequence = sqlx::query_scalar::<_, Option<i64>>(
+                    "SELECT sequence FROM job_events WHERE job_id = ? AND dedupe_key = ?",
                 )
                 .bind(event.job_id.0.to_string())
                 .bind(dedupe_key)
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(sql_error)?;
-                if duplicate > 0 {
+                if duplicate_sequence == Some(event.sequence as i64) {
                     tx.commit().await.map_err(sql_error)?;
                     return Ok(());
                 }
@@ -256,10 +261,6 @@ impl SqliteUnifiedJobStore {
         .execute(&mut *tx)
         .await;
         if let Err(error) = result {
-            if is_sqlite_unique_violation(&error) && event.dedupe_key.is_some() {
-                tx.commit().await.map_err(sql_error)?;
-                return Ok(());
-            }
             return Err(sql_error(error));
         }
         tx.commit().await.map_err(sql_error)
@@ -274,16 +275,20 @@ impl SqliteUnifiedJobStore {
             ));
         }
         let mut sql = "SELECT * FROM jobs WHERE 1 = 1".to_string();
-        append_job_filters(&mut sql, &request)?;
+        let bindings = append_job_filters(&mut sql, &request)?;
         let total_sql = sql.replacen("SELECT *", "SELECT COUNT(*)", 1);
-        let total = sqlx::query_scalar::<_, i64>(&total_sql)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(sql_error)? as u64;
+        let mut total_query = sqlx::query_scalar::<_, i64>(&total_sql);
+        if let Some(source_id) = bindings.source_id.as_deref() {
+            total_query = total_query.bind(source_id);
+        }
+        if let Some(watch_id) = bindings.watch_id.as_deref() {
+            total_query = total_query.bind(watch_id);
+        }
+        let total = total_query.fetch_one(&self.pool).await.map_err(sql_error)? as u64;
         let limit = clamp_page_limit(request.limit);
         sql.push_str(" ORDER BY created_at DESC LIMIT ");
         sql.push_str(&limit.to_string());
-        let rows = sqlx::query(&sql)
+        let rows = bind_job_filters(sqlx::query(&sql), &bindings)
             .fetch_all(&self.pool)
             .await
             .map_err(sql_error)?;
@@ -344,7 +349,12 @@ impl SqliteUnifiedJobStore {
     }
 }
 
-fn append_job_filters(sql: &mut String, request: &JobListRequest) -> Result<()> {
+struct JobFilterBindings {
+    source_id: Option<String>,
+    watch_id: Option<String>,
+}
+
+fn append_job_filters(sql: &mut String, request: &JobListRequest) -> Result<JobFilterBindings> {
     if let Some(status) = request.status {
         sql.push_str(&format!(" AND status = '{}'", enum_name(status)?));
     }
@@ -352,12 +362,41 @@ fn append_job_filters(sql: &mut String, request: &JobListRequest) -> Result<()> 
         sql.push_str(&format!(" AND kind = '{}'", enum_name(kind)?));
     }
     if let Some(source_id) = &request.source_id {
-        sql.push_str(&format!(" AND source_id = '{}'", escape_sql(&source_id.0)));
+        sql.push_str(" AND source_id = ?");
+        let source_id = Some(source_id.0.clone());
+        let watch_id = request.watch_id.as_ref().map(|watch_id| watch_id.0.clone());
+        if watch_id.is_some() {
+            sql.push_str(" AND watch_id = ?");
+        }
+        return Ok(JobFilterBindings {
+            source_id,
+            watch_id,
+        });
     }
     if let Some(watch_id) = &request.watch_id {
-        sql.push_str(&format!(" AND watch_id = '{}'", escape_sql(&watch_id.0)));
+        sql.push_str(" AND watch_id = ?");
+        return Ok(JobFilterBindings {
+            source_id: None,
+            watch_id: Some(watch_id.0.clone()),
+        });
     }
-    Ok(())
+    Ok(JobFilterBindings {
+        source_id: None,
+        watch_id: None,
+    })
+}
+
+fn bind_job_filters<'q>(
+    mut query: Query<'q, Sqlite, SqliteArguments<'q>>,
+    bindings: &'q JobFilterBindings,
+) -> Query<'q, Sqlite, SqliteArguments<'q>> {
+    if let Some(source_id) = bindings.source_id.as_deref() {
+        query = query.bind(source_id);
+    }
+    if let Some(watch_id) = bindings.watch_id.as_deref() {
+        query = query.bind(watch_id);
+    }
+    query
 }
 
 fn append_event_filters(sql: &mut String, request: &JobEventListRequest) -> Result<()> {

@@ -2675,6 +2675,10 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "properties": {
+        "confirm_all_terminal": {
+          "default": false,
+          "type": "boolean"
+        },
         "dry_run": {
           "default": false,
           "type": "boolean"
@@ -2729,6 +2733,20 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "properties": {
+        "auth_snapshot": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "config_snapshot_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JobCreateRequest_ConfigSnapshotId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "idempotency_key": {
           "type": [
             "string",
@@ -2759,6 +2777,22 @@
           "$ref": "#/$defs/JobCreateRequest_JobPriority"
         },
         "request": true,
+        "request_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "requirements": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "result_schema": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "root_job_id": {
           "anyOf": [
             {
@@ -2805,6 +2839,9 @@
       ],
       "title": "JobCreateRequest",
       "type": "object"
+    },
+    "JobCreateRequest_ConfigSnapshotId": {
+      "type": "string"
     },
     "JobCreateRequest_JobId": {
       "format": "uuid",
@@ -3770,7 +3807,7 @@
           "$ref": "#/$defs/JobHeartbeat_ReservationId"
         },
         "status": {
-          "$ref": "#/$defs/JobHeartbeat_LifecycleStatus"
+          "$ref": "#/$defs/JobHeartbeat_ProviderReservationStatus"
         }
       },
       "required": [
@@ -3782,6 +3819,19 @@
         "status"
       ],
       "type": "object"
+    },
+    "JobHeartbeat_ProviderReservationStatus": {
+      "enum": [
+        "requested",
+        "queued",
+        "granted",
+        "active",
+        "released",
+        "expired",
+        "canceled",
+        "failed"
+      ],
+      "type": "string"
     },
     "JobHeartbeat_ReservationId": {
       "type": "string"
@@ -3858,6 +3908,10 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "properties": {
+        "allow_without_cutoff": {
+          "default": false,
+          "type": "boolean"
+        },
         "dry_run": {
           "default": false,
           "type": "boolean"
@@ -4014,8 +4068,7 @@
         }
       },
       "required": [
-        "mode",
-        "overrides"
+        "mode"
       ],
       "title": "JobRetryRequest",
       "type": "object"
@@ -5494,7 +5547,7 @@
           "$ref": "#/$defs/JobSummary_ReservationId"
         },
         "status": {
-          "$ref": "#/$defs/JobSummary_LifecycleStatus"
+          "$ref": "#/$defs/JobSummary_ProviderReservationStatus"
         }
       },
       "required": [
@@ -5506,6 +5559,19 @@
         "status"
       ],
       "type": "object"
+    },
+    "JobSummary_ProviderReservationStatus": {
+      "enum": [
+        "requested",
+        "queued",
+        "granted",
+        "active",
+        "released",
+        "expired",
+        "canceled",
+        "failed"
+      ],
+      "type": "string"
     },
     "JobSummary_ReservationId": {
       "type": "string"
@@ -8832,7 +8898,7 @@
           "$ref": "#/$defs/SourceJobStatus_ReservationId"
         },
         "status": {
-          "$ref": "#/$defs/SourceJobStatus_LifecycleStatus"
+          "$ref": "#/$defs/SourceJobStatus_ProviderReservationStatus"
         }
       },
       "required": [
@@ -8844,6 +8910,19 @@
         "status"
       ],
       "type": "object"
+    },
+    "SourceJobStatus_ProviderReservationStatus": {
+      "enum": [
+        "requested",
+        "queued",
+        "granted",
+        "active",
+        "released",
+        "expired",
+        "canceled",
+        "failed"
+      ],
+      "type": "string"
     },
     "SourceJobStatus_ReservationId": {
       "type": "string"
@@ -11536,7 +11615,7 @@
         "path": "crates/axon-api/src/source/document.rs"
       },
       {
-        "checksum": "sha256:a57944efd5735cde149764b86415cf9b377947f6db6b3a73f7b83384cf230900",
+        "checksum": "sha256:df43510afe7111d878590106099ba4932dc75ee71a5cd3c90695e6eefff2bc7c",
         "kind": "rust_module",
         "path": "crates/axon-api/src/source/enums.rs"
       },
@@ -11551,7 +11630,7 @@
         "path": "crates/axon-api/src/source/ids.rs"
       },
       {
-        "checksum": "sha256:7c683415fb041f9d601c331790fc98c7c0d61dc7f5b8cf0c6723396c2bbf96af",
+        "checksum": "sha256:e9e6705e67f29dda9e16618738749c791ea41c2baccec1e302f4bf28f552bed5",
         "kind": "rust_module",
         "path": "crates/axon-api/src/source/job.rs"
       },

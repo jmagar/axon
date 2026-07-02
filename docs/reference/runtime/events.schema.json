@@ -580,7 +580,7 @@
           "$ref": "#/$defs/JobHeartbeat_ReservationId"
         },
         "status": {
-          "$ref": "#/$defs/JobHeartbeat_LifecycleStatus"
+          "$ref": "#/$defs/JobHeartbeat_ProviderReservationStatus"
         }
       },
       "required": [
@@ -592,6 +592,19 @@
         "status"
       ],
       "type": "object"
+    },
+    "JobHeartbeat_ProviderReservationStatus": {
+      "enum": [
+        "requested",
+        "queued",
+        "granted",
+        "active",
+        "released",
+        "expired",
+        "canceled",
+        "failed"
+      ],
+      "type": "string"
     },
     "JobHeartbeat_ReservationId": {
       "type": "string"
@@ -1902,7 +1915,7 @@
     ],
     "source_inputs": [
       {
-        "checksum": "sha256:5c1a533c84013aa51f2d5a12d569bbc131a34b24a1656fc048d61cd72777a000",
+        "checksum": "sha256:d032d82758e6d061d6497a82f2bc488b1d47c220ca464778336fc85510aa110d",
         "kind": "rust_directory",
         "path": "crates/axon-observe/src"
       },

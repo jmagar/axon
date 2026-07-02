@@ -5,6 +5,7 @@ use super::*;
 
 fn request() -> JobCreateRequest {
     JobCreateRequest {
+        request_id: Some("req_docs".to_string()),
         job_kind: JobKind::Source,
         job_intent: JobIntent::Run,
         source_id: Some(SourceId::new("src_docs")),
@@ -15,6 +16,10 @@ fn request() -> JobCreateRequest {
         idempotency_key: None,
         stage_plan: Vec::new(),
         request: Some(serde_json::json!({"source": "https://example.com/docs"})),
+        auth_snapshot: MetadataMap::new(),
+        config_snapshot_id: Some(ConfigSnapshotId::new("cfg_test")),
+        requirements: MetadataMap::new(),
+        result_schema: Some("source_result".to_string()),
         metadata: MetadataMap::new(),
     }
 }
@@ -173,6 +178,7 @@ async fn target_source_job_services_delegate_to_job_store() {
             kind: Some(JobKind::Source),
             older_than_seconds: None,
             dry_run: false,
+            allow_without_cutoff: true,
         },
     )
     .await
@@ -184,11 +190,12 @@ async fn target_source_job_services_delegate_to_job_store() {
         JobCleanupRequest {
             older_than_seconds: None,
             dry_run: true,
+            confirm_all_terminal: true,
         },
     )
     .await
     .expect("cleanup");
-    assert_eq!(cleanup.jobs_pruned, 1);
+    assert_eq!(cleanup.jobs_pruned, 0);
 }
 
 fn empty_counts() -> StageCounts {

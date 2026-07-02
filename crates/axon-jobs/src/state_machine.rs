@@ -11,15 +11,19 @@ pub(crate) fn validate_transition(
 
     let allowed = matches!(
         (from, to),
-        (LifecycleStatus::Queued, LifecycleStatus::Pending)
+        (LifecycleStatus::Queued, LifecycleStatus::Blocked)
             | (LifecycleStatus::Queued, LifecycleStatus::Running)
             | (LifecycleStatus::Queued, LifecycleStatus::Canceling)
-            | (LifecycleStatus::Queued, LifecycleStatus::Canceled)
-            | (LifecycleStatus::Queued, LifecycleStatus::Skipped)
+            | (LifecycleStatus::Queued, LifecycleStatus::Expired)
+            | (LifecycleStatus::Pending, LifecycleStatus::Queued)
             | (LifecycleStatus::Pending, LifecycleStatus::Running)
             | (LifecycleStatus::Pending, LifecycleStatus::Canceling)
-            | (LifecycleStatus::Pending, LifecycleStatus::Canceled)
             | (LifecycleStatus::Pending, LifecycleStatus::Expired)
+            | (LifecycleStatus::Blocked, LifecycleStatus::Queued)
+            | (LifecycleStatus::Blocked, LifecycleStatus::Running)
+            | (LifecycleStatus::Blocked, LifecycleStatus::Canceling)
+            | (LifecycleStatus::Blocked, LifecycleStatus::Failed)
+            | (LifecycleStatus::Blocked, LifecycleStatus::Expired)
             | (LifecycleStatus::Running, LifecycleStatus::Waiting)
             | (LifecycleStatus::Running, LifecycleStatus::Canceling)
             | (LifecycleStatus::Running, LifecycleStatus::Completed)
@@ -27,10 +31,10 @@ pub(crate) fn validate_transition(
             | (LifecycleStatus::Running, LifecycleStatus::Failed)
             | (LifecycleStatus::Waiting, LifecycleStatus::Running)
             | (LifecycleStatus::Waiting, LifecycleStatus::Canceling)
-            | (LifecycleStatus::Waiting, LifecycleStatus::Canceled)
             | (LifecycleStatus::Waiting, LifecycleStatus::Failed)
-            | (LifecycleStatus::Running, LifecycleStatus::Canceled)
+            | (LifecycleStatus::Waiting, LifecycleStatus::Expired)
             | (LifecycleStatus::Canceling, LifecycleStatus::Canceled)
+            | (LifecycleStatus::Canceling, LifecycleStatus::Failed)
     );
 
     if allowed {

@@ -129,7 +129,7 @@ fn target_job_management_dtos_round_trip() {
             granted_units: 4,
             acquired_at: Some(created_at.clone()),
             expires_at: Some(created_at.clone()),
-            status: LifecycleStatus::Running,
+            status: ProviderReservationStatus::Active,
             queue_depth: Some(3),
             cooling: Some(ProviderCoolingSnapshot {
                 reason: "provider overloaded".to_string(),
@@ -178,6 +178,7 @@ fn target_job_management_dtos_round_trip() {
         metadata: MetadataMap::default(),
     };
     let create = JobCreateRequest {
+        request_id: Some("req_refresh".to_string()),
         job_kind: JobKind::Source,
         job_intent: JobIntent::Refresh,
         source_id: Some(source_id),
@@ -193,6 +194,10 @@ fn target_job_management_dtos_round_trip() {
             estimated_items: Some(10),
         }],
         request: Some(serde_json::json!({ "source": "/workspace/axon" })),
+        auth_snapshot: MetadataMap::default(),
+        config_snapshot_id: Some(ConfigSnapshotId::from("cfg_test")),
+        requirements: MetadataMap::default(),
+        result_schema: Some("source_result".to_string()),
         metadata: MetadataMap::default(),
     };
     let event_page = JobEventPage {

@@ -1,4 +1,5 @@
 use axon_api::source::*;
+use uuid::Uuid;
 
 use super::FakeJobWatchState;
 
@@ -41,7 +42,7 @@ pub(super) fn append_event_locked(
         .unwrap_or(1);
     if event.sequence != expected_sequence {
         if let Some(dedupe_key) = event.dedupe_key.as_ref()
-            && has_dedupe_key(state, event.job_id, dedupe_key)
+            && has_dedupe_key_at_sequence(state, event.job_id, dedupe_key, event.sequence)
         {
             return Ok(());
         }
@@ -82,6 +83,116 @@ pub(super) fn append_event_locked(
             details,
         });
     Ok(())
+}
+
+pub(super) fn terminal_cleanup_eligible(
+    job: &JobSummary,
+    now: &Timestamp,
+    older_than_seconds: Option<u64>,
+) -> bool {
+    if !is_terminal_status(job.status) {
+        return false;
+    }
+    let Some(seconds) = older_than_seconds else {
+        return true;
+    };
+    timestamp_age_seconds(now, &job.updated_at).is_some_and(|age| age >= seconds)
+}
+
+pub(super) fn retry_locked(
+    state: &mut FakeJobWatchState,
+    job_id: JobId,
+    request: JobRetryRequest,
+) -> crate::boundary::Result<JobRetryResult> {
+    if request.mode == JobRetryMode::SameConfig && !request.overrides.is_empty() {
+        return Err(ApiError::new(
+            "job_retry.overrides_forbidden",
+            ErrorStage::Planning,
+            "same_config retry cannot include overrides",
+        ));
+    }
+    let updated_at = state.timestamp();
+    let original = state
+        .jobs
+        .get(&job_id)
+        .cloned()
+        .ok_or_else(|| missing_job(job_id))?;
+    if matches!(
+        original.status,
+        LifecycleStatus::Running | LifecycleStatus::Waiting | LifecycleStatus::Canceling
+    ) {
+        return Err(ApiError::new(
+            "job_retry.active_job",
+            ErrorStage::Planning,
+            "only terminal, blocked, queued, or pending jobs can be retried",
+        ));
+    }
+    let attempt = original.attempt + 1;
+    let mut stage_plan = state
+        .stages
+        .get(&job_id)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|stage| JobStagePlan {
+            phase: stage.phase,
+            required: stage.required,
+            provider_requirements: stage.provider_requirements,
+            estimated_items: stage.counts.items_total,
+        })
+        .collect::<Vec<_>>();
+    if let Some(from_phase) = request.from_phase {
+        let Some(index) = stage_plan
+            .iter()
+            .position(|stage| stage.phase == from_phase)
+        else {
+            return Err(ApiError::new(
+                "job_retry.from_phase_not_found",
+                ErrorStage::Planning,
+                format!("phase {:?} is not present in job {}", from_phase, job_id.0),
+            ));
+        };
+        stage_plan = stage_plan.split_off(index);
+    }
+    if let Some(job) = state.jobs.get_mut(&job_id) {
+        job.intent = Some(JobIntent::Retry);
+        job.status = LifecycleStatus::Queued;
+        job.phase = PipelinePhase::Queued;
+        job.attempt = attempt;
+        job.started_at = None;
+        job.finished_at = None;
+        job.last_error = None;
+        job.updated_at = updated_at;
+    }
+    let mut stages = Vec::new();
+    for stage in stage_plan {
+        state.next_stage += 1;
+        stages.push(JobStageSnapshot {
+            stage_id: StageId::new(Uuid::from_u128(state.next_stage)),
+            phase: stage.phase,
+            status: LifecycleStatus::Queued,
+            required: stage.required,
+            provider_requirements: stage.provider_requirements,
+            counts: empty_counts(),
+            started_at: None,
+            completed_at: None,
+            error: None,
+        });
+    }
+    state.stages.insert(job_id, stages);
+    if let Some(key) = request.idempotency_key {
+        state.idempotency_keys.insert(key, job_id);
+    }
+    let retry_job = state
+        .jobs
+        .get(&job_id)
+        .map(descriptor)
+        .ok_or_else(|| missing_job(job_id))?;
+    Ok(JobRetryResult {
+        original_job_id: job_id,
+        retry_job,
+        attempt,
+    })
 }
 
 pub(super) fn new_job_descriptor(
@@ -233,4 +344,21 @@ fn has_dedupe_key(state: &FakeJobWatchState, job_id: JobId, dedupe_key: &str) ->
         .into_iter()
         .flatten()
         .any(|existing| existing.details.get("dedupe_key") == Some(&serde_json::json!(dedupe_key)))
+}
+
+fn has_dedupe_key_at_sequence(
+    state: &FakeJobWatchState,
+    job_id: JobId,
+    dedupe_key: &str,
+    sequence: u64,
+) -> bool {
+    state
+        .events
+        .get(&job_id)
+        .into_iter()
+        .flatten()
+        .any(|existing| {
+            existing.sequence == sequence
+                && existing.details.get("dedupe_key") == Some(&serde_json::json!(dedupe_key))
+        })
 }

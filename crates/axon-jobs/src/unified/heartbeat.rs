@@ -9,17 +9,28 @@ use crate::unified_codec::*;
 impl SqliteUnifiedJobStore {
     pub(crate) async fn record_heartbeat(&self, heartbeat: JobHeartbeat) -> Result<()> {
         let mut tx = self.pool.begin().await.map_err(sql_error)?;
-        let row = sqlx::query("SELECT status FROM jobs WHERE job_id = ?")
+        let row = sqlx::query("SELECT status, attempt FROM jobs WHERE job_id = ?")
             .bind(heartbeat.job_id.0.to_string())
             .fetch_optional(&mut *tx)
             .await
             .map_err(sql_error)?
             .ok_or_else(|| missing_job(heartbeat.job_id))?;
         let current = parse_enum::<LifecycleStatus>(row.get::<String, _>("status"))?;
+        let current_attempt = row.get::<i64, _>("attempt") as u32;
+        if heartbeat.attempt < current_attempt {
+            return Err(ApiError::new(
+                "job.heartbeat_stale_attempt",
+                ErrorStage::Publishing,
+                format!(
+                    "job {} is on attempt {}, got stale heartbeat for attempt {}",
+                    heartbeat.job_id.0, current_attempt, heartbeat.attempt
+                ),
+            ));
+        }
         if current != heartbeat.status {
             validate_transition(heartbeat.job_id, current, heartbeat.status)?;
         }
-        self.update_heartbeat_summary(&mut tx, &heartbeat, current)
+        self.update_heartbeat_summary(&mut tx, &heartbeat, current, current_attempt)
             .await?;
         self.upsert_heartbeat_history(&mut tx, &heartbeat).await?;
         self.upsert_attempt_from_heartbeat(&mut tx, &heartbeat)
@@ -34,6 +45,7 @@ impl SqliteUnifiedJobStore {
         tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
         heartbeat: &JobHeartbeat,
         expected_status: LifecycleStatus,
+        expected_attempt: u32,
     ) -> Result<()> {
         let result = sqlx::query(
             "UPDATE jobs SET
@@ -45,7 +57,7 @@ impl SqliteUnifiedJobStore {
                 updated_at = ?,
                 started_at = COALESCE(started_at, ?),
                 finished_at = COALESCE(?, finished_at)
-             WHERE job_id = ? AND status = ?",
+             WHERE job_id = ? AND status = ? AND attempt <= ?",
         )
         .bind(enum_name(heartbeat.status)?)
         .bind(enum_name(heartbeat.phase)?)
@@ -60,6 +72,7 @@ impl SqliteUnifiedJobStore {
         .bind(is_terminal(heartbeat.status).then_some(heartbeat.heartbeat_at.0.as_str()))
         .bind(heartbeat.job_id.0.to_string())
         .bind(enum_name(expected_status)?)
+        .bind(expected_attempt as i64)
         .execute(&mut **tx)
         .await
         .map_err(sql_error)?;
@@ -68,7 +81,7 @@ impl SqliteUnifiedJobStore {
                 "job.concurrent_status_change",
                 ErrorStage::Publishing,
                 format!(
-                    "job {} changed status before heartbeat could be recorded",
+                    "job {} changed status or attempt before heartbeat could be recorded",
                     heartbeat.job_id.0
                 ),
             ));

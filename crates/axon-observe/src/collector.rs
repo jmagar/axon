@@ -18,9 +18,11 @@ pub trait ObservabilitySink: Send + Sync {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
+#[cfg(test)]
 pub struct NoopObservabilitySink;
 
 #[async_trait]
+#[cfg(test)]
 impl ObservabilitySink for NoopObservabilitySink {
     async fn emit(&self, _event: SourceProgressEvent) -> Result<()> {
         Ok(())

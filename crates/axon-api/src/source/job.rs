@@ -11,6 +11,8 @@ use super::status::ProgressCurrent;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct JobCreateRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
     pub job_kind: JobKind,
     pub job_intent: JobIntent,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -27,6 +29,14 @@ pub struct JobCreateRequest {
     pub stage_plan: Vec<JobStagePlan>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "MetadataMap::is_empty")]
+    pub auth_snapshot: MetadataMap,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_snapshot_id: Option<ConfigSnapshotId>,
+    #[serde(default, skip_serializing_if = "MetadataMap::is_empty")]
+    pub requirements: MetadataMap,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_schema: Option<String>,
     pub metadata: MetadataMap,
 }
 
@@ -83,7 +93,7 @@ pub struct ProviderReservationSnapshot {
     pub acquired_at: Option<Timestamp>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<Timestamp>,
-    pub status: LifecycleStatus,
+    pub status: ProviderReservationStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub queue_depth: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -128,6 +138,7 @@ pub struct JobRetryRequest {
     pub from_phase: Option<PipelinePhase>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub idempotency_key: Option<String>,
+    #[serde(default, skip_serializing_if = "MetadataMap::is_empty")]
     pub overrides: MetadataMap,
 }
 
@@ -148,6 +159,8 @@ pub struct JobRecoveryRequest {
     pub older_than_seconds: Option<u64>,
     #[serde(default)]
     pub dry_run: bool,
+    #[serde(default)]
+    pub allow_without_cutoff: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
@@ -166,6 +179,8 @@ pub struct JobCleanupRequest {
     pub older_than_seconds: Option<u64>,
     #[serde(default)]
     pub dry_run: bool,
+    #[serde(default)]
+    pub confirm_all_terminal: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]

@@ -263,6 +263,21 @@ pub enum LifecycleStatus {
     Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema,
 )]
 #[serde(rename_all = "snake_case")]
+pub enum ProviderReservationStatus {
+    Requested,
+    Queued,
+    Granted,
+    Active,
+    Released,
+    Expired,
+    Canceled,
+    Failed,
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema,
+)]
+#[serde(rename_all = "snake_case")]
 pub enum PublishState {
     Planning,
     Writing,
