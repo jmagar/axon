@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use axon_api::source::*;
+use serde_json::json;
+use uuid::Uuid;
 
 use crate::adapter::{Result, SourceAdapter};
 use crate::capability::AdapterCapability;
@@ -142,26 +144,86 @@ impl SourceAdapter for LocalSourceAdapter {
 
     async fn acquire(
         &self,
-        _plan: &SourcePlan,
-        _diff: &SourceManifestDiff,
+        plan: &SourcePlan,
+        diff: &SourceManifestDiff,
     ) -> Result<SourceAcquisition> {
-        Err(ApiError::new(
-            "adapter.local.acquire.unimplemented",
-            axon_error::ErrorStage::Fetching,
-            "local adapter acquisition is not implemented in this PR slice",
-        ))
+        validate_adapter(plan)?;
+        let root = PathBuf::from(&plan.request.source);
+        let root_for_keys = if root.is_file() {
+            root.parent().unwrap_or_else(|| Path::new(""))
+        } else {
+            root.as_path()
+        };
+        let manifest_items = diff
+            .added
+            .iter()
+            .chain(diff.modified.iter())
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut fetched_items = Vec::with_capacity(manifest_items.len());
+        for item in &manifest_items {
+            let path = root_for_keys.join(&item.source_item_key.0);
+            let text = fs::read_to_string(&path)
+                .map_err(|err| fs_error("adapter.local.read_failed", &path, err))?;
+            fetched_items.push(AcquiredSourceItem {
+                manifest_item: item.clone(),
+                fetch_status: LifecycleStatus::Completed,
+                content_ref: ContentRef::InlineText { text },
+                raw_artifact_id: None,
+                headers: RedactedHeaders {
+                    headers: Vec::new(),
+                },
+                fetched_at: timestamp(),
+                metadata: MetadataMap::new(),
+            });
+        }
+
+        let manifest = SourceManifest {
+            source_id: plan.route.source.source_id.clone(),
+            generation: diff.next_generation.clone(),
+            adapter: plan.route.adapter.clone(),
+            scope: plan.route.scope,
+            items: manifest_items,
+            created_at: timestamp(),
+            metadata: MetadataMap::new(),
+        };
+
+        Ok(SourceAcquisition {
+            header: stage_header(
+                plan.job_id,
+                "local_fetch",
+                PipelinePhase::Fetching,
+                fetched_items.len(),
+            ),
+            source_id: manifest.source_id.clone(),
+            generation: manifest.generation.clone(),
+            adapter: manifest.adapter.clone(),
+            scope: manifest.scope,
+            manifest,
+            fetched_items,
+            artifacts: Vec::new(),
+        })
     }
 
     async fn normalize(
         &self,
-        _plan: &SourcePlan,
-        _acquisition: SourceAcquisition,
+        plan: &SourcePlan,
+        acquisition: SourceAcquisition,
     ) -> Result<StageExecutionResult<Vec<SourceDocument>>> {
-        Err(ApiError::new(
-            "adapter.local.normalize.unimplemented",
-            axon_error::ErrorStage::Normalizing,
-            "local adapter normalization is not implemented in this PR slice",
-        ))
+        let documents = acquisition
+            .fetched_items
+            .iter()
+            .map(|item| local_source_document(plan, &acquisition, item))
+            .collect::<Vec<_>>();
+        Ok(StageExecutionResult {
+            header: stage_header(
+                plan.job_id,
+                "local_normalize",
+                PipelinePhase::Normalizing,
+                documents.len(),
+            ),
+            data: documents,
+        })
     }
 }
 
@@ -322,6 +384,88 @@ fn content_kind_for(path: &Path) -> ContentKind {
         | "cpp" | "h" | "hpp" | "cs" | "rb" | "php" | "sh" | "zsh" | "fish" => ContentKind::Code,
         _ => ContentKind::PlainText,
     }
+}
+
+fn local_source_document(
+    plan: &SourcePlan,
+    acquisition: &SourceAcquisition,
+    item: &AcquiredSourceItem,
+) -> SourceDocument {
+    let item_key = &item.manifest_item.source_item_key.0;
+    let mut metadata = MetadataMap::new();
+    metadata.insert("source_family".to_string(), json!("code"));
+    metadata.insert("source_kind".to_string(), json!("local"));
+    metadata.insert("source_adapter".to_string(), json!(plan.route.adapter.name));
+    metadata.insert("source_scope".to_string(), json!(plan.route.scope));
+    metadata.insert(
+        "item_canonical_uri".to_string(),
+        json!(item.manifest_item.canonical_uri),
+    );
+    metadata.insert("committed_generation".to_string(), json!("uncommitted"));
+    metadata.insert("visibility".to_string(), json!("internal"));
+    metadata.insert("redaction_status".to_string(), json!("clean"));
+    SourceDocument {
+        document_id: DocumentId::from(format!("doc_{}", sanitize_document_key(item_key))),
+        source_id: acquisition.source_id.clone(),
+        source_item_key: item.manifest_item.source_item_key.clone(),
+        canonical_uri: item.manifest_item.canonical_uri.clone(),
+        content_kind: item
+            .manifest_item
+            .content_kind
+            .unwrap_or(ContentKind::PlainText),
+        content: item.content_ref.clone(),
+        metadata,
+        title: item.manifest_item.display_path.clone(),
+        language: None,
+        path: item.manifest_item.display_path.clone(),
+        mime_type: None,
+        structured_payload: None,
+        artifact_id: item.raw_artifact_id.clone(),
+        chunk_hints: plan.route.chunking_hints.clone(),
+        parser_hints: plan.route.parser_hints.clone(),
+    }
+}
+
+fn stage_header(
+    job_id: JobId,
+    stage_id: &'static str,
+    phase: PipelinePhase,
+    item_count: usize,
+) -> StageResultHeader {
+    StageResultHeader {
+        job_id,
+        stage_id: named_stage_id(stage_id),
+        phase,
+        status: LifecycleStatus::Completed,
+        started_at: timestamp(),
+        completed_at: Some(timestamp()),
+        counts: StageCounts {
+            items_total: Some(item_count as u64),
+            items_done: item_count as u64,
+            documents_total: Some(item_count as u64),
+            documents_done: item_count as u64,
+            chunks_total: None,
+            chunks_done: 0,
+            bytes_total: None,
+            bytes_done: 0,
+        },
+        warnings: Vec::new(),
+        error: None,
+    }
+}
+
+fn timestamp() -> Timestamp {
+    Timestamp("2026-07-01T00:00:00Z".to_string())
+}
+
+fn named_stage_id(stage_id: &str) -> StageId {
+    StageId::new(Uuid::new_v5(&Uuid::NAMESPACE_OID, stage_id.as_bytes()))
+}
+
+fn sanitize_document_key(key: &str) -> String {
+    key.chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
+        .collect()
 }
 
 fn fs_error(code: &'static str, path: &Path, err: std::io::Error) -> ApiError {

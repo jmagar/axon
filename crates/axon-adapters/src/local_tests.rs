@@ -101,6 +101,39 @@ async fn local_directory_discovery_emits_sorted_relative_file_items() {
     }
 }
 
+#[tokio::test]
+async fn local_adapter_acquires_and_normalizes_source_documents() {
+    let adapter = LocalSourceAdapter::new();
+    let root = temp_source_dir();
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::write(root.join("README.md"), "# Axon").unwrap();
+    fs::write(root.join("src/lib.rs"), "pub fn local() {}").unwrap();
+    let plan = source_plan(root, SourceScope::Directory);
+    let manifest = adapter.discover(&plan).await.unwrap();
+    let diff = manifest_diff(&plan, manifest.items.clone());
+
+    let acquisition = adapter.acquire(&plan, &diff).await.unwrap();
+    assert_eq!(acquisition.fetched_items.len(), 2);
+    assert!(matches!(
+        acquisition.fetched_items[0].content_ref,
+        ContentRef::InlineText { .. }
+    ));
+
+    let normalized = adapter.normalize(&plan, acquisition).await.unwrap();
+    assert_eq!(normalized.data.len(), 2);
+    let docs = normalized.data;
+    assert_eq!(docs[0].source_id, SourceId::from("src_local_test"));
+    assert_eq!(docs[0].source_item_key, SourceItemKey::from("README.md"));
+    assert_eq!(docs[0].metadata["source_kind"], "local");
+    assert_eq!(docs[0].metadata["source_adapter"], "local");
+    assert_eq!(docs[0].metadata["source_scope"], "directory");
+    assert_eq!(
+        docs[0].metadata["item_canonical_uri"],
+        docs[0].canonical_uri
+    );
+    assert!(!serde_json::to_string(&docs).unwrap().contains("/home/"));
+}
+
 fn local_options() -> MetadataMap {
     let mut values = MetadataMap::new();
     values.insert("include_globs".to_string(), vec!["**/*.rs"].into());
@@ -169,6 +202,53 @@ fn source_plan(path: PathBuf, scope: SourceScope) -> SourcePlan {
         config_snapshot_id: ConfigSnapshotId::from("cfg_local_test"),
         provider_reservations: Vec::new(),
     }
+}
+
+fn manifest_diff(plan: &SourcePlan, items: Vec<ManifestItem>) -> SourceManifestDiff {
+    let added_count = items.len() as u64;
+    SourceManifestDiff {
+        header: StageResultHeader {
+            job_id: plan.job_id,
+            stage_id: StageId::new(Uuid::from_u128(29801)),
+            phase: PipelinePhase::Diffing,
+            status: LifecycleStatus::Completed,
+            started_at: timestamp(),
+            completed_at: Some(timestamp()),
+            counts: StageCounts {
+                items_total: Some(items.len() as u64),
+                items_done: items.len() as u64,
+                documents_total: None,
+                documents_done: 0,
+                chunks_total: None,
+                chunks_done: 0,
+                bytes_total: None,
+                bytes_done: 0,
+            },
+            warnings: Vec::new(),
+            error: None,
+        },
+        source_id: plan.route.source.source_id.clone(),
+        previous_generation: None,
+        next_generation: SourceGenerationId::from("gen_local_test"),
+        added: items,
+        modified: Vec::new(),
+        removed: Vec::new(),
+        unchanged: Vec::new(),
+        skipped: Vec::new(),
+        failed: Vec::new(),
+        counts: DiffCounts {
+            added: added_count,
+            modified: 0,
+            removed: 0,
+            unchanged: 0,
+            skipped: 0,
+            failed: 0,
+        },
+    }
+}
+
+fn timestamp() -> Timestamp {
+    Timestamp("2026-07-01T00:00:00Z".to_string())
 }
 
 fn temp_source_dir() -> PathBuf {

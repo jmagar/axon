@@ -433,6 +433,7 @@ dependencies = [
  "async-trait",
  "axon-api",
  "axon-error",
+ "serde_json",
  "tokio",
  "uuid",
 ]
