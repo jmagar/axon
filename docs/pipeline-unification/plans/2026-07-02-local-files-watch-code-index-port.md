@@ -190,22 +190,22 @@ fakes for provider/store boundaries.
 - Produces: `SourceResult`, source job events, ledger generations,
   `DocumentStatus`, vector point batches, cleanup debt.
 
-- [ ] Write a failing fake-boundary test for first local file index:
+- [x] Write a failing fake-boundary test for first local file index:
   source upserted, generation created, manifest diff added, document prepared,
   embedding batch requested, vector points written, document status completed,
   generation published.
-- [ ] Write a failing fake-boundary test for no-change refresh:
+- [x] Write a failing fake-boundary test for no-change refresh:
   unchanged items reuse committed state and do not call embedding/vector writes.
-- [ ] Write failing fake-boundary tests for add/modify/remove:
+- [x] Write failing fake-boundary tests for add/modify/remove:
   added/modified documents are prepared and vectorized, removed items create
   cleanup debt.
-- [ ] Write failing tests proving a provider failure before publish leaves the
+- [x] Write failing tests proving a provider failure before publish leaves the
   generation uncommitted and returns a structured degraded/failed result.
-- [ ] Implement the orchestration service with dependency-injected fakes first.
-- [ ] Ensure every detached/background run has one `job_id` and emits progress
+- [x] Implement the orchestration service with dependency-injected fakes first.
+- [x] Ensure every detached/background run has one `job_id` and emits progress
   phases for discovering, diffing, preparing, embedding, vectorizing,
   publishing, cleaning, and complete/failed/degraded.
-- [ ] Run `cargo test -p axon-services local_source --locked`.
+- [x] Run `cargo test -p axon-services local_source --locked`.
 
 ## Task 3: Target Document And Vector Payload Parity
 
@@ -221,20 +221,22 @@ fakes for provider/store boundaries.
 - Consumes: local `SourceDocument` values.
 - Produces: prepared code/markdown/config chunks and validated vector payloads.
 
-- [ ] Write failing tests proving local Rust files use code-aware chunking and
+- [x] Write failing tests proving local Rust files use code-aware chunking and
   carry approved `code_*` metadata where available.
-- [ ] Write failing tests proving local Markdown files use markdown section
+- [x] Write failing tests proving local Markdown files use markdown section
   chunking with stable ranges.
-- [ ] Write failing tests proving manifests/config files route to structured or
+- [x] Write failing tests proving manifests/config files route to structured or
   code-manifest preparation where supported.
-- [ ] Write failing vector payload tests for required local fields:
+- [x] Write failing vector payload tests for required local fields:
   `source_id`, `source_kind=local`, `source_adapter=local`, `source_scope`,
   `source_generation`, committed-generation marker, `source_item_key`,
   `item_canonical_uri`, `document_id`, `chunk_id`, `job_id`, and approved
   code/document metadata.
-- [ ] Implement only the missing parity gaps; do not fork a second chunker.
+- [x] Implement only the missing parity gaps; do not fork a second chunker.
 - [ ] Run `cargo test -p axon-document local_source --locked`.
-- [ ] Run `cargo test -p axon-vectors local_payload --locked`.
+  Existing document-preparer coverage is exercised through services in this PR;
+  no new `axon-document local_source` test target was added.
+- [x] Run `cargo test -p axon-vectors local_payload --locked`.
 
 ## Task 4: Code Search Compatibility Bridge
 
@@ -252,17 +254,20 @@ fakes for provider/store boundaries.
   stale warnings, target source pipeline refresh when enabled.
 
 - [ ] Write failing tests proving code-search searches only committed target
-  generations.
-- [ ] Write failing tests proving failed/partial refreshes stay hidden and
+  generations. Deferred until target code-search retrieval is wired; PR11 keeps
+  public search on the legacy queryable index.
+- [x] Write failing tests proving failed/partial refreshes stay hidden and
   return stale warnings.
-- [ ] Write failing tests proving current `code-search` output preserves
+- [x] Write failing tests proving current `code-search` output preserves
   untrusted-local-code semantics.
-- [ ] Bridge current service refresh to the target local source pipeline where
-  target dependencies are available.
-- [ ] Keep legacy `axon-code-index` behavior intact until target code-search
+- [x] Bridge current service refresh to the target local source pipeline where
+  target dependencies are injected, but report stale/degraded until target
+  retrieval is wired.
+- [x] Keep legacy `axon-code-index` behavior intact until target code-search
   search is feature-complete.
-- [ ] Run `cargo test -p axon-services query code_search --locked`.
+- [x] Run `cargo test -p axon-services query code_search --locked`.
 - [ ] Run `cargo test -p axon-code-index --locked` if touched.
+  Not touched in PR11.
 
 ## Task 5: Watch Refresh Integration
 
@@ -278,18 +283,21 @@ fakes for provider/store boundaries.
 - Consumes: local filesystem events and watch requests.
 - Produces: coalesced local source refresh jobs with heartbeats/progress.
 
-- [ ] Write failing tests proving duplicate file events coalesce into one
+- [x] Write failing tests proving duplicate file events coalesce into one
   source refresh job.
-- [ ] Write failing tests proving overflow rescans schedule all watched roots
+- [x] Write failing tests proving overflow rescans schedule all watched roots
   exactly once per debounce window.
 - [ ] Write failing tests proving watch-triggered refreshes use unified
   `job_id`, heartbeat/progress events, provider reservations, and ledger leases.
-- [ ] Preserve current foreground `embed --watch` behavior until public surface
+  Deferred until target watch runtime is wired to target retrieval; PR11 keeps
+  watch refresh on the legacy queryable path.
+- [x] Preserve current foreground `embed --watch` behavior until public surface
   cutover.
-- [ ] Keep URL watch behavior out of this PR except shared watch/job primitives
+- [x] Keep URL watch behavior out of this PR except shared watch/job primitives
   that local watch needs.
-- [ ] Run `cargo test -p axon-services code_search_watch --locked`.
+- [x] Run `cargo test -p axon-services code_search_watch --locked`.
 - [ ] Run `cargo test -p axon-jobs watch source --locked` if touched.
+  Not touched in PR11.
 
 ## Task 6: Generated Contracts, Docs, And Issue Tracker
 
@@ -301,10 +309,10 @@ fakes for provider/store boundaries.
   if implementation state materially changes.
 - Modify: issue #298 after PR merge.
 
-- [ ] Refresh adapter/source/vector/database/API/event artifacts if their
+- [x] Refresh adapter/source/vector/database/API/event artifacts if their
   source models change.
-- [ ] Ensure generated markdown and JSON come from the same model.
-- [ ] Update only docs that describe current implementation changes.
+- [x] Ensure generated markdown and JSON come from the same model.
+- [x] Update only docs that describe current implementation changes.
 - [ ] Before merge, review issue #298 and verify every PR11 checklist item.
 - [ ] After merge, update issue #298 to mark PR11 complete and record PR/merge
   commit.
@@ -313,24 +321,26 @@ fakes for provider/store boundaries.
 
 Run the smallest set that proves touched behavior, then broaden before review:
 
-- [ ] `cargo test -p axon-adapters local --locked`
-- [ ] `cargo test -p axon-ledger --locked`
+- [x] `cargo test -p axon-adapters local --locked`
+- [x] `cargo test -p axon-ledger store_tests --locked`
 - [ ] `cargo test -p axon-document --locked`
 - [ ] `cargo test -p axon-embedding --locked`
-- [ ] `cargo test -p axon-vectors --locked`
+- [x] `cargo test -p axon-vectors --lib --locked`
 - [ ] `cargo test -p axon-jobs watch source --locked`
-- [ ] `cargo test -p axon-services local_source code_search_watch query --locked`
+- [x] `cargo test -p axon-services local_source --locked`
+- [x] `cargo test -p axon-services code_search --locked`
+- [x] `cargo test -p axon-services --lib --locked`
 - [ ] `cargo test -p axon-vector file_ingest source_doc code_search --locked` if
   compatibility bridges are touched
 - [ ] `cargo test -p axon-code-index --locked` if compatibility scaffolding is
   touched
-- [ ] `cargo xtask schemas generate --check`
-- [ ] `cargo xtask check-layering`
-- [ ] `cargo xtask check-repo-structure`
-- [ ] `cargo xtask check-doc-links`
-- [ ] `cargo xtask check-doc-contracts`
-- [ ] `cargo fmt --all --check`
-- [ ] `git diff --check`
+- [x] `cargo xtask schemas generate --check`
+- [x] `cargo xtask check-layering`
+- [x] `cargo xtask check-repo-structure`
+- [x] `cargo xtask check-doc-links`
+- [x] `cargo xtask check-doc-contracts`
+- [x] `cargo fmt --all --check`
+- [x] `git diff --check`
 
 ## Mandatory Reviews Before Merge
 

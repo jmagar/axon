@@ -240,8 +240,15 @@ fn vector_point_batch_for_documents(
     embeddings: &EmbeddingResult,
 ) -> anyhow::Result<VectorPointBatch> {
     let mut points = Vec::new();
+    let vectors_by_chunk = embeddings
+        .vectors
+        .iter()
+        .cloned()
+        .map(|vector| (vector.chunk_id.clone(), vector))
+        .collect::<std::collections::BTreeMap<_, _>>();
     for document in documents {
-        let document_embeddings = embedding_result_for_document(embeddings, document);
+        let document_embeddings =
+            embedding_result_for_document(embeddings, document, &vectors_by_chunk);
         let batch = VectorPointBatchBuilder::new(
             collection.clone(),
             document.clone(),
@@ -267,24 +274,20 @@ fn vector_point_batch_for_documents(
 fn embedding_result_for_document(
     embeddings: &EmbeddingResult,
     document: &PreparedDocument,
+    vectors_by_chunk: &std::collections::BTreeMap<ChunkId, EmbeddingVector>,
 ) -> EmbeddingResult {
-    let chunk_ids = document
+    let vectors = document
         .chunks
         .iter()
-        .map(|chunk| chunk.chunk_id.clone())
-        .collect::<std::collections::BTreeSet<_>>();
+        .filter_map(|chunk| vectors_by_chunk.get(&chunk.chunk_id).cloned())
+        .collect();
     EmbeddingResult {
         batch_id: embeddings.batch_id.clone(),
         job_id: embeddings.job_id,
         provider_id: embeddings.provider_id.clone(),
         model: embeddings.model.clone(),
         dimensions: embeddings.dimensions,
-        vectors: embeddings
-            .vectors
-            .iter()
-            .filter(|vector| chunk_ids.contains(&vector.chunk_id))
-            .cloned()
-            .collect(),
+        vectors,
         usage: embeddings.usage.clone(),
         warnings: embeddings.warnings.clone(),
     }

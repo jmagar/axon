@@ -68,6 +68,15 @@ async fn local_file_refresh_writes_vectors_then_commits_source_generation() {
             .iter()
             .all(|point| point.payload["document_status"].as_str() == Some("published"))
     );
+    for point in vectors.points("axon-test").await {
+        let status = ledger
+            .document_status(&DocumentId::new(
+                point.payload["document_id"].as_str().unwrap(),
+            ))
+            .await
+            .expect("ledger document status");
+        assert_eq!(status.status, DocumentLifecycleStatus::Published);
+    }
     let source = ledger
         .get_source(output.source_id.clone())
         .await

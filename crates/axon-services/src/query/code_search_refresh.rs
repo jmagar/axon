@@ -147,7 +147,7 @@ async fn refresh_target_local_code_search_index_with_progress(
         embedding_dimensions: target.embedding_dimensions,
         selection_policy: LocalSourceSelectionPolicy::CodeSearch,
     };
-    let target_result = match index_local_source_with_job(
+    match index_local_source_with_job(
         input,
         target.jobs.as_ref(),
         target.ledger.as_ref(),
@@ -156,50 +156,53 @@ async fn refresh_target_local_code_search_index_with_progress(
     )
     .await
     {
-        Ok(output) => CodeSearchRefreshResult {
-            project_root: project_root.clone(),
-            project_key: project_key.clone(),
-            generation: None,
-            freshness: code_search_freshness(
-                "stale",
-                Some(FreshnessWarning::Failed {
-                    error: format!(
-                        "target local source refresh indexed {} document(s), but target code-search retrieval is not wired yet; legacy index remains the queryable source",
-                        output.documents_prepared
-                    ),
-                }),
-                usize::try_from(output.documents_prepared).unwrap_or(usize::MAX),
-                0,
-            ),
-        },
-        Err(err) => CodeSearchRefreshResult {
-            project_root: project_root.clone(),
-            project_key: project_key.clone(),
-            generation: None,
-            freshness: code_search_freshness(
-                "stale",
-                Some(FreshnessWarning::Failed {
-                    error: err.to_string(),
-                }),
-                0,
-                0,
-            ),
-        },
-    };
-    if target_result.freshness.status == "fresh" {
-        tracing::debug!(
+        Ok(output) => {
+            let result = CodeSearchRefreshResult {
+                project_root: project_root.clone(),
+                project_key: project_key.clone(),
+                generation: None,
+                freshness: code_search_freshness(
+                    "stale",
+                    Some(FreshnessWarning::Failed {
+                        error: format!(
+                            "target local source refresh indexed {} document(s), but target code-search retrieval is not wired yet; legacy index remains the queryable source",
+                            output.documents_prepared
+                        ),
+                    }),
+                    usize::try_from(output.documents_prepared).unwrap_or(usize::MAX),
+                    0,
+                ),
+            };
+            tracing::warn!(
+                project_key,
+                indexed_files = result.freshness.indexed_files,
+                warning = ?result.freshness.warning,
+                "target local source refresh completed but remains non-queryable"
+            );
+            Ok(result)
+        }
+        Err(err) => {
+            let result = CodeSearchRefreshResult {
+                project_root: project_root.clone(),
+                project_key: project_key.clone(),
+                generation: None,
+                freshness: code_search_freshness(
+                    "stale",
+                    Some(FreshnessWarning::Failed {
+                        error: err.to_string(),
+                    }),
+                    0,
+                    0,
+                ),
+            };
+            tracing::warn!(
             project_key,
-            target_indexed_files = target_result.freshness.indexed_files,
-            "target local source refresh completed"
-        );
-    } else {
-        tracing::warn!(
-            project_key,
-            warning = ?target_result.freshness.warning,
+                warning = ?result.freshness.warning,
             "target local source refresh degraded"
-        );
+            );
+            Ok(result)
+        }
     }
-    Ok(target_result)
 }
 
 pub(super) async fn resolve_code_search_freshness_with_progress(
