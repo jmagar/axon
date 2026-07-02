@@ -148,7 +148,7 @@ fn discover_sync(plan: &SourcePlan) -> Result<SourceManifest> {
         if !options.should_include_file(plan.route.scope, &key, &file) {
             continue;
         }
-        let content_hash = content_fingerprint(&metadata);
+        let content_hash = content_fingerprint(&file)?;
         let identity = item_identity(SourceKind::Local, &base_uri, &key)?;
         items.push(ManifestItem {
             source_id: plan.route.source.source_id.clone(),
@@ -175,7 +175,7 @@ fn discover_sync(plan: &SourcePlan) -> Result<SourceManifest> {
         adapter: plan.route.adapter.clone(),
         scope: plan.route.scope,
         items,
-        created_at: Timestamp("2026-07-01T00:00:00Z".to_string()),
+        created_at: timestamp(),
         metadata: MetadataMap::new(),
     })
 }
@@ -377,6 +377,7 @@ fn local_source_document(
 ) -> SourceDocument {
     let mut metadata = MetadataMap::new();
     metadata.insert("source_family".to_string(), json!("code"));
+    metadata.insert("source_type".to_string(), json!("local_code"));
     metadata.insert("source_kind".to_string(), json!("local"));
     metadata.insert("source_adapter".to_string(), json!(plan.route.adapter.name));
     metadata.insert("source_scope".to_string(), json!(plan.route.scope));
@@ -438,7 +439,7 @@ fn stage_header(
 }
 
 fn timestamp() -> Timestamp {
-    Timestamp("2026-07-01T00:00:00Z".to_string())
+    Timestamp(chrono::Utc::now().to_rfc3339())
 }
 
 fn named_stage_id(stage_id: &str) -> StageId {

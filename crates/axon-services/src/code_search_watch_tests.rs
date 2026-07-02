@@ -162,6 +162,39 @@ async fn watch_refresh_uses_target_local_source_runtime_when_available() {
     );
 }
 
+#[tokio::test]
+async fn target_watch_refresh_returns_error_when_target_refresh_is_degraded() {
+    let repo = tempfile::tempdir().expect("repo");
+    init_git_repo(repo.path());
+    tokio::fs::write(repo.path().join("bad.rs"), [0xff, 0xfe, 0xfd])
+        .await
+        .expect("bad file");
+    let source_jobs = Arc::new(FakeJobWatchStore::new());
+    let vectors = Arc::new(FakeVectorStore::new("fake-vector"));
+    let ctx = target_context(source_jobs, vectors);
+    let events = CaptureEvents::default();
+
+    let err = refresh_code_search_watch_root(&ctx, &events, repo.path(), "file_change")
+        .await
+        .expect_err("degraded target refresh should retry later");
+
+    assert!(
+        err.to_string().contains("local code index refresh failed"),
+        "unexpected error: {err:#}"
+    );
+    let captured = events.events.lock().expect("events");
+    assert!(captured.iter().any(|event| {
+        matches!(
+            event,
+            CodeSearchWatchEvent::RefreshFinished {
+                status,
+                warning: Some(_),
+                ..
+            } if status == "stale"
+        )
+    }));
+}
+
 fn progress_reservation_id(event: &JobEvent) -> Option<&str> {
     event
         .details

@@ -1522,6 +1522,10 @@
       "minLength": 1,
       "type": "string"
     },
+    "source_type": {
+      "minLength": 1,
+      "type": "string"
+    },
     "vector_namespace": {
       "minLength": 1,
       "type": "string",
@@ -2228,7 +2232,7 @@
         "path": "crates/axon-api/src/source/vector.rs"
       },
       {
-        "checksum": "sha256:28f9e6691093ce9336883b5f218411b2bf393daed7c4be69a97e73407235b930",
+        "checksum": "sha256:706cb77687b473a57630683340901f9aa6e6618c30d7ff98384603f4b64cd798",
         "kind": "rust_module",
         "path": "crates/axon-vectors/src/payload.rs"
       },

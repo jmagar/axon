@@ -71,6 +71,17 @@ impl VectorStore for QdrantVectorStore {
         Err(self.not_wired(axon_error::ErrorStage::Publishing))
     }
 
+    async fn mark_unchanged_items_committed(
+        &self,
+        _collection: String,
+        _source_id: SourceId,
+        _previous_generation: SourceGenerationId,
+        _committed_generation: SourceGenerationId,
+        _source_item_keys: Vec<SourceItemKey>,
+    ) -> Result<VectorStoreWriteResult> {
+        Err(self.not_wired(axon_error::ErrorStage::Publishing))
+    }
+
     async fn delete(&self, _selector: VectorDeleteSelector) -> Result<VectorStoreDeleteResult> {
         Err(self.not_wired(axon_error::ErrorStage::Cleaning))
     }

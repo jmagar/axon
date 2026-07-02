@@ -250,6 +250,13 @@ impl LedgerStore for FakeLedgerStore {
         Ok(generation)
     }
 
+    async fn committed_generation(
+        &self,
+        source_id: SourceId,
+    ) -> Result<Option<SourceGenerationId>> {
+        Ok(self.state.lock().await.committed.get(&source_id).cloned())
+    }
+
     async fn complete_generation(&self, generation: SourceGeneration) -> Result<SourceGeneration> {
         ensure_generation_publishable(&generation)?;
         let mut state = self.state.lock().await;

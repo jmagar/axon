@@ -1,11 +1,10 @@
 use std::fs;
-use std::fs::Metadata;
 use std::path::{Component, Path, PathBuf};
-use std::time::UNIX_EPOCH;
 
 use axon_api::source::{ApiError, ContentRef};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use sha2::{Digest, Sha256};
 
 use crate::adapter::Result;
 use crate::local_select::LocalOptions;
@@ -54,14 +53,11 @@ pub(super) fn safe_item_path(root: &Path, item_key: &str) -> Result<PathBuf> {
     }
 }
 
-pub(super) fn content_fingerprint(metadata: &Metadata) -> String {
-    let modified_ns = metadata
-        .modified()
-        .ok()
-        .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
-        .map(|duration| duration.as_nanos())
-        .unwrap_or_default();
-    format!("stat:{}:{modified_ns}", metadata.len())
+pub(super) fn content_fingerprint(path: &Path) -> Result<String> {
+    let bytes = fs::read(path).map_err(|err| fs_error("adapter.local.read_failed", path, err))?;
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    Ok(format!("sha256:{:x}", hasher.finalize()))
 }
 
 fn enforce_read_size(path: &Path, options: &LocalOptions) -> Result<()> {

@@ -13,6 +13,7 @@ use axon_code_index::{
     CodeIndexIdentity, CodeSearchAllowedRoots, FreshnessWarning, ReindexProgressSink,
 };
 use axon_core::config::Config;
+use axon_embedding::reservation::ProviderReservationContext;
 use axon_vector::ops::commands::{CodeSearchVectorRequest, code_search_hits};
 use serde_json::json;
 
@@ -110,14 +111,18 @@ async fn target_code_search(
     opts: CodeSearchOptions,
     path_prefix: Option<&str>,
 ) -> Result<CodeSearchResult, Box<dyn Error + Send + Sync>> {
-    let refresh = refresh_code_search_index_with_backend(
-        ctx,
-        opts.cwd.as_deref(),
-        opts.caller,
-        CodeSearchRefreshBackend::TargetLocalSource,
-        None,
-    )
-    .await?;
+    let refresh = if opts.ensure_fresh {
+        refresh_code_search_index_with_backend(
+            ctx,
+            opts.cwd.as_deref(),
+            opts.caller,
+            CodeSearchRefreshBackend::TargetLocalSource,
+            None,
+        )
+        .await?
+    } else {
+        refresh::target_code_search_committed_state(ctx, opts.cwd.as_deref(), opts.caller).await?
+    };
     let Some(source_id) = refresh.target_source_id.clone() else {
         return Ok(code_search_missing_index_result(text, refresh.freshness));
     };
@@ -127,6 +132,23 @@ async fn target_code_search(
     let Some(target) = ctx.target_local_source_runtime() else {
         return Ok(code_search_missing_index_result(text, refresh.freshness));
     };
+    let _reservation = target
+        .embedding_reservations
+        .reserve_with_context(ProviderReservationContext {
+            job_id: JobId::new(uuid::Uuid::new_v4()),
+            stage_id: None,
+            provider_id: Some(target.embedding_provider_id.clone()),
+            priority: JobPriority::Interactive,
+            units: 1,
+            ttl_seconds: Some(60),
+        })
+        .await
+        .map_err(|e| -> Box<dyn Error + Send + Sync> {
+            wrap_service_error(
+                "target code_search query embedding reservation failed".to_string(),
+                &e,
+            )
+        })?;
     let embedding = target
         .embedding_provider
         .embed(EmbeddingBatch {
@@ -194,13 +216,15 @@ fn target_code_search_request(
     limit: usize,
     dense_vector: Vec<f32>,
     source_id: &SourceId,
-    generation: &SourceGenerationId,
+    committed_generation: &SourceGenerationId,
     path_prefix: Option<&str>,
 ) -> VectorSearchRequest {
     let mut filters = MetadataMap::new();
     filters.insert("source_id".to_string(), json!(source_id.0));
-    filters.insert("source_generation".to_string(), json!(generation.0));
-    filters.insert("committed_generation".to_string(), json!(generation.0));
+    filters.insert(
+        "committed_generation".to_string(),
+        json!(committed_generation.0),
+    );
     if let Some(prefix) = path_prefix {
         filters.insert("path_prefix".to_string(), json!(prefix));
     }
@@ -456,3 +480,7 @@ async fn git_remote_origin(project_root: &Path) -> Result<Option<String>, String
 #[cfg(test)]
 #[path = "code_search_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "code_search_target_tests.rs"]
+mod target_tests;

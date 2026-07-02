@@ -97,39 +97,39 @@ async fn prepare_changed_documents(
 }
 
 fn changed_diff_batches(diff: &SourceManifestDiff, batch_size: usize) -> Vec<SourceManifestDiff> {
-    let changed = diff
-        .added
-        .iter()
-        .cloned()
-        .map(ChangedManifestItem::Added)
-        .chain(
-            diff.modified
-                .iter()
-                .cloned()
-                .map(ChangedManifestItem::Modified),
-        )
-        .collect::<Vec<_>>();
-    changed
-        .chunks(batch_size.max(1))
-        .map(|chunk| {
-            let mut batch = empty_diff_like(diff);
-            for item in chunk {
-                match item {
-                    ChangedManifestItem::Added(item) => batch.added.push(item.clone()),
-                    ChangedManifestItem::Modified(item) => batch.modified.push(item.clone()),
-                }
-            }
-            batch.counts.added = batch.added.len() as u64;
-            batch.counts.modified = batch.modified.len() as u64;
-            batch
-        })
-        .collect()
+    let batch_size = batch_size.max(1);
+    let mut batches = Vec::new();
+    let mut current = empty_diff_like(diff);
+    for item in &diff.added {
+        current.added.push(item.clone());
+        if changed_batch_len(&current) == batch_size {
+            push_changed_batch(&mut batches, &mut current, diff);
+        }
+    }
+    for item in &diff.modified {
+        current.modified.push(item.clone());
+        if changed_batch_len(&current) == batch_size {
+            push_changed_batch(&mut batches, &mut current, diff);
+        }
+    }
+    if changed_batch_len(&current) > 0 {
+        push_changed_batch(&mut batches, &mut current, diff);
+    }
+    batches
 }
 
-#[derive(Debug, Clone)]
-enum ChangedManifestItem {
-    Added(ManifestItem),
-    Modified(ManifestItem),
+fn changed_batch_len(batch: &SourceManifestDiff) -> usize {
+    batch.added.len() + batch.modified.len()
+}
+
+fn push_changed_batch(
+    batches: &mut Vec<SourceManifestDiff>,
+    current: &mut SourceManifestDiff,
+    diff: &SourceManifestDiff,
+) {
+    current.counts.added = current.added.len() as u64;
+    current.counts.modified = current.modified.len() as u64;
+    batches.push(std::mem::replace(current, empty_diff_like(diff)));
 }
 
 fn empty_diff_like(diff: &SourceManifestDiff) -> SourceManifestDiff {

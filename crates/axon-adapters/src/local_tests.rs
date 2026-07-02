@@ -1,12 +1,10 @@
-use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
 
 use axon_api::source::*;
-use uuid::Uuid;
 
 use crate::SourceAdapter;
 use crate::local::LocalSourceAdapter;
+use crate::local_test_support::*;
 
 #[tokio::test]
 async fn local_adapter_declares_task1_scopes_and_accepts_options() {
@@ -124,6 +122,7 @@ async fn local_adapter_acquires_and_normalizes_source_documents() {
     let docs = normalized.data;
     assert_eq!(docs[0].source_id, SourceId::from("src_local_test"));
     assert_eq!(docs[0].source_item_key, SourceItemKey::from("README.md"));
+    assert_eq!(docs[0].metadata["source_type"], "local_code");
     assert_eq!(docs[0].metadata["source_kind"], "local");
     assert_eq!(docs[0].metadata["source_adapter"], "local");
     assert_eq!(docs[0].metadata["source_scope"], "directory");
@@ -181,20 +180,42 @@ async fn local_manifest_fingerprint_changes_for_same_size_file_edits() {
     let adapter = LocalSourceAdapter::new();
     let root = temp_source_dir();
     let file = root.join("README.md");
+    let timestamp_source = root.join("timestamp-source");
     fs::write(&file, "abcd").unwrap();
+    fs::write(&timestamp_source, "time anchor").unwrap();
+    std::process::Command::new("touch")
+        .arg("-r")
+        .arg(&timestamp_source)
+        .arg(&file)
+        .status()
+        .expect("restore first mtime");
     let plan = source_plan(root, SourceScope::Directory);
 
     let first = adapter.discover(&plan).await.unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(1100));
     fs::write(&file, "wxyz").unwrap();
+    std::process::Command::new("touch")
+        .arg("-r")
+        .arg(&timestamp_source)
+        .arg(&file)
+        .status()
+        .expect("restore second mtime");
     let second = adapter.discover(&plan).await.unwrap();
 
-    assert_eq!(
-        first.items[0].source_item_key,
-        second.items[0].source_item_key
-    );
-    assert_ne!(first.items[0].content_hash, second.items[0].content_hash);
-    assert!(second.items[0].mtime.is_some());
+    let first_item = first
+        .items
+        .iter()
+        .find(|item| item.source_item_key == SourceItemKey::from("README.md"))
+        .expect("first README item");
+    let second_item = second
+        .items
+        .iter()
+        .find(|item| item.source_item_key == SourceItemKey::from("README.md"))
+        .expect("second README item");
+    assert_eq!(first_item.source_item_key, second_item.source_item_key);
+    assert_eq!(first_item.size_bytes, second_item.size_bytes);
+    assert_eq!(first_item.mtime, second_item.mtime);
+    assert_ne!(first_item.content_hash, second_item.content_hash);
+    assert!(second_item.mtime.is_some());
 }
 
 #[tokio::test]
@@ -395,151 +416,4 @@ async fn local_map_scope_discovers_manifest_but_acquires_no_documents() {
 
     assert_eq!(manifest.items.len(), 1);
     assert!(normalized.data.is_empty());
-}
-
-fn local_options() -> MetadataMap {
-    let mut values = MetadataMap::new();
-    values.insert("include_globs".to_string(), vec!["**/*.rs"].into());
-    values.insert("exclude_globs".to_string(), vec!["target/**"].into());
-    values.insert("respect_gitignore".to_string(), true.into());
-    values.insert("follow_symlinks".to_string(), false.into());
-    values.insert("max_file_bytes".to_string(), 1024.into());
-    values.insert("binary_policy".to_string(), "skip".into());
-    values.insert("watch_policy".to_string(), "manual".into());
-    values
-}
-
-fn binary_options(policy: &str) -> MetadataMap {
-    let mut values = MetadataMap::new();
-    values.insert("binary_policy".to_string(), policy.into());
-    values
-}
-
-fn source_plan(path: PathBuf, scope: SourceScope) -> SourcePlan {
-    let canonical_uri = format!("local://{}", slug(&path));
-    SourcePlan {
-        job_id: JobId::new(Uuid::from_u128(298)),
-        request: SourceRequest::new(path.to_string_lossy().to_string()),
-        route: RoutePlan {
-            source: ResolvedSource {
-                requested_uri: path.to_string_lossy().to_string(),
-                canonical_uri: canonical_uri.clone(),
-                source_id: SourceId::from("src_local_test"),
-                source_kind: SourceKind::Local,
-                display_name: "local test".to_string(),
-                candidate_adapters: vec![AdapterCandidate {
-                    adapter: AdapterRef {
-                        name: "local".to_string(),
-                        version: env!("CARGO_PKG_VERSION").to_string(),
-                    },
-                    supported_scopes: vec![scope],
-                    confidence: 1.0,
-                    reason: "test".to_string(),
-                }],
-                default_scope: scope,
-                available_scopes: vec![scope],
-                authority: AuthorityLevel::Inferred,
-                confidence: 1.0,
-                reason: "test".to_string(),
-                authority_hint: None,
-                warnings: Vec::new(),
-            },
-            adapter: AdapterRef {
-                name: "local".to_string(),
-                version: env!("CARGO_PKG_VERSION").to_string(),
-            },
-            scope,
-            provider_requirements: Vec::new(),
-            credential_requirements: Vec::new(),
-            execution_affinity: ExecutionAffinity::Worker,
-            safety_class: SafetyClass::LocalFilesystem,
-            option_schema_id: "adapter:local:options:v1".to_string(),
-            validated_options: AdapterOptions::default(),
-            chunking_hints: Vec::new(),
-            parser_hints: Vec::new(),
-            graph_fact_kinds: Vec::new(),
-            watch_supported: true,
-            refresh_supported: true,
-        },
-        stage_plan: Vec::new(),
-        limits: EffectiveLimits {
-            request: SourceLimits::default(),
-            adapter_defaults: SourceLimits::default(),
-            config_defaults: SourceLimits::default(),
-            effective: SourceLimits::default(),
-        },
-        config_snapshot_id: ConfigSnapshotId::from("cfg_local_test"),
-        provider_reservations: Vec::new(),
-    }
-}
-
-fn manifest_diff(plan: &SourcePlan, items: Vec<ManifestItem>) -> SourceManifestDiff {
-    let added_count = items.len() as u64;
-    SourceManifestDiff {
-        header: StageResultHeader {
-            job_id: plan.job_id,
-            stage_id: StageId::new(Uuid::from_u128(29801)),
-            phase: PipelinePhase::Diffing,
-            status: LifecycleStatus::Completed,
-            started_at: timestamp(),
-            completed_at: Some(timestamp()),
-            counts: StageCounts {
-                items_total: Some(items.len() as u64),
-                items_done: items.len() as u64,
-                documents_total: None,
-                documents_done: 0,
-                chunks_total: None,
-                chunks_done: 0,
-                bytes_total: None,
-                bytes_done: 0,
-            },
-            warnings: Vec::new(),
-            error: None,
-        },
-        source_id: plan.route.source.source_id.clone(),
-        previous_generation: None,
-        next_generation: SourceGenerationId::from("gen_local_test"),
-        added: items,
-        modified: Vec::new(),
-        removed: Vec::new(),
-        unchanged: Vec::new(),
-        skipped: Vec::new(),
-        failed: Vec::new(),
-        counts: DiffCounts {
-            added: added_count,
-            modified: 0,
-            removed: 0,
-            unchanged: 0,
-            skipped: 0,
-            failed: 0,
-        },
-    }
-}
-
-fn timestamp() -> Timestamp {
-    Timestamp("2026-07-01T00:00:00Z".to_string())
-}
-
-fn temp_source_dir() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("axon-local-test-{}", Uuid::new_v4()));
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
-
-fn slug(path: &Path) -> String {
-    let mut counts = BTreeMap::new();
-    path.components()
-        .filter_map(|component| component.as_os_str().to_str())
-        .filter(|part| !part.is_empty() && *part != "/")
-        .map(|part| {
-            let count = counts.entry(part.to_string()).or_insert(0);
-            *count += 1;
-            if *count == 1 {
-                part.to_string()
-            } else {
-                format!("{part}-{count}")
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("-")
 }

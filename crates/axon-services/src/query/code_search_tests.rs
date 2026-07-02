@@ -187,14 +187,14 @@ async fn target_code_search_queries_committed_target_vectors_with_path_prefix() 
             offset: 0,
             cwd: Some(repo.path().to_path_buf()),
             path_prefix: Some("src".to_string()),
-            ensure_fresh: true,
+            ensure_fresh: false,
             caller: CodeSearchCaller::Cli,
         },
     )
     .await
     .expect("target code search");
 
-    assert_eq!(searched.freshness.status, "fresh");
+    assert_eq!(searched.freshness.status, "skipped");
     assert!(searched.freshness.warning.is_none());
     assert_eq!(searched.results.len(), 1);
     assert_eq!(searched.results[0].file_path.as_deref(), Some("src/lib.rs"));

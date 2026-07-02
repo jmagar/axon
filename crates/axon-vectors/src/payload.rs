@@ -452,6 +452,7 @@ pub const VECTOR_SHARED_FIELDS: &[&str] = &[
     "payload_contract_version",
     "collection",
     "source_family",
+    "source_type",
     "source_kind",
     "source_adapter",
     "source_scope",

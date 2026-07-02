@@ -41,3 +41,7 @@ mod manifest_tests;
 #[cfg(test)]
 #[path = "local_tests.rs"]
 mod local_tests;
+
+#[cfg(test)]
+#[path = "local_test_support.rs"]
+mod local_test_support;

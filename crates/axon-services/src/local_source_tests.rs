@@ -581,11 +581,15 @@ async fn refresh_vectorizes_added_and_modified_docs_and_debts_removed_and_replac
     let dir = tempfile::tempdir().unwrap();
     let old_path = dir.path().join("old.rs");
     let keep_path = dir.path().join("keep.rs");
+    let stable_path = dir.path().join("stable.rs");
     let new_path = dir.path().join("new.rs");
     tokio::fs::write(&old_path, "pub fn old() -> i32 { 1 }\n")
         .await
         .unwrap();
     tokio::fs::write(&keep_path, "pub fn keep() -> i32 { 1 }\n")
+        .await
+        .unwrap();
+    tokio::fs::write(&stable_path, "pub fn stable() -> i32 { 1 }\n")
         .await
         .unwrap();
     let ledger = FakeLedgerStore::new();
@@ -600,7 +604,7 @@ async fn refresh_vectorizes_added_and_modified_docs_and_debts_removed_and_replac
     )
     .await
     .unwrap();
-    assert_eq!(first.documents_prepared, 2);
+    assert_eq!(first.documents_prepared, 3);
 
     tokio::fs::remove_file(old_path).await.unwrap();
     tokio::fs::write(&keep_path, "pub fn keep() -> i32 { 2 }\n")
@@ -647,6 +651,33 @@ async fn refresh_vectorizes_added_and_modified_docs_and_debts_removed_and_replac
             .iter()
             .any(|point| point.payload["source_generation"].as_str()
                 == Some(first.generation.0.as_str()))
+    );
+    let stable_points = vectors
+        .points("axon-test")
+        .await
+        .into_iter()
+        .filter(|point| {
+            point
+                .payload
+                .get("source_item_key")
+                .and_then(|value| value.as_str())
+                == Some("stable.rs")
+        })
+        .collect::<Vec<_>>();
+    assert!(!stable_points.is_empty());
+    assert!(stable_points.iter().all(|point| {
+        point.payload["source_generation"].as_str() == Some(first.generation.0.as_str())
+            && point.payload["committed_generation"].as_str() == Some(second.generation.0.as_str())
+            && point.payload["document_status"].as_str() == Some("published")
+    }));
+    assert_eq!(
+        vectors
+            .calls()
+            .await
+            .into_iter()
+            .filter(|call| *call == "mark_unchanged_items_committed")
+            .count(),
+        1
     );
     assert_eq!(ledger.cleanup_debt_count().await, 2);
     assert_eq!(

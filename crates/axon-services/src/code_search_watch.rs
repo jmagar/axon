@@ -228,8 +228,9 @@ async fn refresh_code_search_watch_root(
             let indexed_files = result.freshness.indexed_files;
             let removed_files = result.freshness.removed_files;
             let generation = result.generation;
-            let failed_initial =
-                !target_refresh && reason == "initial" && (status != "fresh" || warning.is_some());
+            let failed_refresh = status != "fresh" || warning.is_some();
+            let failed_initial = reason == "initial" && failed_refresh;
+            let failed_target_refresh = target_refresh && failed_refresh;
             let warning_message = warning.clone();
             events.emit(CodeSearchWatchEvent::RefreshFinished {
                 root: root.to_path_buf(),
@@ -239,9 +240,9 @@ async fn refresh_code_search_watch_root(
                 removed_files,
                 generation,
             });
-            if failed_initial {
+            if failed_initial || failed_target_refresh {
                 return Err(anyhow::anyhow!(
-                    "initial local code index refresh failed for {}: {}",
+                    "local code index refresh failed for {}: {}",
                     root.display(),
                     warning_message
                         .unwrap_or_else(|| "refresh did not produce a fresh index".to_string())

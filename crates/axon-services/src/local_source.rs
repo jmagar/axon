@@ -12,7 +12,6 @@ use axon_ledger::store::LedgerStore;
 use axon_vectors::store::VectorStore;
 use std::sync::Arc;
 
-#[cfg(test)]
 pub(super) use self::local_source_adapter::local_source_id;
 use self::local_source_adapter::{
     LocalAdapterRun, collection_spec, discover_manifest, resolve_adapter_run, source_summary,
@@ -27,7 +26,7 @@ use self::local_source_vectorize::{
     VectorizeStats, publish_document_status, vectorize_changed_documents,
 };
 
-const LOCAL_ADAPTER_VERSION: &str = "target-local-pr11";
+const LOCAL_ADAPTER_VERSION: &str = env!("CARGO_PKG_VERSION");
 const LOCAL_LEASE_TTL_SECONDS: u64 = 30 * 60;
 
 #[derive(Debug, Clone)]
@@ -176,36 +175,23 @@ async fn index_local_source_with_lease(
         &vectorized.stats,
     )
     .await?;
-    if let Err(err) = vector_store
-        .mark_generation_committed(
-            collection.collection.clone(),
-            source_id.clone(),
-            completed.generation.clone(),
-        )
-        .await
-    {
-        record_progress_error(progress, PipelinePhase::Publishing, &err).await?;
-        return Err(anyhow::Error::new(err));
-    }
-    let published = match publish_completed_generation(ledger, completed.clone()).await {
-        Ok(published) => published,
-        Err(err) => {
-            if let Err(rollback_err) = vector_store
-                .delete(VectorDeleteSelector::Generation {
-                    collection: collection.collection.clone(),
-                    source_id: source_id.clone(),
-                    generation: completed.generation.clone(),
-                })
-                .await
-            {
-                return Err(err.context(format!(
-                    "also failed to rollback committed vector generation {} from collection {}: {rollback_err}",
-                    completed.generation.0, collection.collection
-                )));
-            }
-            return Err(err);
-        }
-    };
+    mark_vectors_for_completed_generation(
+        vector_store,
+        &collection,
+        &source_id,
+        &completed,
+        &diff,
+        progress,
+    )
+    .await?;
+    let published = publish_generation_and_rollback_vectors(
+        ledger,
+        vector_store,
+        &collection,
+        &completed,
+        &diff,
+    )
+    .await?;
     for status in &vectorized.document_statuses {
         ledger
             .update_document_status(publish_document_status(status))
@@ -301,6 +287,158 @@ async fn publish_completed_generation(
             expected_previous_generation: completed.previous_generation.clone(),
         })
         .await?)
+}
+
+async fn mark_vectors_for_completed_generation(
+    vector_store: &dyn VectorStore,
+    collection: &CollectionSpec,
+    source_id: &SourceId,
+    completed: &SourceGeneration,
+    diff: &SourceManifestDiff,
+    progress: Option<&dyn LocalSourceProgress>,
+) -> anyhow::Result<()> {
+    if let Err(err) = vector_store
+        .mark_generation_committed(
+            collection.collection.clone(),
+            source_id.clone(),
+            completed.generation.clone(),
+        )
+        .await
+    {
+        record_progress_error(progress, PipelinePhase::Publishing, &err).await?;
+        return Err(anyhow::Error::new(err));
+    }
+    if let Err(err) = mark_unchanged_vectors_committed(
+        vector_store,
+        collection,
+        source_id,
+        completed,
+        diff,
+        completed.generation.clone(),
+    )
+    .await
+    {
+        record_progress_error(progress, PipelinePhase::Publishing, &err).await?;
+        rollback_new_generation_vectors(vector_store, collection, source_id, completed).await?;
+        return Err(anyhow::Error::new(err));
+    }
+    Ok(())
+}
+
+async fn publish_generation_and_rollback_vectors(
+    ledger: &dyn LedgerStore,
+    vector_store: &dyn VectorStore,
+    collection: &CollectionSpec,
+    completed: &SourceGeneration,
+    diff: &SourceManifestDiff,
+) -> anyhow::Result<SourceGeneration> {
+    match publish_completed_generation(ledger, completed.clone()).await {
+        Ok(published) => Ok(published),
+        Err(err) => {
+            if let Err(rollback_err) = rollback_new_generation_vectors(
+                vector_store,
+                collection,
+                &completed.source_id,
+                completed,
+            )
+            .await
+            {
+                return Err(err.context(format!(
+                    "also failed to rollback committed vector generation {} from collection {}: {rollback_err}",
+                    completed.generation.0, collection.collection
+                )));
+            }
+            if let Err(rollback_err) = restore_unchanged_vector_markers(
+                vector_store,
+                collection,
+                &completed.source_id,
+                completed,
+                diff,
+            )
+            .await
+            {
+                return Err(err.context(format!(
+                    "also failed to restore unchanged vector generation markers in collection {}: {rollback_err}",
+                    collection.collection
+                )));
+            }
+            Err(err)
+        }
+    }
+}
+
+async fn rollback_new_generation_vectors(
+    vector_store: &dyn VectorStore,
+    collection: &CollectionSpec,
+    source_id: &SourceId,
+    completed: &SourceGeneration,
+) -> Result<(), ApiError> {
+    vector_store
+        .delete(VectorDeleteSelector::Generation {
+            collection: collection.collection.clone(),
+            source_id: source_id.clone(),
+            generation: completed.generation.clone(),
+        })
+        .await
+        .map(|_| ())
+}
+
+async fn restore_unchanged_vector_markers(
+    vector_store: &dyn VectorStore,
+    collection: &CollectionSpec,
+    source_id: &SourceId,
+    completed: &SourceGeneration,
+    diff: &SourceManifestDiff,
+) -> Result<(), ApiError> {
+    let Some(previous_generation) = completed.previous_generation.clone() else {
+        return Ok(());
+    };
+    if diff.unchanged.is_empty() {
+        return Ok(());
+    }
+    vector_store
+        .mark_unchanged_items_committed(
+            collection.collection.clone(),
+            source_id.clone(),
+            previous_generation.clone(),
+            previous_generation,
+            unchanged_item_keys(diff),
+        )
+        .await
+        .map(|_| ())
+}
+
+async fn mark_unchanged_vectors_committed(
+    vector_store: &dyn VectorStore,
+    collection: &CollectionSpec,
+    source_id: &SourceId,
+    completed: &SourceGeneration,
+    diff: &SourceManifestDiff,
+    committed_generation: SourceGenerationId,
+) -> Result<(), ApiError> {
+    let Some(previous_generation) = completed.previous_generation.clone() else {
+        return Ok(());
+    };
+    if diff.unchanged.is_empty() {
+        return Ok(());
+    }
+    vector_store
+        .mark_unchanged_items_committed(
+            collection.collection.clone(),
+            source_id.clone(),
+            previous_generation,
+            committed_generation,
+            unchanged_item_keys(diff),
+        )
+        .await
+        .map(|_| ())
+}
+
+fn unchanged_item_keys(diff: &SourceManifestDiff) -> Vec<SourceItemKey> {
+    diff.unchanged
+        .iter()
+        .map(|item| item.source_item_key.clone())
+        .collect()
 }
 
 fn manifest_diff_has_changes(diff: &SourceManifestDiff) -> bool {
