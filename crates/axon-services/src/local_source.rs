@@ -218,14 +218,9 @@ async fn index_local_source_with_lease(
             return Err(err);
         }
     };
-    let published = publish_generation_and_rollback_vectors(
-        ledger,
-        vector_store,
-        &collection,
-        &completed,
-        &diff,
-    )
-    .await?;
+    let published =
+        publish_generation_and_rollback_vectors(ledger, vector_store, &collection, &completed)
+            .await?;
     for status in &vectorized.document_statuses {
         ledger
             .update_document_status(publish_document_status(status))

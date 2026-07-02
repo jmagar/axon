@@ -340,6 +340,9 @@ async fn publish_generation_failure_reports_rollback_delete_failure() {
             "delete"
         ]
     );
+    let source_id = super::local_source_id(&tokio::fs::canonicalize(&path).await.unwrap());
+    assert_eq!(ledger.committed_generation(&source_id).await, None);
+    assert_eq!(ledger.generation_count().await, 1);
     assert!(
         vectors
             .points("axon-test")
@@ -347,6 +350,71 @@ async fn publish_generation_failure_reports_rollback_delete_failure() {
             .iter()
             .all(|point| point.payload["committed_generation"].as_str() != Some("uncommitted"))
     );
+}
+
+#[tokio::test]
+async fn partial_unchanged_vector_copy_failure_keeps_previous_generation_visible() {
+    let dir = tempfile::tempdir().unwrap();
+    let keep_path = dir.path().join("keep.rs");
+    let change_path = dir.path().join("change.rs");
+    tokio::fs::write(&keep_path, "pub fn keep() -> i32 { 1 }\n")
+        .await
+        .unwrap();
+    tokio::fs::write(&change_path, "pub fn change() -> i32 { 1 }\n")
+        .await
+        .unwrap();
+    let ledger = FakeLedgerStore::new();
+    let embedder = FakeEmbeddingProvider::new("fake-embedding", 8);
+    let vectors = FakeVectorStore::new("fake-vector");
+
+    let first = index_local_source(
+        input(dir.path().to_path_buf()),
+        &ledger,
+        &embedder,
+        &vectors,
+    )
+    .await
+    .unwrap();
+    tokio::fs::write(&change_path, "pub fn change() -> i32 { 2 }\n")
+        .await
+        .unwrap();
+    let failing_vectors = vectors
+        .clone()
+        .with_mode(FakeVectorMode::PartialCommitFailure);
+
+    let err = index_local_source(
+        input(dir.path().to_path_buf()),
+        &ledger,
+        &embedder,
+        &failing_vectors,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(
+        err.to_string().contains("partial_commit_failure"),
+        "unexpected error: {err:#}"
+    );
+    assert_eq!(
+        ledger.committed_generation(&first.source_id).await,
+        Some(first.generation.clone())
+    );
+    let keep_points = vectors
+        .points("axon-test")
+        .await
+        .into_iter()
+        .filter(|point| {
+            point
+                .payload
+                .get("source_item_key")
+                .and_then(|value| value.as_str())
+                == Some("keep.rs")
+        })
+        .collect::<Vec<_>>();
+    assert!(!keep_points.is_empty());
+    assert!(keep_points.iter().all(|point| {
+        point.payload["committed_generation"].as_str() == Some(first.generation.0.as_str())
+    }));
 }
 
 #[tokio::test]

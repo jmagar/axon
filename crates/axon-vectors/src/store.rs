@@ -40,6 +40,10 @@ pub trait VectorStore: Send + Sync {
         source_id: SourceId,
         generation: SourceGenerationId,
     ) -> Result<VectorStoreWriteResult>;
+    /// Carry unchanged items into a new committed generation without mutating
+    /// the previous committed generation's points. Implementations should copy
+    /// or otherwise stage new-generation visibility so old committed searches
+    /// remain valid until ledger publish is durable.
     async fn mark_unchanged_items_committed(
         &self,
         collection: String,
@@ -71,6 +75,7 @@ pub enum FakeVectorMode {
     PartialFailure,
     SlowWrite,
     CommitFailure,
+    PartialCommitFailure,
     DeleteFailure,
 }
 
@@ -129,6 +134,7 @@ impl FakeVectorStore {
             | FakeVectorMode::PartialFailure
             | FakeVectorMode::SlowWrite
             | FakeVectorMode::CommitFailure
+            | FakeVectorMode::PartialCommitFailure
             | FakeVectorMode::DeleteFailure => None,
             FakeVectorMode::Unavailable => Some(
                 ApiError::new("provider.unavailable", stage, "vector store unavailable")
@@ -161,6 +167,7 @@ impl FakeVectorStore {
             | FakeVectorMode::PartialFailure
             | FakeVectorMode::SlowWrite
             | FakeVectorMode::CommitFailure
+            | FakeVectorMode::PartialCommitFailure
             | FakeVectorMode::DeleteFailure => FakeProviderModeState::Success,
             FakeVectorMode::Unavailable => FakeProviderModeState::Fatal,
             FakeVectorMode::Timeout => FakeProviderModeState::Timeout,

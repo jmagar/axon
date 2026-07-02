@@ -151,11 +151,11 @@ pub(super) async fn publish_generation_and_rollback_vectors(
     vector_store: &dyn VectorStore,
     collection: &CollectionSpec,
     completed: &SourceGeneration,
-    diff: &SourceManifestDiff,
 ) -> anyhow::Result<SourceGeneration> {
     match publish_completed_generation(ledger, completed.clone()).await {
         Ok(published) => Ok(published),
         Err(err) => {
+            let mut cleanup_errors = Vec::new();
             if let Err(rollback_err) = rollback_new_generation_vectors(
                 vector_store,
                 collection,
@@ -164,30 +164,19 @@ pub(super) async fn publish_generation_and_rollback_vectors(
             )
             .await
             {
-                return Err(err.context(format!(
+                cleanup_errors.push(format!(
                     "also failed to rollback committed vector generation {} from collection {}: {rollback_err}",
                     completed.generation.0, collection.collection
-                )));
-            }
-            if let Err(rollback_err) = restore_unchanged_vector_markers(
-                vector_store,
-                collection,
-                &completed.source_id,
-                completed,
-                diff,
-            )
-            .await
-            {
-                return Err(err.context(format!(
-                    "also failed to restore unchanged vector generation markers in collection {}: {rollback_err}",
-                    collection.collection
-                )));
+                ));
             }
             if let Err(fail_err) = mark_completed_generation_failed(ledger, completed.clone()).await
             {
-                return Err(err.context(format!(
+                cleanup_errors.push(format!(
                     "also failed to mark source generation failed: {fail_err}"
-                )));
+                ));
+            }
+            if !cleanup_errors.is_empty() {
+                return Err(err.context(cleanup_errors.join("; ")));
             }
             Err(err)
         }
@@ -229,31 +218,6 @@ async fn publish_completed_generation(
             expected_previous_generation: completed.previous_generation.clone(),
         })
         .await?)
-}
-
-async fn restore_unchanged_vector_markers(
-    vector_store: &dyn VectorStore,
-    collection: &CollectionSpec,
-    source_id: &SourceId,
-    completed: &SourceGeneration,
-    diff: &SourceManifestDiff,
-) -> Result<u64, ApiError> {
-    let Some(previous_generation) = completed.previous_generation.clone() else {
-        return Ok(0);
-    };
-    if diff.unchanged.is_empty() {
-        return Ok(0);
-    }
-    vector_store
-        .mark_unchanged_items_committed(
-            collection.collection.clone(),
-            source_id.clone(),
-            previous_generation.clone(),
-            previous_generation,
-            unchanged_item_keys(diff),
-        )
-        .await
-        .map(|result| result.points_written)
 }
 
 async fn mark_unchanged_vectors_committed(

@@ -331,6 +331,29 @@ async fn local_include_globs_can_opt_into_hidden_and_secret_like_files() {
 }
 
 #[tokio::test]
+async fn broad_local_include_globs_do_not_opt_into_hidden_or_secret_like_files() {
+    let adapter = LocalSourceAdapter::new();
+    let root = temp_source_dir();
+    fs::write(root.join(".env"), "AXON_TOKEN=secret").unwrap();
+    fs::write(root.join("api-token.txt"), "secret").unwrap();
+    fs::write(root.join("README.md"), "# public").unwrap();
+    let mut plan = source_plan(root, SourceScope::Directory);
+    plan.route
+        .validated_options
+        .values
+        .insert("include_globs".to_string(), vec!["**/*"].into());
+
+    let manifest = adapter.discover(&plan).await.unwrap();
+    let keys = manifest
+        .items
+        .iter()
+        .map(|item| item.source_item_key.0.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(keys, vec!["README.md"]);
+}
+
+#[tokio::test]
 async fn local_repo_scope_prunes_generated_and_lock_files() {
     let adapter = LocalSourceAdapter::new();
     let root = temp_source_dir();

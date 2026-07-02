@@ -56,11 +56,10 @@ async fn target_code_search_refresh_uses_local_source_runtime_when_available() {
             8,
         ));
 
-    let refreshed = refresh_code_search_index_with_backend(
+    let refreshed = refresh_code_search_index_with_progress(
         &ctx,
         Some(repo.path()),
         CodeSearchCaller::Cli,
-        CodeSearchRefreshBackend::TargetLocalSource,
         None,
     )
     .await

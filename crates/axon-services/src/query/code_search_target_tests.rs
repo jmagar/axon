@@ -77,6 +77,11 @@ async fn target_code_search_keeps_unchanged_previous_generation_results_visible(
         first.target_source_generation,
         second.target_source_generation
     );
+    let first_generation = first.target_source_generation.as_ref().expect("first gen");
+    let second_generation = second
+        .target_source_generation
+        .as_ref()
+        .expect("second gen");
 
     let stable_points = vectors
         .points(&cfg.collection)
@@ -91,17 +96,13 @@ async fn target_code_search_keeps_unchanged_previous_generation_results_visible(
         })
         .collect::<Vec<_>>();
     assert!(!stable_points.is_empty());
-    assert!(stable_points.iter().all(|point| {
-        point.payload["source_generation"].as_str()
-            == first
-                .target_source_generation
-                .as_ref()
-                .map(|value| value.0.as_str())
-            && point.payload["committed_generation"].as_str()
-                == second
-                    .target_source_generation
-                    .as_ref()
-                    .map(|value| value.0.as_str())
+    assert!(stable_points.iter().any(|point| {
+        point.payload["source_generation"].as_str() == Some(first_generation.0.as_str())
+            && point.payload["committed_generation"].as_str() == Some(first_generation.0.as_str())
+    }));
+    assert!(stable_points.iter().any(|point| {
+        point.payload["source_generation"].as_str() == Some(second_generation.0.as_str())
+            && point.payload["committed_generation"].as_str() == Some(second_generation.0.as_str())
     }));
 
     let third = refresh_code_search_index_with_backend(

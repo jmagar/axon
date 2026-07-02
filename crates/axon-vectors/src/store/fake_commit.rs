@@ -35,8 +35,8 @@ impl FakeVectorStore {
             .map(|key| key.0)
             .collect::<BTreeSet<_>>();
         let points = state.points.entry(collection.clone()).or_default();
-        let mut points_written = 0;
-        for point in points.values_mut() {
+        let mut carried_points = Vec::new();
+        for point in points.values() {
             let point_source = payload_string(&point.payload, "source_id");
             let point_generation = payload_string(&point.payload, "committed_generation");
             let point_item = payload_string(&point.payload, "source_item_key");
@@ -46,20 +46,47 @@ impl FakeVectorStore {
                     .as_deref()
                     .is_some_and(|item| live_keys.contains(item))
             {
-                point.payload.insert(
+                let mut carried = point.clone();
+                carried.point_id =
+                    VectorPointId::new(format!("{}::{}", point.point_id.0, committed_generation.0));
+                carried.payload.insert(
+                    "source_generation".to_string(),
+                    json!(committed_generation.0),
+                );
+                carried.payload.insert(
                     "committed_generation".to_string(),
                     json!(committed_generation.0),
                 );
-                point
+                carried
                     .payload
                     .insert("document_status".to_string(), json!("published"));
-                points_written += 1;
+                carried_points.push(carried);
             }
+        }
+        let partial_failure = self.mode == FakeVectorMode::PartialCommitFailure;
+        let points_attempted = carried_points.len() as u64;
+        let mut points_written = 0;
+        for point in carried_points {
+            points.insert(point.point_id.clone(), point);
+            points_written += 1;
+            if partial_failure {
+                break;
+            }
+        }
+        if partial_failure {
+            return Err(ApiError::new(
+                "provider.partial_commit_failure",
+                axon_error::ErrorStage::Publishing,
+                format!(
+                    "fake vector store copied {points_written} of {points_attempted} unchanged points"
+                ),
+            )
+            .with_provider_id(&self.provider_id.0));
         }
         Ok(VectorStoreWriteResult {
             header: stage_header(PipelinePhase::Publishing),
             collection,
-            points_attempted: points_written,
+            points_attempted,
             points_written,
             payload_indexes_created: Vec::new(),
             usage: ProviderUsage {

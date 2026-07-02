@@ -74,7 +74,7 @@ pub async fn refresh_code_search_index_with_progress(
         ctx,
         cwd,
         caller,
-        CodeSearchRefreshBackend::LegacyCodeIndex,
+        default_code_search_refresh_backend(ctx),
         progress,
     )
     .await
@@ -95,6 +95,14 @@ pub async fn refresh_code_search_index_with_backend(
         CodeSearchRefreshBackend::TargetLocalSource => {
             refresh_target_local_code_search_index_with_progress(ctx, cwd, caller, progress).await
         }
+    }
+}
+
+fn default_code_search_refresh_backend(ctx: &ServiceContext) -> CodeSearchRefreshBackend {
+    if ctx.target_local_source_runtime().is_some() {
+        CodeSearchRefreshBackend::TargetLocalSource
+    } else {
+        CodeSearchRefreshBackend::LegacyCodeIndex
     }
 }
 

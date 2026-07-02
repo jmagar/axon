@@ -166,10 +166,18 @@ async fn refresh_vectorizes_added_and_modified_docs_and_debts_removed_and_replac
         })
         .collect::<Vec<_>>();
     assert!(!stable_points.is_empty());
-    assert!(stable_points.iter().all(|point| {
+    assert!(
+        stable_points
+            .iter()
+            .all(|point| { point.payload["document_status"].as_str() == Some("published") })
+    );
+    assert!(stable_points.iter().any(|point| {
         point.payload["source_generation"].as_str() == Some(first.generation.0.as_str())
+            && point.payload["committed_generation"].as_str() == Some(first.generation.0.as_str())
+    }));
+    assert!(stable_points.iter().any(|point| {
+        point.payload["source_generation"].as_str() == Some(second.generation.0.as_str())
             && point.payload["committed_generation"].as_str() == Some(second.generation.0.as_str())
-            && point.payload["document_status"].as_str() == Some("published")
     }));
     assert_eq!(
         vectors
@@ -221,9 +229,16 @@ async fn refresh_vectorizes_added_and_modified_docs_and_debts_removed_and_replac
         })
         .collect::<Vec<_>>();
     assert!(!stable_points.is_empty());
-    assert!(stable_points.iter().all(|point| {
+    assert!(
+        stable_points
+            .iter()
+            .all(|point| { point.payload["document_status"].as_str() == Some("published") })
+    );
+    assert!(stable_points.iter().any(|point| {
+        point.payload["committed_generation"].as_str() == Some(first.generation.0.as_str())
+    }));
+    assert!(stable_points.iter().any(|point| {
         point.payload["committed_generation"].as_str() == Some(second.generation.0.as_str())
-            && point.payload["document_status"].as_str() == Some("published")
     }));
 }
 

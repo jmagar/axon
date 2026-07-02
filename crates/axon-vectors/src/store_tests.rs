@@ -262,6 +262,50 @@ async fn fake_vector_store_search_filters_committed_source_generation_and_path_p
 }
 
 #[tokio::test]
+async fn unchanged_items_are_carried_forward_without_mutating_previous_generation() {
+    let store = FakeVectorStore::new("fake-vector");
+    store.ensure_collection(collection()).await.unwrap();
+    let mut batch = batch();
+    batch.points[0]
+        .payload
+        .insert("source_item_key".to_string(), json!("src/lib.rs"));
+    store.upsert(batch).await.unwrap();
+
+    let written = store
+        .mark_unchanged_items_committed(
+            "axon-test".to_string(),
+            SourceId::new("src-a"),
+            SourceGenerationId::new("7"),
+            SourceGenerationId::new("9"),
+            vec![SourceItemKey::new("src/lib.rs")],
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(written.points_written, 1);
+    let points = store.points("axon-test").await;
+    let carried = points
+        .iter()
+        .filter(|point| {
+            point
+                .payload
+                .get("source_item_key")
+                .and_then(|value| value.as_str())
+                == Some("src/lib.rs")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(carried.len(), 2);
+    assert!(carried.iter().any(|point| {
+        point.payload["source_generation"].as_str() == Some("7")
+            && point.payload["committed_generation"].as_str() == Some("7")
+    }));
+    assert!(carried.iter().any(|point| {
+        point.payload["source_generation"].as_str() == Some("9")
+            && point.payload["committed_generation"].as_str() == Some("9")
+    }));
+}
+
+#[tokio::test]
 async fn fake_vector_store_reports_capabilities_and_records_calls() {
     let store = FakeVectorStore::new("fake-vector");
 

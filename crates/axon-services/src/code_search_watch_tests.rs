@@ -93,6 +93,22 @@ async fn watch_refresh_uses_target_local_source_runtime_when_available() {
             .iter()
             .any(|event| matches!(event, CodeSearchWatchEvent::RefreshStarted { .. }))
     );
+    let finished_generation = events
+        .events
+        .lock()
+        .expect("events")
+        .iter()
+        .find_map(|event| match event {
+            CodeSearchWatchEvent::RefreshFinished {
+                target_source_generation,
+                ..
+            } => target_source_generation.clone(),
+            _ => None,
+        });
+    assert!(
+        finished_generation.is_some(),
+        "target watch refresh should expose the committed source generation"
+    );
     assert_eq!(
         vectors.calls().await,
         vec!["ensure_collection", "upsert", "mark_generation_committed"]

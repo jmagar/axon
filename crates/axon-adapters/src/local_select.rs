@@ -31,6 +31,7 @@ pub(crate) struct LocalOptions {
     pub(crate) respect_gitignore: bool,
     pub(crate) binary_policy: BinaryPolicy,
     include_set: Option<GlobSet>,
+    sensitive_include_set: Option<GlobSet>,
     exclude_set: GlobSet,
 }
 
@@ -41,8 +42,8 @@ impl LocalOptions {
         relative_key: &str,
         path: &Path,
     ) -> bool {
-        let explicitly_included = self
-            .include_set
+        let explicitly_sensitive_included = self
+            .sensitive_include_set
             .as_ref()
             .is_some_and(|include_set| include_set.is_match(relative_key));
         if self.exclude_set.is_match(relative_key) {
@@ -55,7 +56,7 @@ impl LocalOptions {
         }
         if scope != SourceScope::File
             && is_sensitive_local_path(relative_key)
-            && !explicitly_included
+            && !explicitly_sensitive_included
         {
             return false;
         }
@@ -104,6 +105,14 @@ pub(crate) fn validate_options(options: &AdapterOptions) -> Result<LocalOptions>
     let include_set = (!include_globs.is_empty())
         .then(|| glob_set(&include_globs))
         .transpose()?;
+    let sensitive_include_globs = include_globs
+        .iter()
+        .filter(|pattern| is_sensitive_include_pattern(pattern))
+        .cloned()
+        .collect::<Vec<_>>();
+    let sensitive_include_set = (!sensitive_include_globs.is_empty())
+        .then(|| glob_set(&sensitive_include_globs))
+        .transpose()?;
     let exclude_set = glob_set(&exclude_globs)?;
     Ok(LocalOptions {
         follow_symlinks,
@@ -111,6 +120,7 @@ pub(crate) fn validate_options(options: &AdapterOptions) -> Result<LocalOptions>
         respect_gitignore: optional_bool(options, "respect_gitignore")?.unwrap_or(true),
         binary_policy,
         include_set,
+        sensitive_include_set,
         exclude_set,
     })
 }
@@ -314,6 +324,16 @@ fn is_sensitive_local_path(relative_key: &str) -> bool {
         .split('/')
         .filter(|component| !component.is_empty())
         .any(is_sensitive_local_name)
+}
+
+fn is_sensitive_include_pattern(pattern: &str) -> bool {
+    pattern
+        .split('/')
+        .filter(|component| !component.is_empty() && *component != "**" && *component != "*")
+        .any(|component| {
+            let concrete = component.trim_matches('*');
+            !concrete.is_empty() && is_sensitive_local_name(concrete)
+        })
 }
 
 fn is_sensitive_local_name(name: &str) -> bool {

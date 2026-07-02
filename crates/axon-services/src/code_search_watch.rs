@@ -226,6 +226,7 @@ async fn refresh_code_search_watch_root(
             let indexed_files = result.freshness.indexed_files;
             let removed_files = result.freshness.removed_files;
             let generation = result.generation;
+            let target_source_generation = result.target_source_generation;
             let failed_refresh = status != "fresh" || warning.is_some();
             let failed_initial = reason == "initial" && failed_refresh;
             let failed_target_refresh = target_refresh && failed_refresh;
@@ -250,6 +251,7 @@ async fn refresh_code_search_watch_root(
                 indexed_files,
                 removed_files,
                 generation,
+                target_source_generation,
             });
             Ok(())
         }
