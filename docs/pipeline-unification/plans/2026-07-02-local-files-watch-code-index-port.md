@@ -253,16 +253,15 @@ fakes for provider/store boundaries.
 - Produces: committed-generation-only local code search behavior, structured
   stale warnings, target source pipeline refresh when enabled.
 
-- [ ] Write failing tests proving code-search searches only committed target
-  generations. Deferred until target code-search retrieval is wired; PR11 keeps
-  public search on the legacy queryable index.
+- [x] Write failing tests proving code-search searches only committed target
+  generations when target local-source runtime dependencies are injected.
 - [x] Write failing tests proving failed/partial refreshes stay hidden and
   return stale warnings.
 - [x] Write failing tests proving current `code-search` output preserves
   untrusted-local-code semantics.
 - [x] Bridge current service refresh to the target local source pipeline where
-  target dependencies are injected, but report stale/degraded until target
-  retrieval is wired.
+  target dependencies are injected; successful target refreshes are queryable
+  through committed target source-generation filters.
 - [x] Keep legacy `axon-code-index` behavior intact until target code-search
   search is feature-complete.
 - [x] Run `cargo test -p axon-services query code_search --locked`.
@@ -287,10 +286,9 @@ fakes for provider/store boundaries.
   source refresh job.
 - [x] Write failing tests proving overflow rescans schedule all watched roots
   exactly once per debounce window.
-- [ ] Write failing tests proving watch-triggered refreshes use unified
-  `job_id`, heartbeat/progress events, provider reservations, and ledger leases.
-  Deferred until target watch runtime is wired to target retrieval; PR11 keeps
-  watch refresh on the legacy queryable path.
+- [x] Write failing tests proving watch-triggered refreshes use unified
+  `job_id`, heartbeat/progress events, provider reservations, and ledger leases
+  when target local-source runtime dependencies are injected.
 - [x] Preserve current foreground `embed --watch` behavior until public surface
   cutover.
 - [x] Keep URL watch behavior out of this PR except shared watch/job primitives
@@ -313,7 +311,9 @@ fakes for provider/store boundaries.
   source models change.
 - [x] Ensure generated markdown and JSON come from the same model.
 - [x] Update only docs that describe current implementation changes.
-- [ ] Before merge, review issue #298 and verify every PR11 checklist item.
+- [x] Before merge, review issue #298 and verify every PR11 checklist item.
+  Local evidence now covers target committed-generation retrieval and target
+  watch refresh with source jobs, progress, reservations, and ledger leases.
 - [ ] After merge, update issue #298 to mark PR11 complete and record PR/merge
   commit.
 
@@ -326,9 +326,11 @@ Run the smallest set that proves touched behavior, then broaden before review:
 - [ ] `cargo test -p axon-document --locked`
 - [ ] `cargo test -p axon-embedding --locked`
 - [x] `cargo test -p axon-vectors --lib --locked`
+- [x] `cargo test -p axon-vectors store_tests --lib`
 - [ ] `cargo test -p axon-jobs watch source --locked`
 - [x] `cargo test -p axon-services local_source --locked`
 - [x] `cargo test -p axon-services code_search --locked`
+- [x] `cargo test -p axon-services code_search_watch::tests --lib`
 - [x] `cargo test -p axon-services --lib --locked`
 - [ ] `cargo test -p axon-vector file_ingest source_doc code_search --locked` if
   compatibility bridges are touched
