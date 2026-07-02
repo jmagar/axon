@@ -1,12 +1,12 @@
 //! Feed-URL branch of `axon source <input>`.
 //!
-//! Acquisition (network fetch of the raw feed document to a temp file) +
-//! dispatch to the feed bridge
+//! Acquisition (network fetch of the raw feed document to a stable cache path)
+//! + dispatch to the feed bridge
 //! ([`axon_services::index_feed_source_with_job`]). The original feed URL (with
 //! any `rss:`/`feed:`/`atom:` prefix stripped) is the fetch target; the fetched
-//! temp file is the prepared `feed_path` the adapter parses via `feed-rs`. The
-//! [`tempfile::NamedTempFile`] is kept alive until indexing finishes, then
-//! dropped to clean up.
+//! file is the prepared `feed_path` the adapter parses via `feed-rs`. The path
+//! is a deterministic function of the feed URL so re-indexing the same feed
+//! keeps a stable source id (the bridge hashes the path).
 
 use axon_api::source::JobId;
 use axon_core::config::Config;
@@ -34,11 +34,10 @@ pub async fn run_feed_source(
         cfg.collection
     ));
 
-    // Keep the temp file bound for the whole indexing pass; dropping it removes
-    // the prepared feed document.
-    let feed_file = fetch_feed_to_file(input).await?;
+    // Fetch to a deterministic, feed-URL-derived cache path (stable source id).
+    let feed_path = fetch_feed_to_file(input).await?;
 
-    let index_input = build_feed_index_input(cfg, runtime, feed_file.path().to_path_buf());
+    let index_input = build_feed_index_input(cfg, runtime, feed_path);
     let output = index_feed_source_with_job(
         index_input,
         runtime.jobs.as_ref(),

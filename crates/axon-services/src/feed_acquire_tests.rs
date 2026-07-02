@@ -38,3 +38,23 @@ fn fetch_target_resolves_from_prefix_without_network() {
         "https://example.com/feed.atom"
     );
 }
+
+#[test]
+fn feed_cache_path_is_stable_per_url_and_distinct_across_urls() {
+    // Load-bearing: the feed bridge hashes the (canonicalized) feed_path to form
+    // the source id, so the same feed URL MUST map to the same path across runs
+    // for generation/manifest-diff refresh to work — a random temp name would
+    // make every run a brand-new source.
+    let a1 = feed_cache_path("https://example.com/feed.atom");
+    let a2 = feed_cache_path("https://example.com/feed.atom");
+    let b = feed_cache_path("https://other.example.com/feed.rss");
+    assert_eq!(a1, a2, "same feed URL must map to the same cache path");
+    assert_ne!(
+        a1, b,
+        "different feed URLs must map to different cache paths"
+    );
+    assert!(
+        a1.extension().is_some_and(|ext| ext == "xml"),
+        "expected a .xml cache path, got {a1:?}"
+    );
+}
