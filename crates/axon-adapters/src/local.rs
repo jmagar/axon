@@ -5,6 +5,9 @@ use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use axon_api::source::*;
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use ignore::{DirEntry, WalkBuilder};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -54,10 +57,9 @@ impl SourceAdapter for LocalSourceAdapter {
         let capability = self.capabilities().await?;
         capability.validate_scope(plan.route.scope)?;
         validate_adapter(plan)?;
-        let mut options = validate_options(&plan.route.validated_options)?;
+        let options = validate_options(&plan.route.validated_options)?;
 
         let root = PathBuf::from(&plan.request.source);
-        options.load_gitignore(root.as_path());
         let mut files = Vec::new();
         match plan.route.scope {
             SourceScope::File => files.push(root.clone()),
@@ -65,7 +67,7 @@ impl SourceAdapter for LocalSourceAdapter {
             | SourceScope::Workspace
             | SourceScope::Repo
             | SourceScope::Map => {
-                collect_files(&root, &options, &mut files)?;
+                files = collect_files(&root, &options)?;
             }
             _ => {
                 return Err(ApiError::new(
@@ -174,15 +176,18 @@ impl SourceAdapter for LocalSourceAdapter {
             .chain(diff.modified.iter())
             .cloned()
             .collect::<Vec<_>>();
+        let options = validate_options(&plan.route.validated_options)?;
         let mut fetched_items = Vec::with_capacity(manifest_items.len());
         for item in &manifest_items {
             let path = root_for_keys.join(&item.source_item_key.0);
-            let text = fs::read_to_string(&path)
-                .map_err(|err| fs_error("adapter.local.read_failed", &path, err))?;
+            if !options.fetches_body(&path) {
+                continue;
+            }
+            let content_ref = read_content_ref(&path, &options)?;
             fetched_items.push(AcquiredSourceItem {
                 manifest_item: item.clone(),
                 fetch_status: LifecycleStatus::Completed,
-                content_ref: ContentRef::InlineText { text },
+                content_ref,
                 raw_artifact_id: None,
                 headers: RedactedHeaders {
                     headers: Vec::new(),
@@ -253,34 +258,55 @@ fn validate_adapter(plan: &SourcePlan) -> Result<()> {
     .with_context("adapter", plan.route.adapter.name.clone()))
 }
 
-fn collect_files(root: &Path, options: &LocalOptions, files: &mut Vec<PathBuf>) -> Result<()> {
-    let entries =
-        fs::read_dir(root).map_err(|err| fs_error("adapter.local.read_dir_failed", root, err))?;
-    for entry in entries {
-        let entry = entry.map_err(|err| fs_error("adapter.local.read_dir_failed", root, err))?;
-        let path = entry.path();
-        let metadata = if options.follow_symlinks {
-            fs::metadata(&path)
-        } else {
-            fs::symlink_metadata(&path)
-        }
-        .map_err(|err| fs_error("adapter.local.stat_failed", &path, err))?;
-        if metadata.file_type().is_symlink() && !options.follow_symlinks {
-            continue;
-        }
-        if metadata.is_dir() {
-            let name = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or("");
-            if options.should_descend_dir(name) {
-                collect_files(&path, options, files)?;
-            }
-        } else if metadata.is_file() {
-            files.push(path);
+fn collect_files(root: &Path, options: &LocalOptions) -> Result<Vec<PathBuf>> {
+    let mut builder = WalkBuilder::new(root);
+    builder
+        .follow_links(options.follow_symlinks)
+        .hidden(false)
+        .ignore(options.respect_gitignore)
+        .git_ignore(options.respect_gitignore)
+        .git_exclude(options.respect_gitignore)
+        .git_global(options.respect_gitignore)
+        .parents(options.respect_gitignore)
+        .filter_entry(should_descend_entry);
+    let mut files = Vec::new();
+    for entry in builder.build() {
+        let entry = entry.map_err(|err| {
+            ApiError::new(
+                "adapter.local.walk_failed",
+                axon_error::ErrorStage::Discovering,
+                err.to_string(),
+            )
+        })?;
+        if entry
+            .file_type()
+            .is_some_and(|file_type| file_type.is_file())
+        {
+            files.push(entry.into_path());
         }
     }
-    Ok(())
+    Ok(files)
+}
+
+fn should_descend_entry(entry: &DirEntry) -> bool {
+    let Some(name) = entry.file_name().to_str() else {
+        return true;
+    };
+    !crate::local_select::is_pruned_dir(name)
+}
+
+fn read_content_ref(path: &Path, options: &LocalOptions) -> Result<ContentRef> {
+    if options.includes_binary_body(path) {
+        let bytes =
+            fs::read(path).map_err(|err| fs_error("adapter.local.read_failed", path, err))?;
+        return Ok(ContentRef::InlineBytes {
+            bytes_base64: BASE64_STANDARD.encode(bytes),
+            mime_type: "application/octet-stream".to_string(),
+        });
+    }
+    let text =
+        fs::read_to_string(path).map_err(|err| fs_error("adapter.local.read_failed", path, err))?;
+    Ok(ContentRef::InlineText { text })
 }
 
 fn relative_key(root: &Path, file: &Path) -> Result<String> {

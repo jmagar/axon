@@ -1,10 +1,9 @@
 //! Local filesystem selection rules for the target local adapter.
 
-use std::collections::BTreeSet;
-use std::fs;
 use std::path::Path;
 
 use axon_api::source::*;
+use globset::{Glob, GlobSet, GlobSetBuilder};
 
 use crate::adapter::Result;
 
@@ -29,54 +28,24 @@ pub(crate) enum BinaryPolicy {
 pub(crate) struct LocalOptions {
     pub(crate) follow_symlinks: bool,
     pub(crate) max_file_bytes: Option<u64>,
-    pub(crate) include_globs: Vec<String>,
-    pub(crate) exclude_globs: Vec<String>,
     pub(crate) respect_gitignore: bool,
     pub(crate) binary_policy: BinaryPolicy,
-    gitignore: BTreeSet<String>,
+    include_set: Option<GlobSet>,
+    exclude_set: GlobSet,
 }
 
 impl LocalOptions {
-    pub(crate) fn load_gitignore(&mut self, root: &Path) {
-        if !self.respect_gitignore {
-            return;
-        }
-        let Ok(contents) = fs::read_to_string(root.join(".gitignore")) else {
-            return;
-        };
-        self.gitignore = contents
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty() && !line.starts_with('#'))
-            .map(|line| line.trim_start_matches('/').to_string())
-            .collect();
-    }
-
-    pub(crate) fn should_descend_dir(&self, name: &str) -> bool {
-        !is_pruned_dir(name)
-    }
-
     pub(crate) fn should_include_file(
         &self,
         scope: SourceScope,
         relative_key: &str,
         path: &Path,
     ) -> bool {
-        if self.gitignore.contains(relative_key) || self.gitignore.contains(file_name(path)) {
+        if self.exclude_set.is_match(relative_key) {
             return false;
         }
-        if self
-            .exclude_globs
-            .iter()
-            .any(|glob| glob_matches(glob, relative_key))
-        {
-            return false;
-        }
-        if !self.include_globs.is_empty()
-            && !self
-                .include_globs
-                .iter()
-                .any(|glob| glob_matches(glob, relative_key))
+        if let Some(include_set) = &self.include_set
+            && !include_set.is_match(relative_key)
         {
             return false;
         }
@@ -84,9 +53,17 @@ impl LocalOptions {
             return false;
         }
         if scope == SourceScope::Repo {
-            return is_code_search_file(relative_key, path);
+            return is_code_search_file(path);
         }
         !is_generated_filename(file_name(path))
+    }
+
+    pub(crate) fn fetches_body(&self, path: &Path) -> bool {
+        self.binary_policy != BinaryPolicy::Metadata || !is_binary_path(path)
+    }
+
+    pub(crate) fn includes_binary_body(&self, path: &Path) -> bool {
+        self.binary_policy == BinaryPolicy::Include && is_binary_path(path)
     }
 }
 
@@ -108,15 +85,31 @@ pub(crate) fn validate_options(options: &AdapterOptions) -> Result<LocalOptions>
     let max_file_bytes = optional_u64(options, "max_file_bytes")?;
     let binary_policy = optional_binary_policy(options)?.unwrap_or(BinaryPolicy::Skip);
     require_enum(options, "watch_policy", &["manual", "auto", "disabled"])?;
+    let include_globs = string_array(options, "include_globs");
+    let exclude_globs = string_array(options, "exclude_globs");
+    let include_set = (!include_globs.is_empty())
+        .then(|| glob_set(&include_globs))
+        .transpose()?;
+    let exclude_set = glob_set(&exclude_globs)?;
     Ok(LocalOptions {
         follow_symlinks,
         max_file_bytes,
-        include_globs: string_array(options, "include_globs"),
-        exclude_globs: string_array(options, "exclude_globs"),
         respect_gitignore: optional_bool(options, "respect_gitignore")?.unwrap_or(false),
         binary_policy,
-        gitignore: BTreeSet::new(),
+        include_set,
+        exclude_set,
     })
+}
+
+fn glob_set(patterns: &[String]) -> Result<GlobSet> {
+    let mut builder = GlobSetBuilder::new();
+    for pattern in patterns {
+        let glob = Glob::new(pattern).map_err(|err| option_invalid(pattern, &err.to_string()))?;
+        builder.add(glob);
+    }
+    builder
+        .build()
+        .map_err(|err| option_invalid("glob", &err.to_string()))
 }
 
 fn string_array(options: &AdapterOptions, key: &str) -> Vec<String> {
@@ -204,23 +197,7 @@ fn option_invalid(key: &str, message: &str) -> ApiError {
     .with_context("option", key.to_string())
 }
 
-fn glob_matches(glob: &str, relative_key: &str) -> bool {
-    if glob == relative_key || glob == "*" {
-        return true;
-    }
-    if let Some(prefix) = glob.strip_suffix("/**") {
-        return relative_key == prefix || relative_key.starts_with(&format!("{prefix}/"));
-    }
-    if let Some(suffix) = glob.strip_prefix("**/*") {
-        return relative_key.ends_with(suffix);
-    }
-    if let Some(suffix) = glob.strip_prefix("*.") {
-        return relative_key.ends_with(&format!(".{suffix}"));
-    }
-    false
-}
-
-fn is_code_search_file(_relative_key: &str, path: &Path) -> bool {
+fn is_code_search_file(path: &Path) -> bool {
     if is_lockfile(file_name(path)) || is_generated_filename(file_name(path)) {
         return false;
     }
@@ -228,7 +205,7 @@ fn is_code_search_file(_relative_key: &str, path: &Path) -> bool {
     is_doc_ext(ext) || is_source_ext(ext) || is_config_ext(ext) || is_known_config(file_name(path))
 }
 
-fn is_pruned_dir(name: &str) -> bool {
+pub(crate) fn is_pruned_dir(name: &str) -> bool {
     matches!(
         name,
         ".git"

@@ -184,6 +184,73 @@ async fn local_repo_scope_prunes_generated_and_lock_files() {
 }
 
 #[tokio::test]
+async fn local_repo_scope_respects_nested_gitignore_and_nested_globs() {
+    let adapter = LocalSourceAdapter::new();
+    let root = temp_source_dir();
+    fs::create_dir_all(root.join(".git")).unwrap();
+    fs::create_dir_all(root.join("src/deep")).unwrap();
+    fs::write(root.join("src/.gitignore"), "ignored-dir/\n").unwrap();
+    fs::create_dir_all(root.join("src/ignored-dir")).unwrap();
+    fs::write(root.join("src/deep/mod.rs"), "pub mod deep;").unwrap();
+    fs::write(root.join("src/ignored-dir/lib.rs"), "pub fn ignored() {}").unwrap();
+    fs::write(root.join("README.md"), "# Axon").unwrap();
+    let mut plan = source_plan(root, SourceScope::Repo);
+    plan.route
+        .validated_options
+        .values
+        .insert("include_globs".to_string(), vec!["src/**/*.rs"].into());
+    plan.route
+        .validated_options
+        .values
+        .insert("respect_gitignore".to_string(), true.into());
+
+    let manifest = adapter.discover(&plan).await.unwrap();
+    let keys = manifest
+        .items
+        .iter()
+        .map(|item| item.source_item_key.0.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(keys, vec!["src/deep/mod.rs"]);
+}
+
+#[tokio::test]
+async fn local_binary_policy_metadata_keeps_manifest_but_skips_document_body() {
+    let adapter = LocalSourceAdapter::new();
+    let root = temp_source_dir();
+    fs::write(root.join("image.png"), [0, 159, 146, 150]).unwrap();
+    let mut plan = source_plan(root, SourceScope::Directory);
+    plan.route.validated_options.values = binary_options("metadata");
+    let manifest = adapter.discover(&plan).await.unwrap();
+    let diff = manifest_diff(&plan, manifest.items.clone());
+
+    let acquisition = adapter.acquire(&plan, &diff).await.unwrap();
+    let normalized = adapter.normalize(&plan, acquisition).await.unwrap();
+
+    assert_eq!(manifest.items.len(), 1);
+    assert!(normalized.data.is_empty());
+}
+
+#[tokio::test]
+async fn local_binary_policy_include_acquires_inline_bytes() {
+    let adapter = LocalSourceAdapter::new();
+    let root = temp_source_dir();
+    fs::write(root.join("image.png"), [0, 159, 146, 150]).unwrap();
+    let mut plan = source_plan(root, SourceScope::Directory);
+    plan.route.validated_options.values = binary_options("include");
+    let manifest = adapter.discover(&plan).await.unwrap();
+    let diff = manifest_diff(&plan, manifest.items.clone());
+
+    let acquisition = adapter.acquire(&plan, &diff).await.unwrap();
+
+    assert_eq!(acquisition.fetched_items.len(), 1);
+    assert!(matches!(
+        acquisition.fetched_items[0].content_ref,
+        ContentRef::InlineBytes { .. }
+    ));
+}
+
+#[tokio::test]
 async fn local_map_scope_discovers_manifest_but_acquires_no_documents() {
     let adapter = LocalSourceAdapter::new();
     let root = temp_source_dir();
@@ -208,6 +275,12 @@ fn local_options() -> MetadataMap {
     values.insert("max_file_bytes".to_string(), 1024.into());
     values.insert("binary_policy".to_string(), "skip".into());
     values.insert("watch_policy".to_string(), "manual".into());
+    values
+}
+
+fn binary_options(policy: &str) -> MetadataMap {
+    let mut values = MetadataMap::new();
+    values.insert("binary_policy".to_string(), policy.into());
     values
 }
 
