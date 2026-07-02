@@ -340,4 +340,3 @@ Run the smallest set that proves touched behavior, then broaden before review:
 - [ ] Confirm CI is green.
 - [ ] Confirm issue #298 PR11 checklist is fully implemented.
 - [ ] Merge only after checks and reviews are complete.
-

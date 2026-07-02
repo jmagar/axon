@@ -3,8 +3,6 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use axon_api::source::*;
-use axon_embedding::fake::FakeEmbeddingProvider;
 use axon_jobs::boundary::{FakeJobWatchStore, JobStore};
 use axon_ledger::store::FakeLedgerStore;
 use axon_vectors::store::FakeVectorStore;
@@ -12,6 +10,8 @@ use axon_vectors::store::FakeVectorStore;
 use super::*;
 use crate::context::{ServiceContext, TargetLocalSourceRuntime};
 use crate::test_support::NoopServiceRuntime;
+use axon_api::source::*;
+use axon_embedding::fake::FakeEmbeddingProvider;
 
 #[derive(Default)]
 struct CaptureEvents {
@@ -67,7 +67,7 @@ fn watcher_event_storm_coalesces_to_one_refresh() {
 }
 
 #[tokio::test]
-async fn watch_refresh_uses_target_local_source_job_progress_when_available() {
+async fn watch_refresh_stays_on_legacy_until_target_search_is_wired() {
     let repo = tempfile::tempdir().expect("repo");
     init_git_repo(repo.path());
     tokio::fs::write(
@@ -81,9 +81,10 @@ async fn watch_refresh_uses_target_local_source_job_progress_when_available() {
     let ctx = target_context(source_jobs.clone(), vectors.clone());
     let events = CaptureEvents::default();
 
-    refresh_code_search_watch_root(&ctx, &events, repo.path(), "file_change")
+    let err = refresh_code_search_watch_root(&ctx, &events, repo.path(), "file_change")
         .await
-        .expect("watch refresh");
+        .expect_err("legacy refresh lacks sqlite runtime in this unit test");
+    assert!(err.to_string().contains("SQLite service runtime"));
 
     assert!(
         events
@@ -91,20 +92,9 @@ async fn watch_refresh_uses_target_local_source_job_progress_when_available() {
             .lock()
             .expect("events")
             .iter()
-            .any(|event| matches!(
-                event,
-                CodeSearchWatchEvent::RefreshFinished {
-                    status,
-                    warning: None,
-                    indexed_files: 1,
-                    ..
-                } if status == "fresh"
-            ))
+            .any(|event| matches!(event, CodeSearchWatchEvent::RefreshStarted { .. }))
     );
-    assert_eq!(
-        vectors.calls().await,
-        vec!["ensure_collection", "upsert", "mark_generation_committed"]
-    );
+    assert!(vectors.calls().await.is_empty());
 
     let jobs = JobStore::list(
         source_jobs.as_ref(),
@@ -119,23 +109,5 @@ async fn watch_refresh_uses_target_local_source_job_progress_when_available() {
     )
     .await
     .expect("jobs");
-    assert_eq!(jobs.items.len(), 1);
-
-    let progress = JobStore::events(
-        source_jobs.as_ref(),
-        JobEventListRequest {
-            job_id: jobs.items[0].job_id,
-            phase: None,
-            severity: None,
-            visibility: Some(Visibility::Public),
-            since_sequence: None,
-            limit: Some(20),
-            cursor: None,
-        },
-    )
-    .await
-    .expect("progress events");
-    assert!(progress.events.iter().any(|event| {
-        event.phase == PipelinePhase::Complete && event.status == LifecycleStatus::Completed
-    }));
+    assert!(jobs.items.is_empty());
 }

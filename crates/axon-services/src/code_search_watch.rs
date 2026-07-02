@@ -206,24 +206,13 @@ async fn refresh_code_search_watch_root(
         reason,
     });
     let progress = WatchProgressSink { events };
-    let refresh = if ctx.target_local_source_runtime().is_some() {
-        query::refresh_code_search_index_with_backend(
-            ctx,
-            Some(root),
-            CodeSearchCaller::Cli,
-            query::CodeSearchRefreshBackend::TargetLocalSource,
-            None,
-        )
-        .await
-    } else {
-        query::refresh_code_search_index_with_progress(
-            ctx,
-            Some(root),
-            CodeSearchCaller::Cli,
-            Some(&progress),
-        )
-        .await
-    };
+    let refresh = query::refresh_code_search_index_with_progress(
+        ctx,
+        Some(root),
+        CodeSearchCaller::Cli,
+        Some(&progress),
+    )
+    .await;
     match refresh {
         Ok(result) => {
             let status = result.freshness.status;

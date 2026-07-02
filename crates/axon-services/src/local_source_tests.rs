@@ -344,14 +344,16 @@ async fn publish_generation_failure_leaves_vectors_uncommitted() {
 
     let source_id = super::local_source_id(&tokio::fs::canonicalize(&path).await.unwrap());
     assert_eq!(ledger.committed_generation(&source_id).await, None);
-    assert_eq!(vectors.calls().await, vec!["ensure_collection", "upsert"]);
-    assert!(
-        vectors
-            .points("axon-test")
-            .await
-            .iter()
-            .all(|point| point.payload["committed_generation"].as_str() == Some("uncommitted"))
+    assert_eq!(
+        vectors.calls().await,
+        vec![
+            "ensure_collection",
+            "upsert",
+            "mark_generation_committed",
+            "delete"
+        ]
     );
+    assert!(vectors.points("axon-test").await.is_empty());
 }
 
 #[tokio::test]
@@ -374,10 +376,7 @@ async fn vector_commit_marker_failure_leaves_vectors_uncommitted() {
     );
 
     let source_id = super::local_source_id(&tokio::fs::canonicalize(&path).await.unwrap());
-    assert_eq!(
-        ledger.committed_generation(&source_id).await,
-        Some(SourceGenerationId::new("gen_1"))
-    );
+    assert_eq!(ledger.committed_generation(&source_id).await, None);
     assert_eq!(ledger.generation_count().await, 1);
     assert!(
         vectors
@@ -466,7 +465,7 @@ async fn refresh_vectorizes_added_and_modified_docs_and_debts_removed_and_replac
 
     assert_ne!(second.generation, first.generation);
     assert_eq!(second.documents_prepared, 2);
-    assert_eq!(embedder.calls().await.len(), 4);
+    assert_eq!(embedder.calls().await.len(), 2);
     assert_eq!(
         vectors
             .calls()
@@ -474,7 +473,7 @@ async fn refresh_vectorizes_added_and_modified_docs_and_debts_removed_and_replac
             .into_iter()
             .filter(|call| *call == "upsert")
             .count(),
-        4
+        2
     );
     assert_eq!(
         vectors
@@ -483,7 +482,7 @@ async fn refresh_vectorizes_added_and_modified_docs_and_debts_removed_and_replac
             .into_iter()
             .filter(|call| *call == "delete")
             .count(),
-        2
+        1
     );
     assert!(
         vectors
@@ -550,7 +549,7 @@ async fn code_search_selection_skips_lockfiles_and_pruned_dirs() {
         .unwrap();
 
     assert_eq!(output.documents_prepared, 3);
-    assert_eq!(embedder.calls().await.len(), 3);
+    assert_eq!(embedder.calls().await.len(), 1);
     assert_eq!(
         ledger.committed_generation(&output.source_id).await,
         Some(output.generation)

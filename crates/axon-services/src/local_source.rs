@@ -1,28 +1,27 @@
 mod local_source_adapter;
 mod local_source_job;
 mod local_source_progress;
+mod local_source_vectorize;
 
 use std::path::PathBuf;
 
 use axon_api::source::*;
-use axon_document::{DocumentPreparer, PrepareSourceDocumentRequest};
-use axon_embedding::batch::EmbeddingBatchBuilder;
 use axon_embedding::provider::EmbeddingProvider;
 use axon_ledger::store::LedgerStore;
-use axon_vectors::point::{VectorPointBatchBuildContext, VectorPointBatchBuilder};
 use axon_vectors::store::VectorStore;
-use uuid::Uuid;
 
 #[cfg(test)]
 pub(super) use self::local_source_adapter::local_source_id;
 use self::local_source_adapter::{
-    LocalAdapterRun, collection_spec, discover_manifest, normalize_changed_documents,
-    resolve_adapter_run, source_summary, timestamp,
+    LocalAdapterRun, collection_spec, discover_manifest, resolve_adapter_run, source_summary,
 };
 pub use self::local_source_job::index_local_source_with_job;
 use self::local_source_progress::{
     LocalSourceProgress, ensure_providers_ready, phase_for_api_error, record_progress,
     record_progress_error,
+};
+use self::local_source_vectorize::{
+    VectorizeStats, cleanup_replaced_vector_points, vectorize_changed_documents,
 };
 
 const LOCAL_ADAPTER_VERSION: &str = "target-local-pr11";
@@ -148,18 +147,19 @@ async fn index_local_source_with_lease(
     manifest.generation = generation.generation.clone();
     ledger.put_manifest(manifest.clone()).await?;
 
-    let documents = prepare_changed_documents(&run, &diff, &generation.generation).await?;
     record_progress(progress, PipelinePhase::Preparing, None).await?;
     let collection = collection_spec(&input.collection, input.embedding_dimensions);
     vector_store.ensure_collection(collection.clone()).await?;
-    let vectorized = vectorize_documents(
+    let vectorized = vectorize_changed_documents(
         input,
+        &run,
+        &diff,
+        &generation.generation,
         ledger,
         embedding_provider,
         vector_store,
         progress,
         collection.clone(),
-        documents,
     )
     .await?;
     let completed = complete_generation(
@@ -170,18 +170,30 @@ async fn index_local_source_with_lease(
         &vectorized,
     )
     .await?;
-    let published = publish_completed_generation(ledger, completed).await?;
     if let Err(err) = vector_store
         .mark_generation_committed(
             collection.collection.clone(),
             source_id.clone(),
-            published.generation.clone(),
+            completed.generation.clone(),
         )
         .await
     {
         record_progress_error(progress, PipelinePhase::Publishing, &err).await?;
         return Err(anyhow::Error::new(err));
     }
+    let published = match publish_completed_generation(ledger, completed.clone()).await {
+        Ok(published) => published,
+        Err(err) => {
+            let _ = vector_store
+                .delete(VectorDeleteSelector::Generation {
+                    collection: collection.collection.clone(),
+                    source_id: source_id.clone(),
+                    generation: completed.generation.clone(),
+                })
+                .await;
+            return Err(err);
+        }
+    };
     record_progress(progress, PipelinePhase::Publishing, None).await?;
     if let Err(err) =
         cleanup_replaced_vector_points(vector_store, &collection.collection, &diff).await
@@ -199,109 +211,6 @@ async fn index_local_source_with_lease(
         chunks_prepared: vectorized.chunks_prepared,
         vector_points_written: vectorized.points_written,
     })
-}
-
-async fn cleanup_replaced_vector_points(
-    vector_store: &dyn VectorStore,
-    collection: &str,
-    diff: &SourceManifestDiff,
-) -> Result<u64, ApiError> {
-    let Some(previous_generation) = diff.previous_generation.clone() else {
-        return Ok(0);
-    };
-    let mut deleted = 0;
-    for item in diff.removed.iter().chain(diff.modified.iter()) {
-        let result = vector_store
-            .delete(VectorDeleteSelector::Document {
-                collection: collection.to_string(),
-                document_id: local_document_id(&item.source_item_key),
-                generation: Some(previous_generation.clone()),
-            })
-            .await?;
-        deleted += result.points_deleted;
-    }
-    Ok(deleted)
-}
-
-async fn prepare_changed_documents(
-    run: &LocalAdapterRun,
-    diff: &SourceManifestDiff,
-    generation: &SourceGenerationId,
-) -> anyhow::Result<Vec<PreparedDocument>> {
-    let source_documents = normalize_changed_documents(run, diff).await?;
-    let mut documents = Vec::with_capacity(source_documents.len());
-    let preparer = DocumentPreparer::default();
-    for document in source_documents {
-        let item_key = document.source_item_key.0.clone();
-        let prepared = preparer
-            .prepare(PrepareSourceDocumentRequest {
-                document,
-                generation: generation.clone(),
-                profile: None,
-                parse_facts: Vec::new(),
-                graph_candidates: Vec::new(),
-                warnings: Vec::new(),
-                errors: Vec::new(),
-            })
-            .map_err(|err| anyhow::anyhow!("failed to prepare {item_key}: {err}"))?
-            .document;
-        documents.push(prepared);
-    }
-    Ok(documents)
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-struct VectorizeStats {
-    documents_prepared: u64,
-    chunks_prepared: u64,
-    points_written: u64,
-}
-
-async fn vectorize_documents(
-    input: &LocalSourceIndexInput,
-    ledger: &dyn LedgerStore,
-    embedding_provider: &dyn EmbeddingProvider,
-    vector_store: &dyn VectorStore,
-    progress: Option<&dyn LocalSourceProgress>,
-    collection: CollectionSpec,
-    documents: Vec<PreparedDocument>,
-) -> anyhow::Result<VectorizeStats> {
-    let mut stats = VectorizeStats::default();
-    for document in documents {
-        let batch = embedding_batch_for_document(input, &document)?;
-        let embeddings = match embedding_provider.embed(batch).await {
-            Ok(embeddings) => embeddings,
-            Err(err) => {
-                record_progress_error(progress, PipelinePhase::Embedding, &err).await?;
-                return Err(anyhow::Error::new(err));
-            }
-        };
-        record_progress(progress, PipelinePhase::Embedding, None).await?;
-        let point_batch = VectorPointBatchBuilder::new(
-            collection.clone(),
-            document.clone(),
-            embeddings,
-            VectorPointBatchBuildContext {
-                embedded_at: timestamp(),
-            },
-        )
-        .build()?;
-        let write = match vector_store.upsert(point_batch).await {
-            Ok(write) => write,
-            Err(err) => {
-                record_progress_error(progress, PipelinePhase::Vectorizing, &err).await?;
-                return Err(anyhow::Error::new(err));
-            }
-        };
-        record_progress(progress, PipelinePhase::Vectorizing, None).await?;
-        stats.points_written += write.points_written;
-        stats.chunks_prepared += document.chunks.len() as u64;
-        stats.documents_prepared += 1;
-        ledger
-            .update_document_status(document_status(&document, write.points_written))
-            .await?;
-    }
-    Ok(stats)
 }
 
 async fn complete_generation(
@@ -353,64 +262,6 @@ fn manifest_diff_has_changes(diff: &SourceManifestDiff) -> bool {
         || diff.counts.removed > 0
         || diff.counts.skipped > 0
         || diff.counts.failed > 0
-}
-
-fn embedding_batch_for_document(
-    input: &LocalSourceIndexInput,
-    document: &PreparedDocument,
-) -> anyhow::Result<EmbeddingBatch> {
-    let batch_id = BatchId::new(Uuid::new_v5(
-        &Uuid::NAMESPACE_URL,
-        format!(
-            "{}:{}:{}",
-            document.source_id.0, document.generation.0, document.document_id.0
-        )
-        .as_bytes(),
-    ));
-    let mut builder = EmbeddingBatchBuilder::new(
-        batch_id,
-        input.job_id,
-        input.embedding_provider_id.clone(),
-        input.embedding_model.clone(),
-    )
-    .priority(JobPriority::Background);
-    for chunk in &document.chunks {
-        builder = builder.push_input(EmbeddingInput {
-            chunk_id: chunk.chunk_id.clone(),
-            text: chunk
-                .embedding_text
-                .clone()
-                .unwrap_or_else(|| chunk.content.clone()),
-            content_kind: chunk.content_kind,
-            metadata: chunk.metadata.clone(),
-        });
-    }
-    Ok(builder.build()?)
-}
-
-fn local_document_id(item_key: &SourceItemKey) -> DocumentId {
-    DocumentId::from(format!("doc_{}", sanitize_document_key(&item_key.0)))
-}
-
-fn sanitize_document_key(key: &str) -> String {
-    key.chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
-        .collect()
-}
-
-fn document_status(document: &PreparedDocument, points_written: u64) -> DocumentStatus {
-    DocumentStatus {
-        document_id: document.document_id.clone(),
-        source_id: document.source_id.clone(),
-        source_item_key: document.source_item_key.clone(),
-        generation: document.generation.clone(),
-        status: DocumentLifecycleStatus::Published,
-        updated_at: timestamp(),
-        chunk_count: document.chunks.len() as u32,
-        vector_point_count: u32::try_from(points_written).unwrap_or(u32::MAX),
-        error: None,
-        cleanup_status: None,
-    }
 }
 
 #[cfg(test)]

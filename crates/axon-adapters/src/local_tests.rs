@@ -135,6 +135,29 @@ async fn local_adapter_acquires_and_normalizes_source_documents() {
 }
 
 #[tokio::test]
+async fn local_document_ids_do_not_collide_for_lossy_path_shapes() {
+    let adapter = LocalSourceAdapter::new();
+    let root = temp_source_dir();
+    fs::create_dir_all(root.join("a")).unwrap();
+    fs::write(root.join("a/b.rs"), "pub fn nested() {}").unwrap();
+    fs::write(root.join("a_b.rs"), "pub fn flat() {}").unwrap();
+    let plan = source_plan(root, SourceScope::Directory);
+    let manifest = adapter.discover(&plan).await.unwrap();
+    let diff = manifest_diff(&plan, manifest.items.clone());
+    let acquisition = adapter.acquire(&plan, &diff).await.unwrap();
+    let normalized = adapter.normalize(&plan, acquisition).await.unwrap();
+    let mut ids = normalized
+        .data
+        .iter()
+        .map(|document| document.document_id.clone())
+        .collect::<Vec<_>>();
+    ids.sort();
+    ids.dedup();
+
+    assert_eq!(ids.len(), 2);
+}
+
+#[tokio::test]
 async fn local_adapter_rejects_diff_item_keys_that_escape_root() {
     let adapter = LocalSourceAdapter::new();
     let root = temp_source_dir();
@@ -154,7 +177,7 @@ async fn local_adapter_rejects_diff_item_keys_that_escape_root() {
 }
 
 #[tokio::test]
-async fn local_manifest_hash_changes_for_same_size_file_edits() {
+async fn local_manifest_fingerprint_changes_for_same_size_file_edits() {
     let adapter = LocalSourceAdapter::new();
     let root = temp_source_dir();
     let file = root.join("README.md");
@@ -162,6 +185,7 @@ async fn local_manifest_hash_changes_for_same_size_file_edits() {
     let plan = source_plan(root, SourceScope::Directory);
 
     let first = adapter.discover(&plan).await.unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(1100));
     fs::write(&file, "wxyz").unwrap();
     let second = adapter.discover(&plan).await.unwrap();
 

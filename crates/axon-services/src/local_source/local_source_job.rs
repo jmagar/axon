@@ -54,7 +54,7 @@ pub async fn index_local_source_with_job(
             Ok(output)
         }
         Err(err) => {
-            let source_error = terminal_source_error(&err);
+            let source_error = terminal_source_error(&err, &input.root);
             let _ = progress
                 .record_phase(
                     PipelinePhase::Complete,
@@ -68,18 +68,19 @@ pub async fn index_local_source_with_job(
     }
 }
 
-fn terminal_source_error(err: &anyhow::Error) -> SourceError {
+fn terminal_source_error(err: &anyhow::Error, root: &Path) -> SourceError {
     if let Some(api_error) = err.downcast_ref::<ApiError>() {
         return source_error_from_api_error(api_error);
     }
+    let safe_error = redact_local_root(&err.to_string(), root);
     SourceError {
         code: "source.local.index_failed".to_string(),
         severity: Severity::Failed,
-        message: "local source indexing failed".to_string(),
+        message: safe_error.clone(),
         source_item_key: None,
         retryable: false,
         provider_id: None,
-        cause: None,
+        cause: Some(safe_error),
     }
 }
 
@@ -112,6 +113,21 @@ fn public_path_hint(path: &Path) -> String {
         .and_then(|name| name.to_str())
         .map(ToString::to_string)
         .unwrap_or_else(|| "local-source".to_string())
+}
+
+fn redact_local_root(message: &str, root: &Path) -> String {
+    let mut redacted = message.to_string();
+    let root_display = root.display().to_string();
+    if !root_display.is_empty() {
+        redacted = redacted.replace(&root_display, "<local-source-root>");
+    }
+    if let Ok(canonical) = std::fs::canonicalize(root) {
+        let canonical_display = canonical.display().to_string();
+        if !canonical_display.is_empty() {
+            redacted = redacted.replace(&canonical_display, "<local-source-root>");
+        }
+    }
+    redacted
 }
 
 struct JobProgressSink<'a> {

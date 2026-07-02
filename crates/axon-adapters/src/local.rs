@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use axon_api::source::*;
 use ignore::{DirEntry, WalkBuilder};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::adapter::{Result, SourceAdapter};
@@ -17,7 +18,7 @@ use crate::capability::AdapterCapability;
 use crate::local_select::{LocalOptions, is_binary_path, validate_options};
 use crate::manifest::item_identity;
 
-use self::local_io::{content_hash_for_file, fs_error, read_content_ref, safe_item_path};
+use self::local_io::{content_fingerprint, fs_error, read_content_ref, safe_item_path};
 
 pub const MODULE_NAME: &str = "local";
 
@@ -147,7 +148,7 @@ fn discover_sync(plan: &SourcePlan) -> Result<SourceManifest> {
         if !options.should_include_file(plan.route.scope, &key, &file) {
             continue;
         }
-        let content_hash = content_hash_for_file(&file, &options)?;
+        let content_hash = content_fingerprint(&metadata);
         let identity = item_identity(SourceKind::Local, &base_uri, &key)?;
         items.push(ManifestItem {
             source_id: plan.route.source.source_id.clone(),
@@ -374,7 +375,6 @@ fn local_source_document(
     acquisition: &SourceAcquisition,
     item: &AcquiredSourceItem,
 ) -> SourceDocument {
-    let item_key = &item.manifest_item.source_item_key.0;
     let mut metadata = MetadataMap::new();
     metadata.insert("source_family".to_string(), json!("code"));
     metadata.insert("source_kind".to_string(), json!("local"));
@@ -388,7 +388,7 @@ fn local_source_document(
     metadata.insert("visibility".to_string(), json!("internal"));
     metadata.insert("redaction_status".to_string(), json!("clean"));
     SourceDocument {
-        document_id: DocumentId::from(format!("doc_{}", sanitize_document_key(item_key))),
+        document_id: local_document_id(&acquisition.source_id, &item.manifest_item.source_item_key),
         source_id: acquisition.source_id.clone(),
         source_item_key: item.manifest_item.source_item_key.clone(),
         canonical_uri: item.manifest_item.canonical_uri.clone(),
@@ -445,10 +445,23 @@ fn named_stage_id(stage_id: &str) -> StageId {
     StageId::new(Uuid::new_v5(&Uuid::NAMESPACE_OID, stage_id.as_bytes()))
 }
 
-fn sanitize_document_key(key: &str) -> String {
-    key.chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
-        .collect()
+fn local_document_id(source_id: &SourceId, item_key: &SourceItemKey) -> DocumentId {
+    DocumentId::from(format!(
+        "doc_local_{}",
+        stable_token(&format!("{}\0{}", source_id.0, item_key.0))
+    ))
+}
+
+fn stable_token(value: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(value.as_bytes());
+    let digest = hasher.finalize();
+    let mut token = String::with_capacity(24);
+    for byte in &digest[..12] {
+        use std::fmt::Write as _;
+        let _ = write!(&mut token, "{byte:02x}");
+    }
+    token
 }
 
 fn modified_at(modified: Option<SystemTime>) -> Option<Timestamp> {
