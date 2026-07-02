@@ -160,6 +160,28 @@ async fn local_adapter_applies_include_exclude_gitignore_and_binary_policy() {
 }
 
 #[tokio::test]
+async fn local_include_globs_can_opt_into_default_pruned_directories() {
+    let adapter = LocalSourceAdapter::new();
+    let root = temp_source_dir();
+    fs::create_dir_all(root.join("target")).unwrap();
+    fs::write(root.join("target/generated.rs"), "pub fn generated() {}").unwrap();
+    let mut plan = source_plan(root, SourceScope::Directory);
+    plan.route.validated_options.values.insert(
+        "include_globs".to_string(),
+        vec!["target/generated.rs"].into(),
+    );
+
+    let manifest = adapter.discover(&plan).await.unwrap();
+    let keys = manifest
+        .items
+        .iter()
+        .map(|item| item.source_item_key.0.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(keys, vec!["target/generated.rs"]);
+}
+
+#[tokio::test]
 async fn local_repo_scope_prunes_generated_and_lock_files() {
     let adapter = LocalSourceAdapter::new();
     let root = temp_source_dir();
@@ -248,6 +270,10 @@ async fn local_binary_policy_metadata_keeps_manifest_but_skips_document_body() {
     let normalized = adapter.normalize(&plan, acquisition).await.unwrap();
 
     assert_eq!(manifest.items.len(), 1);
+    assert_eq!(
+        manifest.items[0].content_kind,
+        Some(ContentKind::BinaryMetadata)
+    );
     assert!(normalized.data.is_empty());
 }
 
@@ -264,10 +290,32 @@ async fn local_binary_policy_include_acquires_inline_bytes() {
     let acquisition = adapter.acquire(&plan, &diff).await.unwrap();
 
     assert_eq!(acquisition.fetched_items.len(), 1);
+    assert_eq!(
+        manifest.items[0].content_kind,
+        Some(ContentKind::BinaryMetadata)
+    );
     assert!(matches!(
         acquisition.fetched_items[0].content_ref,
         ContentRef::InlineBytes { .. }
     ));
+}
+
+#[tokio::test]
+async fn local_adapter_errors_do_not_leak_absolute_paths() {
+    let adapter = LocalSourceAdapter::new();
+    let root = temp_source_dir();
+    let missing = root.join("missing.md");
+    let plan = source_plan(missing, SourceScope::File);
+
+    let err = adapter.discover(&plan).await.unwrap_err();
+    let serialized = serde_json::to_string(&err).unwrap();
+
+    assert!(!serialized.contains(root.to_string_lossy().as_ref()));
+    assert!(!serialized.contains("/home/"));
+    assert_eq!(
+        err.details.get("path_hint").map(String::as_str),
+        Some("missing.md")
+    );
 }
 
 #[tokio::test]

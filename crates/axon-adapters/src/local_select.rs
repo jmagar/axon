@@ -65,6 +65,10 @@ impl LocalOptions {
     pub(crate) fn includes_binary_body(&self, path: &Path) -> bool {
         self.binary_policy == BinaryPolicy::Include && is_binary_path(path)
     }
+
+    pub(crate) fn should_prune_default_dirs(&self) -> bool {
+        self.include_set.is_none()
+    }
 }
 
 pub(crate) fn validate_options(options: &AdapterOptions) -> Result<LocalOptions> {
@@ -226,7 +230,7 @@ pub(crate) fn is_pruned_dir(name: &str) -> bool {
     )
 }
 
-fn is_binary_path(path: &Path) -> bool {
+pub(crate) fn is_binary_path(path: &Path) -> bool {
     matches!(
         extension(path),
         "png"

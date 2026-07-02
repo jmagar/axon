@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::adapter::{Result, SourceAdapter};
 use crate::capability::AdapterCapability;
-use crate::local_select::{LocalOptions, validate_options};
+use crate::local_select::{LocalOptions, is_binary_path, validate_options};
 use crate::manifest::item_identity;
 
 pub const MODULE_NAME: &str = "local";
@@ -267,8 +267,10 @@ fn collect_files(root: &Path, options: &LocalOptions) -> Result<Vec<PathBuf>> {
         .git_ignore(options.respect_gitignore)
         .git_exclude(options.respect_gitignore)
         .git_global(options.respect_gitignore)
-        .parents(options.respect_gitignore)
-        .filter_entry(should_descend_entry);
+        .parents(options.respect_gitignore);
+    if options.should_prune_default_dirs() {
+        builder.filter_entry(should_descend_entry);
+    }
     let mut files = Vec::new();
     for entry in builder.build() {
         let entry = entry.map_err(|err| {
@@ -337,6 +339,9 @@ fn public_base_uri(canonical_uri: &str) -> String {
 }
 
 fn content_kind_for(path: &Path) -> ContentKind {
+    if is_binary_path(path) {
+        return ContentKind::BinaryMetadata;
+    }
     match path.extension().and_then(|ext| ext.to_str()).unwrap_or("") {
         "md" | "markdown" => ContentKind::Markdown,
         "html" | "htm" => ContentKind::Html,
@@ -434,5 +439,12 @@ fn sanitize_document_key(key: &str) -> String {
 
 fn fs_error(code: &'static str, path: &Path, err: std::io::Error) -> ApiError {
     ApiError::new(code, axon_error::ErrorStage::Discovering, err.to_string())
-        .with_context("path", path.display().to_string())
+        .with_context("path_hint", public_path_hint(path))
+}
+
+fn public_path_hint(path: &Path) -> String {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(ToString::to_string)
+        .unwrap_or_else(|| "local-source-item".to_string())
 }
