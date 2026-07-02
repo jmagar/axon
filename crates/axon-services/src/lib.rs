@@ -40,7 +40,8 @@ pub mod system;
 pub mod transport;
 pub mod types;
 pub mod watch;
-pub mod web_source;
+#[allow(dead_code)]
+pub(crate) mod web_source;
 
 #[cfg(test)]
 #[path = "client_contract_tests.rs"]

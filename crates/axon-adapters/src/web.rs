@@ -4,6 +4,7 @@ mod metadata;
 mod url_parts;
 
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
@@ -221,7 +222,7 @@ fn map_manifest_items(plan: &SourcePlan) -> Result<Vec<ManifestItem>> {
 
 fn crawl_manifest_items(plan: &SourcePlan) -> Result<Vec<ManifestItem>> {
     let manifest_path = option_path(plan, "manifest_path")?;
-    let content = fs::read_to_string(&manifest_path).map_err(|err| {
+    let file = fs::File::open(&manifest_path).map_err(|err| {
         ApiError::new(
             "adapter.web.manifest_read_failed",
             axon_error::ErrorStage::Discovering,
@@ -230,11 +231,19 @@ fn crawl_manifest_items(plan: &SourcePlan) -> Result<Vec<ManifestItem>> {
         .with_context("path", manifest_path.display().to_string())
     })?;
     let mut items = Vec::new();
-    for (idx, line) in content.lines().enumerate() {
+    for (idx, line) in BufReader::new(file).lines().enumerate() {
+        let line = line.map_err(|err| {
+            ApiError::new(
+                "adapter.web.manifest_read_failed",
+                axon_error::ErrorStage::Discovering,
+                err.to_string(),
+            )
+            .with_context("line", (idx + 1).to_string())
+        })?;
         if line.trim().is_empty() {
             continue;
         }
-        let entry: Value = serde_json::from_str(line).map_err(|err| {
+        let entry: Value = serde_json::from_str(&line).map_err(|err| {
             ApiError::new(
                 "adapter.web.manifest_invalid",
                 axon_error::ErrorStage::Discovering,
@@ -288,7 +297,9 @@ fn web_manifest_item(
             serde_json::json!(relative_path),
         );
     }
-    if let Some(structured) = structured {
+    if let Some(structured) =
+        structured.and_then(|payload| bounded_structured_payload(payload, &mut metadata))
+    {
         metadata.insert("structured_payload".to_string(), structured);
     }
     ManifestItem {
@@ -306,6 +317,22 @@ fn web_manifest_item(
         fetch_plan: None,
         metadata,
         graph_hints: Vec::new(),
+    }
+}
+
+fn bounded_structured_payload(structured: Value, metadata: &mut MetadataMap) -> Option<Value> {
+    const MAX_STRUCTURED_PAYLOAD_BYTES: usize = 64 * 1024;
+    let size = serde_json::to_vec(&structured)
+        .map(|bytes| bytes.len())
+        .unwrap_or(MAX_STRUCTURED_PAYLOAD_BYTES + 1);
+    if size <= MAX_STRUCTURED_PAYLOAD_BYTES {
+        Some(structured)
+    } else {
+        metadata.insert(
+            "structured_payload_omitted".to_string(),
+            serde_json::json!("too_large"),
+        );
+        None
     }
 }
 

@@ -463,25 +463,7 @@
         "allowed_option_keys": [
           "manifest_path",
           "markdown_root",
-          "map_urls",
-          "max_pages",
-          "max_depth",
-          "include_subdomains",
-          "respect_robots",
-          "render_mode",
-          "headers",
-          "discover_sitemaps",
-          "max_sitemaps",
-          "sitemap_since_days",
-          "url_whitelist",
-          "url_blacklist",
-          "etag_conditional",
-          "cache_policy",
-          "min_markdown_chars",
-          "drop_thin_markdown",
-          "warc_path",
-          "automation_script",
-          "verticals_enabled"
+          "map_urls"
         ],
         "chunking_hints": [],
         "credential_requirements": [],
@@ -535,7 +517,7 @@
     "registry_status": "route-time implemented subset",
     "source_inputs": [
       {
-        "checksum": "sha256:0986c0b139985c1f1d39d0ff28e06dd34b81faf516f833a03b9db0455cd15a2f",
+        "checksum": "sha256:7189b435f0277c9fffbcbd1390899b8723b28101f9efbd8157509b54299627e0",
         "kind": "rust_module",
         "path": "crates/axon-route/src/capability.rs"
       },

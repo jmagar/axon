@@ -10,6 +10,9 @@ use uuid::Uuid;
 
 use super::{WebAdapterRun, WebSourceIndexInput, timestamp};
 
+const WEB_CHANGED_DOCUMENT_BATCH_SIZE: usize = 64;
+const WEB_CHANGED_CHUNK_BATCH_SIZE: usize = 512;
+
 #[derive(Debug, Clone, Default)]
 pub(super) struct VectorizeResult {
     pub(super) documents_prepared: u64,
@@ -40,22 +43,28 @@ pub(super) async fn vectorize_changed_documents(
     vector_store: &dyn VectorStore,
     collection: CollectionSpec,
 ) -> anyhow::Result<VectorizeResult> {
-    let source_documents = normalize_changed_documents(run, diff).await?;
-    let prepared = prepare_source_documents(source_documents, generation)?;
-    let result = vectorize_documents(
-        input,
-        ledger,
-        embedding_provider,
-        vector_store,
-        collection,
-        prepared,
-    )
-    .await?;
-    Ok(VectorizeResult {
-        documents_prepared: result.stats.documents_prepared,
-        chunks_prepared: result.stats.chunks_prepared,
-        document_statuses: result.document_statuses,
-    })
+    let mut result = VectorizeResult::default();
+    for batch_diff in changed_diff_batches(diff, WEB_CHANGED_DOCUMENT_BATCH_SIZE) {
+        let source_documents = normalize_changed_documents(run, &batch_diff).await?;
+        let prepared = prepare_source_documents(source_documents, generation)?;
+        for prepared_batch in prepared_document_batches(prepared, WEB_CHANGED_CHUNK_BATCH_SIZE) {
+            let batch_result = vectorize_documents(
+                input,
+                ledger,
+                embedding_provider,
+                vector_store,
+                collection.clone(),
+                prepared_batch,
+            )
+            .await?;
+            result.documents_prepared += batch_result.stats.documents_prepared;
+            result.chunks_prepared += batch_result.stats.chunks_prepared;
+            result
+                .document_statuses
+                .extend(batch_result.document_statuses);
+        }
+    }
+    Ok(result)
 }
 
 pub(super) fn collection_spec(input: &WebSourceIndexInput) -> CollectionSpec {
@@ -155,9 +164,92 @@ fn sanitize_metadata(metadata: &mut MetadataMap) {
         "web_path",
         "web_normalized_url",
         "web_fetch_method",
+        "structured_payload_omitted",
     ] {
         metadata.remove(field);
     }
+}
+
+fn changed_diff_batches(diff: &SourceManifestDiff, batch_size: usize) -> Vec<SourceManifestDiff> {
+    let batch_size = batch_size.max(1);
+    let mut batches = Vec::new();
+    let mut current = empty_diff_like(diff);
+    for item in &diff.added {
+        current.added.push(item.clone());
+        if changed_batch_len(&current) == batch_size {
+            push_changed_batch(&mut batches, &mut current, diff);
+        }
+    }
+    for item in &diff.modified {
+        current.modified.push(item.clone());
+        if changed_batch_len(&current) == batch_size {
+            push_changed_batch(&mut batches, &mut current, diff);
+        }
+    }
+    if changed_batch_len(&current) > 0 {
+        push_changed_batch(&mut batches, &mut current, diff);
+    }
+    batches
+}
+
+fn changed_batch_len(batch: &SourceManifestDiff) -> usize {
+    batch.added.len() + batch.modified.len()
+}
+
+fn push_changed_batch(
+    batches: &mut Vec<SourceManifestDiff>,
+    current: &mut SourceManifestDiff,
+    diff: &SourceManifestDiff,
+) {
+    current.counts.added = current.added.len() as u64;
+    current.counts.modified = current.modified.len() as u64;
+    batches.push(std::mem::replace(current, empty_diff_like(diff)));
+}
+
+fn empty_diff_like(diff: &SourceManifestDiff) -> SourceManifestDiff {
+    SourceManifestDiff {
+        header: diff.header.clone(),
+        source_id: diff.source_id.clone(),
+        previous_generation: diff.previous_generation.clone(),
+        next_generation: diff.next_generation.clone(),
+        added: Vec::new(),
+        modified: Vec::new(),
+        removed: Vec::new(),
+        unchanged: Vec::new(),
+        skipped: Vec::new(),
+        failed: Vec::new(),
+        counts: DiffCounts {
+            added: 0,
+            modified: 0,
+            removed: 0,
+            unchanged: 0,
+            skipped: 0,
+            failed: 0,
+        },
+    }
+}
+
+fn prepared_document_batches(
+    documents: Vec<PreparedDocument>,
+    max_chunks: usize,
+) -> Vec<Vec<PreparedDocument>> {
+    let max_chunks = max_chunks.max(1);
+    let mut batches = Vec::new();
+    let mut current = Vec::new();
+    let mut current_chunks = 0_usize;
+    for document in documents {
+        let document_chunks = document.chunks.len().max(1);
+        if !current.is_empty() && current_chunks + document_chunks > max_chunks {
+            batches.push(std::mem::take(&mut current));
+            current_chunks = 0;
+        }
+        current_chunks += document_chunks;
+        current.push(document);
+    }
+    if !current.is_empty() {
+        batches.push(current);
+    }
+    batches
 }
 
 async fn vectorize_documents(
@@ -240,20 +332,8 @@ fn vector_point_batch_for_documents(
         .collect::<std::collections::BTreeMap<_, _>>();
     let mut points = Vec::new();
     for document in documents {
-        let document_embeddings = EmbeddingResult {
-            batch_id: embeddings.batch_id.clone(),
-            job_id: embeddings.job_id,
-            provider_id: embeddings.provider_id.clone(),
-            model: embeddings.model.clone(),
-            dimensions: embeddings.dimensions,
-            vectors: document
-                .chunks
-                .iter()
-                .filter_map(|chunk| vectors_by_chunk.get(&chunk.chunk_id).cloned())
-                .collect(),
-            usage: embeddings.usage.clone(),
-            warnings: embeddings.warnings.clone(),
-        };
+        let document_embeddings =
+            embedding_result_for_document(embeddings, document, &vectors_by_chunk)?;
         let batch = VectorPointBatchBuilder::new(
             collection.clone(),
             document.clone(),
@@ -273,6 +353,36 @@ fn vector_point_batch_for_documents(
         dimensions: embeddings.dimensions,
         sparse_vectors: None,
         payload_indexes: collection.payload_indexes,
+    })
+}
+
+fn embedding_result_for_document(
+    embeddings: &EmbeddingResult,
+    document: &PreparedDocument,
+    vectors_by_chunk: &std::collections::BTreeMap<ChunkId, EmbeddingVector>,
+) -> anyhow::Result<EmbeddingResult> {
+    let mut vectors = Vec::with_capacity(document.chunks.len());
+    for chunk in &document.chunks {
+        let vector = vectors_by_chunk
+            .get(&chunk.chunk_id)
+            .cloned()
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "embedding result missing vector for web chunk {}",
+                    chunk.chunk_id.0
+                )
+            })?;
+        vectors.push(vector);
+    }
+    Ok(EmbeddingResult {
+        batch_id: embeddings.batch_id.clone(),
+        job_id: embeddings.job_id,
+        provider_id: embeddings.provider_id.clone(),
+        model: embeddings.model.clone(),
+        dimensions: embeddings.dimensions,
+        vectors,
+        usage: embeddings.usage.clone(),
+        warnings: embeddings.warnings.clone(),
     })
 }
 

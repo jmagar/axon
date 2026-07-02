@@ -170,29 +170,7 @@ impl AdapterRegistry {
                 .with_scope(SourceScope::Page)
                 .with_scope(SourceScope::Docs)
                 .with_scope(SourceScope::Map)
-                .with_options(&[
-                    "manifest_path",
-                    "markdown_root",
-                    "map_urls",
-                    "max_pages",
-                    "max_depth",
-                    "include_subdomains",
-                    "respect_robots",
-                    "render_mode",
-                    "headers",
-                    "discover_sitemaps",
-                    "max_sitemaps",
-                    "sitemap_since_days",
-                    "url_whitelist",
-                    "url_blacklist",
-                    "etag_conditional",
-                    "cache_policy",
-                    "min_markdown_chars",
-                    "drop_thin_markdown",
-                    "warc_path",
-                    "automation_script",
-                    "verticals_enabled",
-                ]),
+                .with_options(&["manifest_path", "markdown_root", "map_urls"]),
             AdapterDefinition::new("youtube", "1", SourceKind::Youtube, SourceScope::Video)
                 .with_scope(SourceScope::Playlist)
                 .with_scope(SourceScope::Channel),

@@ -1,3 +1,4 @@
+mod publish;
 mod vectorize;
 
 use std::path::PathBuf;
@@ -9,16 +10,21 @@ use axon_ledger::store::LedgerStore;
 use axon_route::{AdapterRegistry, InMemoryAuthorityRegistry, SourceResolver, SourceRouter};
 use axon_vectors::store::VectorStore;
 
+use self::publish::{
+    complete_generation, completed_source_summary, ensure_lease_before_publish,
+    mark_vectors_for_completed_generation, publish_generation_and_rollback_vectors,
+};
 use self::vectorize::{collection_spec, published_status, vectorize_changed_documents};
 
-const WEB_LEASE_TTL_SECONDS: u64 = 30 * 60;
+pub(super) const WEB_LEASE_TTL_SECONDS: u64 = 30 * 60;
 
 #[derive(Debug, Clone)]
 pub struct WebSourceIndexInput {
     pub source: String,
     pub scope: SourceScope,
-    pub manifest_path: PathBuf,
-    pub markdown_root: PathBuf,
+    pub manifest_path: Option<PathBuf>,
+    pub markdown_root: Option<PathBuf>,
+    pub map_urls: Vec<String>,
     pub collection: String,
     pub owner_id: String,
     pub job_id: JobId,
@@ -103,6 +109,35 @@ async fn index_web_source_with_lease(
     let generation = ledger.create_generation(run.source_id.clone()).await?;
     manifest.generation = generation.generation.clone();
     ledger.put_manifest(manifest.clone()).await?;
+    if input.scope == SourceScope::Map {
+        let completed =
+            complete_generation(ledger, generation, &diff, manifest.items.len() as u64).await?;
+        let published = publish_generation_and_rollback_vectors(
+            ledger,
+            vector_store,
+            &collection_spec(input),
+            &completed,
+        )
+        .await?;
+        ledger
+            .upsert_source(completed_source_summary(
+                input,
+                &run,
+                manifest.items.len() as u64,
+                &diff,
+                0,
+            ))
+            .await?;
+        return Ok(WebSourceIndexOutput {
+            job_id: input.job_id,
+            source_id: run.source_id,
+            generation: published.generation,
+            documents_prepared: 0,
+            chunks_prepared: 0,
+            vector_points_written: 0,
+            removed_pages: diff.counts.removed,
+        });
+    }
     let collection = collection_spec(input);
     vector_store.ensure_collection(collection.clone()).await?;
     let vectorized = vectorize_changed_documents(
@@ -120,9 +155,17 @@ async fn index_web_source_with_lease(
     ensure_lease_before_publish(ledger, input, lease, generation.clone()).await?;
     let completed =
         complete_generation(ledger, generation, &diff, manifest.items.len() as u64).await?;
-    let publish_stats =
-        mark_generation_committed(vector_store, &collection, &run.source_id, &completed).await?;
-    let published = publish_generation(ledger, completed).await?;
+    let publish_stats = mark_vectors_for_completed_generation(
+        vector_store,
+        &collection,
+        &run.source_id,
+        &completed,
+        &diff,
+    )
+    .await?;
+    let published =
+        publish_generation_and_rollback_vectors(ledger, vector_store, &collection, &completed)
+            .await?;
     for status in &vectorized.document_statuses {
         ledger
             .update_document_status(published_status(status))
@@ -134,7 +177,7 @@ async fn index_web_source_with_lease(
             &run,
             manifest.items.len() as u64,
             &diff,
-            publish_stats.points_written,
+            publish_stats.total_points_written(),
         ))
         .await?;
 
@@ -144,13 +187,13 @@ async fn index_web_source_with_lease(
         generation: published.generation,
         documents_prepared: vectorized.documents_prepared,
         chunks_prepared: vectorized.chunks_prepared,
-        vector_points_written: publish_stats.points_written,
+        vector_points_written: publish_stats.total_points_written(),
         removed_pages: diff.counts.removed,
     })
 }
 
 #[derive(Debug, Clone)]
-struct WebAdapterRun {
+pub(super) struct WebAdapterRun {
     source_id: SourceId,
     canonical_uri: String,
     adapter: AdapterRef,
@@ -162,14 +205,27 @@ fn resolve_web_run(input: &WebSourceIndexInput) -> anyhow::Result<WebAdapterRun>
     let mut request = SourceRequest::new(input.source.clone());
     request.scope = Some(input.scope);
     request.adapter = Some("web".to_string());
-    request.options.values.insert(
-        "manifest_path".to_string(),
-        input.manifest_path.display().to_string().into(),
-    );
-    request.options.values.insert(
-        "markdown_root".to_string(),
-        input.markdown_root.display().to_string().into(),
-    );
+    if input.scope == SourceScope::Map {
+        request
+            .options
+            .values
+            .insert("map_urls".to_string(), serde_json::json!(input.map_urls));
+    } else {
+        let manifest_path = input.manifest_path.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("web source indexing requires manifest_path for non-map scopes")
+        })?;
+        let markdown_root = input.markdown_root.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("web source indexing requires markdown_root for non-map scopes")
+        })?;
+        request.options.values.insert(
+            "manifest_path".to_string(),
+            manifest_path.display().to_string().into(),
+        );
+        request.options.values.insert(
+            "markdown_root".to_string(),
+            markdown_root.display().to_string().into(),
+        );
+    }
     let registry = AdapterRegistry::target_defaults();
     let resolver = SourceResolver::new(InMemoryAuthorityRegistry::default(), registry.clone());
     let resolved = resolver.resolve(&request)?;
@@ -206,11 +262,6 @@ fn source_plan(
         config_snapshot_id: ConfigSnapshotId::new("cfg_web_source"),
         provider_reservations: Vec::new(),
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct PublishStats {
-    points_written: u64,
 }
 
 async fn unchanged_refresh_output(
@@ -254,90 +305,7 @@ fn manifest_diff_has_changes(diff: &SourceManifestDiff) -> bool {
         || diff.counts.failed > 0
 }
 
-async fn ensure_lease_before_publish(
-    ledger: &dyn LedgerStore,
-    input: &WebSourceIndexInput,
-    lease: &LeaseGuard,
-    generation: SourceGeneration,
-) -> anyhow::Result<()> {
-    if ledger
-        .heartbeat_lease(
-            lease.lease_id.clone(),
-            input.owner_id.clone(),
-            WEB_LEASE_TTL_SECONDS,
-        )
-        .await?
-        .is_some()
-    {
-        return Ok(());
-    }
-    let _ = ledger.fail_generation(generation).await;
-    Err(anyhow::anyhow!(
-        "web source refresh lost lease before publish"
-    ))
-}
-
-async fn complete_generation(
-    ledger: &dyn LedgerStore,
-    generation: SourceGeneration,
-    diff: &SourceManifestDiff,
-    discovered_count: u64,
-) -> anyhow::Result<SourceGeneration> {
-    Ok(ledger
-        .complete_generation(SourceGeneration {
-            status: LifecycleStatus::Completed,
-            publish_state: PublishState::Publishing,
-            item_counts: ItemCounts {
-                added: diff.counts.added,
-                modified: diff.counts.modified,
-                removed: diff.counts.removed,
-                unchanged: diff.counts.unchanged,
-                failed: diff.counts.failed,
-            },
-            document_counts: DocumentCounts {
-                discovered: discovered_count,
-                prepared: discovered_count,
-                embedded: discovered_count,
-                published: discovered_count,
-                failed: 0,
-            },
-            ..generation
-        })
-        .await?)
-}
-
-async fn mark_generation_committed(
-    vector_store: &dyn VectorStore,
-    collection: &CollectionSpec,
-    source_id: &SourceId,
-    generation: &SourceGeneration,
-) -> anyhow::Result<PublishStats> {
-    let write = vector_store
-        .mark_generation_committed(
-            collection.collection.clone(),
-            source_id.clone(),
-            generation.generation.clone(),
-        )
-        .await?;
-    Ok(PublishStats {
-        points_written: write.points_written,
-    })
-}
-
-async fn publish_generation(
-    ledger: &dyn LedgerStore,
-    completed: SourceGeneration,
-) -> anyhow::Result<SourceGeneration> {
-    Ok(ledger
-        .publish_generation(PublishGenerationRequest {
-            source_id: completed.source_id.clone(),
-            generation: completed.generation.clone(),
-            expected_previous_generation: completed.previous_generation.clone(),
-        })
-        .await?)
-}
-
-fn source_summary(input: &WebSourceIndexInput, run: &WebAdapterRun) -> SourceSummary {
+pub(super) fn source_summary(input: &WebSourceIndexInput, run: &WebAdapterRun) -> SourceSummary {
     SourceSummary {
         source_id: run.source_id.clone(),
         canonical_uri: run.canonical_uri.clone(),
@@ -362,33 +330,6 @@ fn source_summary(input: &WebSourceIndexInput, run: &WebAdapterRun) -> SourceSum
     }
 }
 
-fn completed_source_summary(
-    input: &WebSourceIndexInput,
-    run: &WebAdapterRun,
-    item_count: u64,
-    diff: &SourceManifestDiff,
-    points_written: u64,
-) -> SourceSummary {
-    let mut summary = source_summary(input, run);
-    summary.status = LifecycleStatus::Completed;
-    summary.counts = SourceCounts {
-        items_total: item_count,
-        items_changed: diff.counts.added + diff.counts.modified + diff.counts.removed,
-        documents_total: item_count,
-        chunks_total: points_written,
-        vector_points_total: points_written,
-        bytes_total: diff
-            .added
-            .iter()
-            .chain(diff.modified.iter())
-            .chain(diff.unchanged.iter())
-            .map(|item| item.size_bytes.unwrap_or(0))
-            .sum(),
-    };
-    summary.updated_at = timestamp();
-    summary
-}
-
 fn unchanged_source_summary(
     input: &WebSourceIndexInput,
     run: &WebAdapterRun,
@@ -409,7 +350,7 @@ fn unchanged_source_summary(
     summary
 }
 
-fn timestamp() -> Timestamp {
+pub(super) fn timestamp() -> Timestamp {
     Timestamp(chrono::Utc::now().to_rfc3339())
 }
 

@@ -41,7 +41,7 @@ impl WebUrlParts {
         let path = clean_path(url.path());
         url.set_path(&path);
         let normalized_url = url.to_string().trim_end_matches('/').to_string();
-        let item_key = web_item_key(&path);
+        let item_key = web_item_key(&path, url.query());
         Ok(Self {
             normalized_url,
             item_key,
@@ -73,7 +73,29 @@ fn is_tracking_or_sensitive_query(key: &str) -> bool {
     key.starts_with("utm_")
         || matches!(
             key.as_str(),
-            "token" | "access_token" | "api_key" | "apikey" | "key" | "signature" | "sig"
+            "auth"
+                | "authorization"
+                | "code"
+                | "access_token"
+                | "api_key"
+                | "apikey"
+                | "client_secret"
+                | "fbclid"
+                | "gclid"
+                | "id_token"
+                | "jwt"
+                | "key"
+                | "mc_cid"
+                | "mc_eid"
+                | "password"
+                | "refresh_token"
+                | "ref"
+                | "secret"
+                | "session"
+                | "session_id"
+                | "signature"
+                | "sig"
+                | "token"
         )
 }
 
@@ -99,12 +121,16 @@ fn clean_path(path: &str) -> String {
     }
 }
 
-fn web_item_key(path: &str) -> String {
+fn web_item_key(path: &str, query: Option<&str>) -> String {
     let key = path.trim_matches('/');
-    if key.is_empty() {
+    let path_key = if key.is_empty() {
         "index".to_string()
     } else {
         key.to_string()
+    };
+    match query {
+        Some(query) if !query.trim().is_empty() => format!("{path_key}?{query}"),
+        _ => path_key,
     }
 }
 

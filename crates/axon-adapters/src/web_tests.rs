@@ -154,6 +154,35 @@ async fn web_manifest_acquires_and_normalizes_source_documents() {
     );
 }
 
+#[tokio::test]
+async fn web_urls_keep_safe_queries_in_item_keys_without_leaking_secrets() {
+    let adapter = WebSourceAdapter::new();
+    let mut plan = web_plan("https://example.com/search", SourceScope::Map);
+    plan.route.validated_options.values.insert(
+        "map_urls".to_string(),
+        json!([
+            "https://example.com/search?q=rust&code=oauth-secret&session=s1",
+            "https://example.com/search?q=go&password=secret"
+        ]),
+    );
+
+    let manifest = adapter.discover(&plan).await.unwrap();
+    let keys = manifest
+        .items
+        .iter()
+        .map(|item| item.source_item_key.0.as_str())
+        .collect::<Vec<_>>();
+    let serialized = serde_json::to_string(&manifest).unwrap();
+
+    assert_eq!(keys, vec!["search?q=go", "search?q=rust"]);
+    assert!(manifest.items.iter().all(|item| {
+        item.canonical_uri == format!("https://example.com/{}", item.source_item_key.0)
+    }));
+    for secret in ["oauth-secret", "session=", "password=", "code="] {
+        assert!(!serialized.contains(secret), "leaked {secret}");
+    }
+}
+
 fn web_plan(source: &str, scope: SourceScope) -> SourcePlan {
     SourcePlan {
         job_id: JobId::new(Uuid::from_u128(29812)),
