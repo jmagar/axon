@@ -2,6 +2,7 @@ use std::error::Error;
 use std::path::{Path, PathBuf};
 
 use axon_api::source::JobId;
+use axon_api::source::{SourceGenerationId, SourceId};
 use axon_code_index::ensure::{EnsureFreshOptions, ensure_fresh_with_progress};
 use axon_code_index::{CodeIndexIdentity, FreshnessWarning, ReindexProgressSink};
 
@@ -26,6 +27,10 @@ pub struct CodeSearchRefreshResult {
     pub project_root: PathBuf,
     pub project_key: String,
     pub generation: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_source_id: Option<SourceId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_source_generation: Option<SourceGenerationId>,
     pub freshness: CodeSearchFreshness,
 }
 
@@ -108,6 +113,8 @@ async fn refresh_legacy_code_search_index_with_progress(
         project_root: identity.project_root.clone(),
         project_key: identity.project_key.clone(),
         generation,
+        target_source_id: None,
+        target_source_generation: None,
         freshness,
     })
 }
@@ -124,6 +131,8 @@ async fn refresh_target_local_code_search_index_with_progress(
             project_root: identity.project_root,
             project_key: identity.project_key,
             generation: None,
+            target_source_id: None,
+            target_source_generation: None,
             freshness: code_search_freshness(
                 "stale",
                 Some(FreshnessWarning::Failed {
@@ -161,23 +170,19 @@ async fn refresh_target_local_code_search_index_with_progress(
                 project_root: project_root.clone(),
                 project_key: project_key.clone(),
                 generation: None,
+                target_source_id: Some(output.source_id),
+                target_source_generation: Some(output.generation),
                 freshness: code_search_freshness(
-                    "stale",
-                    Some(FreshnessWarning::Failed {
-                        error: format!(
-                            "target local source refresh indexed {} document(s), but target code-search retrieval is not wired yet; legacy index remains the queryable source",
-                            output.documents_prepared
-                        ),
-                    }),
+                    "fresh",
+                    None,
                     usize::try_from(output.documents_prepared).unwrap_or(usize::MAX),
                     0,
                 ),
             };
-            tracing::warn!(
+            tracing::debug!(
                 project_key,
                 indexed_files = result.freshness.indexed_files,
-                warning = ?result.freshness.warning,
-                "target local source refresh completed but remains non-queryable"
+                "target local source refresh completed for code-search"
             );
             Ok(result)
         }
@@ -186,6 +191,8 @@ async fn refresh_target_local_code_search_index_with_progress(
                 project_root: project_root.clone(),
                 project_key: project_key.clone(),
                 generation: None,
+                target_source_id: None,
+                target_source_generation: None,
                 freshness: code_search_freshness(
                     "stale",
                     Some(FreshnessWarning::Failed {

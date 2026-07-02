@@ -211,6 +211,57 @@ async fn fake_vector_store_upserts_searches_and_deletes_without_qdrant() {
 }
 
 #[tokio::test]
+async fn fake_vector_store_search_filters_committed_source_generation_and_path_prefix() {
+    let store = FakeVectorStore::new("fake-vector");
+    store.ensure_collection(collection()).await.unwrap();
+    let mut batch = batch();
+    batch.points[0]
+        .payload
+        .insert("source_item_key".to_string(), json!("src/lib.rs"));
+    batch.points[0]
+        .payload
+        .get_mut("chunk_locator")
+        .unwrap()
+        .as_object_mut()
+        .unwrap()
+        .insert("path".to_string(), json!("src/lib.rs"));
+    batch.points[1]
+        .payload
+        .insert("source_item_key".to_string(), json!("docs/notes.md"));
+    batch.points[1]
+        .payload
+        .get_mut("chunk_locator")
+        .unwrap()
+        .as_object_mut()
+        .unwrap()
+        .insert("path".to_string(), json!("docs/notes.md"));
+    store.upsert(batch).await.unwrap();
+
+    let mut request = search(MetadataMap::new());
+    request
+        .filters
+        .insert("source_id".to_string(), json!("src-a"));
+    request
+        .filters
+        .insert("source_generation".to_string(), json!("7"));
+    request
+        .filters
+        .insert("committed_generation".to_string(), json!("7"));
+    request
+        .filters
+        .insert("path_prefix".to_string(), json!("src/"));
+
+    let search = store.search(request).await.unwrap();
+
+    assert_eq!(search.results.len(), 1);
+    assert_eq!(
+        search.results[0].source_item_key,
+        Some(SourceItemKey::new("src/lib.rs"))
+    );
+    assert_eq!(search.results[0].point_id, VectorPointId::new("point-a"));
+}
+
+#[tokio::test]
 async fn fake_vector_store_reports_capabilities_and_records_calls() {
     let store = FakeVectorStore::new("fake-vector");
 

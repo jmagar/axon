@@ -400,7 +400,8 @@ impl VectorStore for FakeVectorStore {
                 chunk_id: Some(point.chunk_id.clone()),
                 document_id: payload_string(&point.payload, "document_id").map(DocumentId::new),
                 source_id: payload_string(&point.payload, "source_id").map(SourceId::new),
-                source_item_key: None,
+                source_item_key: payload_string(&point.payload, "source_item_key")
+                    .map(SourceItemKey::new),
                 text: payload_string(&point.payload, "chunk_text"),
                 payload: point.payload.clone(),
             })

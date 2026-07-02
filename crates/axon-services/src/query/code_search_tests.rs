@@ -9,6 +9,7 @@ use axon_embedding::fake::FakeEmbeddingProvider;
 use axon_jobs::boundary::{FakeJobWatchStore, JobStore};
 use axon_ledger::store::FakeLedgerStore;
 use axon_vectors::store::FakeVectorStore;
+use axon_vectors::store::VectorStore;
 use std::process::Command;
 use std::sync::Arc;
 
@@ -33,8 +34,8 @@ async fn target_code_search_refresh_uses_local_source_runtime_when_available() {
     let ledger = Arc::new(FakeLedgerStore::new());
     let embedder = Arc::new(FakeEmbeddingProvider::new("fake-embedding", 8));
     let vectors = Arc::new(FakeVectorStore::new("fake-vector"));
-    let ctx = ServiceContext::from_runtime(cfg, service_jobs).with_target_local_source_runtime(
-        TargetLocalSourceRuntime::new(
+    let ctx = ServiceContext::from_runtime(cfg.clone(), service_jobs)
+        .with_target_local_source_runtime(TargetLocalSourceRuntime::new(
             source_jobs.clone(),
             ledger,
             embedder,
@@ -42,8 +43,7 @@ async fn target_code_search_refresh_uses_local_source_runtime_when_available() {
             ProviderId::new("fake-embedding"),
             "fake-embedding",
             8,
-        ),
-    );
+        ));
 
     let refreshed = refresh_code_search_index_with_backend(
         &ctx,
@@ -55,15 +55,10 @@ async fn target_code_search_refresh_uses_local_source_runtime_when_available() {
     .await
     .expect("target refresh");
 
-    assert_eq!(refreshed.freshness.status, "stale");
-    assert!(
-        refreshed
-            .freshness
-            .warning
-            .as_deref()
-            .unwrap_or_default()
-            .contains("target code-search retrieval is not wired yet")
-    );
+    assert_eq!(refreshed.freshness.status, "fresh");
+    assert!(refreshed.freshness.warning.is_none());
+    assert!(refreshed.target_source_id.is_some());
+    assert!(refreshed.target_source_generation.is_some());
     assert_eq!(refreshed.freshness.indexed_files, 1);
     assert_eq!(refreshed.freshness.removed_files, 0);
     assert_eq!(
@@ -84,6 +79,139 @@ async fn target_code_search_refresh_uses_local_source_runtime_when_available() {
     .await
     .expect("jobs");
     assert_eq!(jobs.items.len(), 1);
+}
+
+#[tokio::test]
+async fn target_code_search_queries_committed_target_vectors_with_path_prefix() {
+    let repo = tempfile::tempdir().expect("repo");
+    Command::new("git")
+        .arg("-C")
+        .arg(repo.path())
+        .args(["init", "-q"])
+        .status()
+        .expect("git init");
+    std::fs::create_dir_all(repo.path().join("src")).expect("src dir");
+    std::fs::create_dir_all(repo.path().join("docs")).expect("docs dir");
+    std::fs::write(
+        repo.path().join("src/lib.rs"),
+        "pub fn target_answer() -> i32 { 42 }\n",
+    )
+    .expect("source file");
+    std::fs::write(
+        repo.path().join("docs/notes.md"),
+        "target_answer appears in docs but should be filtered out\n",
+    )
+    .expect("docs file");
+
+    let cfg = Arc::new(Config::test_default());
+    let service_jobs = Arc::new(NoopServiceRuntime);
+    let source_jobs = Arc::new(FakeJobWatchStore::new());
+    let ledger = Arc::new(FakeLedgerStore::new());
+    let embedder = Arc::new(FakeEmbeddingProvider::new("fake-embedding", 8));
+    let vectors = Arc::new(FakeVectorStore::new("fake-vector"));
+    let ctx = ServiceContext::from_runtime(cfg.clone(), service_jobs)
+        .with_target_local_source_runtime(TargetLocalSourceRuntime::new(
+            source_jobs,
+            ledger,
+            embedder,
+            vectors.clone(),
+            ProviderId::new("fake-embedding"),
+            "fake-embedding",
+            8,
+        ));
+
+    let refreshed = refresh_code_search_index_with_backend(
+        &ctx,
+        Some(repo.path()),
+        CodeSearchCaller::Cli,
+        CodeSearchRefreshBackend::TargetLocalSource,
+        None,
+    )
+    .await
+    .expect("target refresh");
+    assert_eq!(refreshed.freshness.status, "fresh");
+    assert!(refreshed.freshness.warning.is_none());
+    let mut stale_point = vectors
+        .points(&cfg.collection)
+        .await
+        .into_iter()
+        .find(|point| {
+            point
+                .payload
+                .get("source_item_key")
+                .and_then(|value| value.as_str())
+                == Some("src/lib.rs")
+        })
+        .expect("fresh src point");
+    stale_point.point_id = VectorPointId::new("stale-src-lib");
+    stale_point.chunk_id = ChunkId::new("stale-src-lib");
+    stale_point.vector = vec![100.0; 8];
+    stale_point
+        .payload
+        .insert("chunk_id".to_string(), serde_json::json!("stale-src-lib"));
+    stale_point.payload.insert(
+        "chunk_text".to_string(),
+        serde_json::json!("stale generation"),
+    );
+    stale_point
+        .payload
+        .insert("source_generation".to_string(), serde_json::json!("old"));
+    stale_point
+        .payload
+        .insert("committed_generation".to_string(), serde_json::json!("old"));
+    let stale_batch_id = stale_point
+        .payload
+        .get("embedding_batch_id")
+        .and_then(|value| value.as_str())
+        .and_then(|value| uuid::Uuid::parse_str(value).ok())
+        .map(BatchId::new)
+        .expect("embedding batch id");
+    vectors
+        .upsert(VectorPointBatch {
+            batch_id: stale_batch_id,
+            collection: cfg.collection.clone(),
+            points: vec![stale_point],
+            model: "fake-embedding".to_string(),
+            dimensions: 8,
+            sparse_vectors: None,
+            payload_indexes: Vec::new(),
+        })
+        .await
+        .expect("stale point");
+
+    let searched = code_search(
+        &ctx,
+        "target_answer",
+        CodeSearchOptions {
+            limit: 10,
+            offset: 0,
+            cwd: Some(repo.path().to_path_buf()),
+            path_prefix: Some("src".to_string()),
+            ensure_fresh: true,
+            caller: CodeSearchCaller::Cli,
+        },
+    )
+    .await
+    .expect("target code search");
+
+    assert_eq!(searched.freshness.status, "fresh");
+    assert!(searched.freshness.warning.is_none());
+    assert_eq!(searched.results.len(), 1);
+    assert_eq!(searched.results[0].file_path.as_deref(), Some("src/lib.rs"));
+    assert_eq!(
+        searched.results[0].snippet,
+        "pub fn target_answer() -> i32 { 42 }"
+    );
+    assert_eq!(
+        vectors.calls().await,
+        vec![
+            "ensure_collection",
+            "upsert",
+            "mark_generation_committed",
+            "upsert",
+            "search"
+        ]
+    );
 }
 
 #[tokio::test]

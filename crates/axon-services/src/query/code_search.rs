@@ -2,6 +2,11 @@ use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use axon_api::QueryHit;
+use axon_api::source::{
+    BatchId, ChunkId, ContentKind, EmbeddingBatch, EmbeddingInput, JobId, JobPriority, MetadataMap,
+    SourceGenerationId, SourceId, VectorSearchRequest,
+};
 use axon_code_index::config::validate_path_prefix;
 use axon_code_index::store::CodeIndexStore;
 use axon_code_index::{
@@ -9,6 +14,7 @@ use axon_code_index::{
 };
 use axon_core::config::Config;
 use axon_vector::ops::commands::{CodeSearchVectorRequest, code_search_hits};
+use serde_json::json;
 
 use crate::context::ServiceContext;
 use crate::query::wrap_service_error;
@@ -58,6 +64,9 @@ pub async fn code_search_with_progress(
         .map(validate_path_prefix)
         .transpose()?
         .flatten();
+    if ctx.target_local_source_runtime().is_some() {
+        return target_code_search(ctx, text, opts, path_prefix.as_deref()).await;
+    }
     let root = resolve_code_search_root(opts.cwd.as_deref(), opts.caller).await?;
     let identity = code_search_identity(ctx.cfg(), root).await;
     let freshness =
@@ -93,6 +102,175 @@ pub async fn code_search_with_progress(
         results,
         freshness,
     })
+}
+
+async fn target_code_search(
+    ctx: &ServiceContext,
+    text: &str,
+    opts: CodeSearchOptions,
+    path_prefix: Option<&str>,
+) -> Result<CodeSearchResult, Box<dyn Error + Send + Sync>> {
+    let refresh = refresh_code_search_index_with_backend(
+        ctx,
+        opts.cwd.as_deref(),
+        opts.caller,
+        CodeSearchRefreshBackend::TargetLocalSource,
+        None,
+    )
+    .await?;
+    let Some(source_id) = refresh.target_source_id.clone() else {
+        return Ok(code_search_missing_index_result(text, refresh.freshness));
+    };
+    let Some(generation) = refresh.target_source_generation.clone() else {
+        return Ok(code_search_missing_index_result(text, refresh.freshness));
+    };
+    let Some(target) = ctx.target_local_source_runtime() else {
+        return Ok(code_search_missing_index_result(text, refresh.freshness));
+    };
+    let embedding = target
+        .embedding_provider
+        .embed(EmbeddingBatch {
+            batch_id: BatchId::new(uuid::Uuid::new_v4()),
+            job_id: JobId::new(uuid::Uuid::new_v4()),
+            provider_id: target.embedding_provider_id.clone(),
+            model: target.embedding_model.clone(),
+            items: vec![EmbeddingInput {
+                chunk_id: ChunkId::new("code-search-query"),
+                text: text.to_string(),
+                content_kind: ContentKind::Code,
+                metadata: MetadataMap::new(),
+            }],
+            instruction: None,
+            priority: JobPriority::Interactive,
+            metadata: MetadataMap::new(),
+        })
+        .await
+        .map_err(|e| -> Box<dyn Error + Send + Sync> {
+            wrap_service_error("target code_search query embedding failed".to_string(), &e)
+        })?;
+    let dense_vector = embedding
+        .vectors
+        .first()
+        .map(|vector| vector.values.clone())
+        .ok_or("target code_search query embedding returned no vector")?;
+
+    let request = target_code_search_request(
+        ctx.cfg().collection.clone(),
+        text,
+        opts.limit.saturating_add(opts.offset).max(1),
+        dense_vector,
+        &source_id,
+        &generation,
+        path_prefix,
+    );
+    let matches =
+        target
+            .vector_store
+            .search(request)
+            .await
+            .map_err(|e| -> Box<dyn Error + Send + Sync> {
+                wrap_service_error("target code_search vector query failed".to_string(), &e)
+            })?;
+    let results = matches
+        .results
+        .into_iter()
+        .skip(opts.offset)
+        .take(opts.limit.max(1))
+        .enumerate()
+        .map(|(index, hit)| target_vector_match_to_query_hit(index as u64 + 1, hit))
+        .collect();
+
+    Ok(CodeSearchResult {
+        query: text.to_string(),
+        content_trust: "untrusted_local_code".to_string(),
+        results,
+        freshness: refresh.freshness,
+    })
+}
+
+fn target_code_search_request(
+    collection: String,
+    query: &str,
+    limit: usize,
+    dense_vector: Vec<f32>,
+    source_id: &SourceId,
+    generation: &SourceGenerationId,
+    path_prefix: Option<&str>,
+) -> VectorSearchRequest {
+    let mut filters = MetadataMap::new();
+    filters.insert("source_id".to_string(), json!(source_id.0));
+    filters.insert("source_generation".to_string(), json!(generation.0));
+    filters.insert("committed_generation".to_string(), json!(generation.0));
+    if let Some(prefix) = path_prefix {
+        filters.insert("path_prefix".to_string(), json!(prefix));
+    }
+    VectorSearchRequest {
+        collection,
+        query: query.to_string(),
+        limit: u32::try_from(limit).unwrap_or(u32::MAX),
+        dense_vector: Some(dense_vector),
+        sparse_vector: None,
+        filters,
+        hybrid: Some(false),
+        generation: None,
+        graph_refs: Vec::new(),
+        metadata: MetadataMap::new(),
+    }
+}
+
+fn target_vector_match_to_query_hit(
+    rank: u64,
+    hit: axon_api::source::VectorSearchMatch,
+) -> QueryHit {
+    let source_range = hit.payload.get("source_range");
+    let chunk_locator = hit.payload.get("chunk_locator");
+    QueryHit {
+        rank,
+        score: hit.score,
+        rerank_score: hit.score,
+        url: payload_string(&hit.payload, "item_canonical_uri")
+            .or_else(|| payload_string(&hit.payload, "source_item_key"))
+            .unwrap_or_else(|| hit.point_id.0.clone()),
+        source: payload_string(&hit.payload, "source_item_key").unwrap_or_default(),
+        snippet: hit.text.unwrap_or_default(),
+        chunk_index: None,
+        file_path: chunk_locator_path(chunk_locator)
+            .or_else(|| payload_string(&hit.payload, "source_item_key")),
+        symbol: chunk_locator
+            .and_then(|value| value.get("symbol"))
+            .and_then(|value| value.as_str())
+            .map(ToString::to_string),
+        kind: None,
+        start_line: source_range_u32(source_range, "line_start"),
+        end_line: source_range_u32(source_range, "line_end"),
+        file_type: None,
+        language: None,
+        provider: payload_string(&hit.payload, "embedding_provider"),
+        content_kind: payload_string(&hit.payload, "content_kind"),
+        chunking_method: None,
+        symbol_extraction_status: None,
+    }
+}
+
+fn payload_string(payload: &MetadataMap, field: &str) -> Option<String> {
+    payload
+        .get(field)
+        .and_then(|value| value.as_str())
+        .map(ToString::to_string)
+}
+
+fn chunk_locator_path(locator: Option<&serde_json::Value>) -> Option<String> {
+    locator?
+        .get("path")
+        .and_then(|value| value.as_str())
+        .map(ToString::to_string)
+}
+
+fn source_range_u32(range: Option<&serde_json::Value>, field: &str) -> Option<u32> {
+    range?
+        .get(field)
+        .and_then(|value| value.as_u64())
+        .and_then(|value| u32::try_from(value).ok())
 }
 
 /// Extract the SQLite pool backing the code index from the service runtime.
