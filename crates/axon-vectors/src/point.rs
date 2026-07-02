@@ -379,7 +379,7 @@ fn build_payload(
         "embedding_batch_id".to_string(),
         json!(batch_id.0.to_string()),
     );
-    metadata.insert("document_status".to_string(), json!("prepared"));
+    metadata.insert("document_status".to_string(), json!("vectorized"));
     metadata.insert("embedding_model".to_string(), json!(model));
     metadata.insert(
         "embedding_dimensions".to_string(),

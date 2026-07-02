@@ -161,8 +161,13 @@ async fn refresh_target_local_code_search_index_with_progress(
             project_key: project_key.clone(),
             generation: None,
             freshness: code_search_freshness(
-                "fresh",
-                None,
+                "stale",
+                Some(FreshnessWarning::Failed {
+                    error: format!(
+                        "target local source refresh indexed {} document(s), but target code-search retrieval is not wired yet; legacy index remains the queryable source",
+                        output.documents_prepared
+                    ),
+                }),
                 usize::try_from(output.documents_prepared).unwrap_or(usize::MAX),
                 0,
             ),

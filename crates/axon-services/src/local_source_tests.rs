@@ -1,7 +1,7 @@
 use axon_api::source::*;
 use axon_embedding::fake::{FakeEmbeddingMode, FakeEmbeddingProvider};
 use axon_jobs::boundary::{FakeJobWatchStore, JobStore};
-use axon_ledger::store::FakeLedgerStore;
+use axon_ledger::store::{FakeLedgerStore, LedgerStore};
 use axon_vectors::store::{FakeVectorMode, FakeVectorStore};
 
 use super::{
@@ -61,6 +61,21 @@ async fn local_file_refresh_writes_vectors_then_commits_source_generation() {
             .all(|point| point.payload["committed_generation"].as_str()
                 == Some(output.generation.0.as_str()))
     );
+    assert!(
+        vectors
+            .points("axon-test")
+            .await
+            .iter()
+            .all(|point| point.payload["document_status"].as_str() == Some("published"))
+    );
+    let source = ledger
+        .get_source(output.source_id.clone())
+        .await
+        .unwrap()
+        .expect("source summary");
+    assert_eq!(source.status, LifecycleStatus::Completed);
+    assert_eq!(source.counts.items_total, 1);
+    assert_eq!(source.counts.documents_total, output.documents_prepared);
 }
 
 #[tokio::test]
@@ -357,6 +372,44 @@ async fn publish_generation_failure_leaves_vectors_uncommitted() {
 }
 
 #[tokio::test]
+async fn publish_generation_failure_reports_rollback_delete_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lib.rs");
+    tokio::fs::write(&path, "pub fn answer() -> i32 {\n    42\n}\n")
+        .await
+        .unwrap();
+    let ledger = FakeLedgerStore::new().with_publish_generation_failure();
+    let embedder = FakeEmbeddingProvider::new("fake-embedding", 8);
+    let vectors = FakeVectorStore::new("fake-vector").with_mode(FakeVectorMode::DeleteFailure);
+
+    let err = index_local_source(input(path.clone()), &ledger, &embedder, &vectors)
+        .await
+        .unwrap_err();
+
+    assert!(
+        err.to_string()
+            .contains("also failed to rollback committed vector generation"),
+        "unexpected error: {err:#}"
+    );
+    assert_eq!(
+        vectors.calls().await,
+        vec![
+            "ensure_collection",
+            "upsert",
+            "mark_generation_committed",
+            "delete"
+        ]
+    );
+    assert!(
+        vectors
+            .points("axon-test")
+            .await
+            .iter()
+            .all(|point| point.payload["committed_generation"].as_str() != Some("uncommitted"))
+    );
+}
+
+#[tokio::test]
 async fn vector_commit_marker_failure_leaves_vectors_uncommitted() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("lib.rs");
@@ -482,15 +535,15 @@ async fn refresh_vectorizes_added_and_modified_docs_and_debts_removed_and_replac
             .into_iter()
             .filter(|call| *call == "delete")
             .count(),
-        1
+        0
     );
     assert!(
         vectors
             .points("axon-test")
             .await
             .iter()
-            .all(|point| point.payload["source_generation"].as_str()
-                != Some(first.generation.0.as_str()))
+            .any(|point| point.payload["source_generation"].as_str()
+                == Some(first.generation.0.as_str()))
     );
     assert_eq!(ledger.cleanup_debt_count().await, 2);
     assert_eq!(

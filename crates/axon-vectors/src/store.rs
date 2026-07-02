@@ -56,6 +56,7 @@ pub enum FakeVectorMode {
     PartialFailure,
     SlowWrite,
     CommitFailure,
+    DeleteFailure,
 }
 
 #[derive(Debug, Default)]
@@ -112,7 +113,8 @@ impl FakeVectorStore {
             FakeVectorMode::Success
             | FakeVectorMode::PartialFailure
             | FakeVectorMode::SlowWrite
-            | FakeVectorMode::CommitFailure => None,
+            | FakeVectorMode::CommitFailure
+            | FakeVectorMode::DeleteFailure => None,
             FakeVectorMode::Unavailable => Some(
                 ApiError::new("provider.unavailable", stage, "vector store unavailable")
                     .with_provider_id(&self.provider_id.0),
@@ -143,7 +145,8 @@ impl FakeVectorStore {
             FakeVectorMode::Success
             | FakeVectorMode::PartialFailure
             | FakeVectorMode::SlowWrite
-            | FakeVectorMode::CommitFailure => FakeProviderModeState::Success,
+            | FakeVectorMode::CommitFailure
+            | FakeVectorMode::DeleteFailure => FakeProviderModeState::Success,
             FakeVectorMode::Unavailable => FakeProviderModeState::Fatal,
             FakeVectorMode::Timeout => FakeProviderModeState::Timeout,
             FakeVectorMode::RateLimited => FakeProviderModeState::RateLimited,
@@ -283,6 +286,9 @@ impl VectorStore for FakeVectorStore {
                 point
                     .payload
                     .insert("committed_generation".to_string(), json!(generation.0));
+                point
+                    .payload
+                    .insert("document_status".to_string(), json!("published"));
                 points_written += 1;
             }
         }
@@ -304,6 +310,14 @@ impl VectorStore for FakeVectorStore {
     async fn delete(&self, selector: VectorDeleteSelector) -> Result<VectorStoreDeleteResult> {
         let mut state = self.state.lock().await;
         state.calls.push("delete");
+        if self.mode == FakeVectorMode::DeleteFailure {
+            return Err(ApiError::new(
+                "provider.delete_failed",
+                axon_error::ErrorStage::Cleaning,
+                "fake vector store failed to delete points",
+            )
+            .with_provider_id(&self.provider_id.0));
+        }
         if let Some(err) = self.mode_error_for(axon_error::ErrorStage::Cleaning) {
             return Err(err);
         }

@@ -14,6 +14,7 @@ use axon_vectors::store::VectorStore;
 pub(super) use self::local_source_adapter::local_source_id;
 use self::local_source_adapter::{
     LocalAdapterRun, collection_spec, discover_manifest, resolve_adapter_run, source_summary,
+    timestamp,
 };
 pub use self::local_source_job::index_local_source_with_job;
 use self::local_source_progress::{
@@ -21,7 +22,7 @@ use self::local_source_progress::{
     record_progress_error,
 };
 use self::local_source_vectorize::{
-    VectorizeStats, cleanup_replaced_vector_points, vectorize_changed_documents,
+    VectorizeStats, publish_document_status, vectorize_changed_documents,
 };
 
 const LOCAL_ADAPTER_VERSION: &str = "target-local-pr11";
@@ -167,7 +168,7 @@ async fn index_local_source_with_lease(
         generation,
         &diff,
         manifest.items.len() as u64,
-        &vectorized,
+        &vectorized.stats,
     )
     .await?;
     if let Err(err) = vector_store
@@ -184,33 +185,74 @@ async fn index_local_source_with_lease(
     let published = match publish_completed_generation(ledger, completed.clone()).await {
         Ok(published) => published,
         Err(err) => {
-            let _ = vector_store
+            if let Err(rollback_err) = vector_store
                 .delete(VectorDeleteSelector::Generation {
                     collection: collection.collection.clone(),
                     source_id: source_id.clone(),
                     generation: completed.generation.clone(),
                 })
-                .await;
+                .await
+            {
+                return Err(err.context(format!(
+                    "also failed to rollback committed vector generation {} from collection {}: {rollback_err}",
+                    completed.generation.0, collection.collection
+                )));
+            }
             return Err(err);
         }
     };
-    record_progress(progress, PipelinePhase::Publishing, None).await?;
-    if let Err(err) =
-        cleanup_replaced_vector_points(vector_store, &collection.collection, &diff).await
-    {
-        record_progress_error(progress, PipelinePhase::Cleaning, &err).await?;
-        return Err(anyhow::Error::new(err));
+    for status in &vectorized.document_statuses {
+        ledger
+            .update_document_status(publish_document_status(status))
+            .await?;
     }
+    ledger
+        .upsert_source(completed_source_summary(
+            input,
+            &run,
+            manifest.items.len() as u64,
+            &diff,
+            &vectorized.stats,
+        ))
+        .await?;
+    record_progress(progress, PipelinePhase::Publishing, None).await?;
     record_progress(progress, PipelinePhase::Cleaning, None).await?;
 
     Ok(LocalSourceIndexOutput {
         job_id: input.job_id,
         source_id,
         generation: published.generation,
-        documents_prepared: vectorized.documents_prepared,
-        chunks_prepared: vectorized.chunks_prepared,
-        vector_points_written: vectorized.points_written,
+        documents_prepared: vectorized.stats.documents_prepared,
+        chunks_prepared: vectorized.stats.chunks_prepared,
+        vector_points_written: vectorized.stats.points_written,
     })
+}
+
+fn completed_source_summary(
+    input: &LocalSourceIndexInput,
+    run: &LocalAdapterRun,
+    item_count: u64,
+    diff: &SourceManifestDiff,
+    vectorized: &VectorizeStats,
+) -> SourceSummary {
+    let mut summary = source_summary(input, run);
+    summary.status = LifecycleStatus::Completed;
+    summary.counts = SourceCounts {
+        items_total: item_count,
+        items_changed: diff.counts.added + diff.counts.modified + diff.counts.removed,
+        documents_total: vectorized.documents_prepared,
+        chunks_total: vectorized.chunks_prepared,
+        vector_points_total: vectorized.points_written,
+        bytes_total: diff
+            .added
+            .iter()
+            .chain(diff.modified.iter())
+            .chain(diff.unchanged.iter())
+            .map(|item| item.size_bytes.unwrap_or(0))
+            .sum(),
+    };
+    summary.updated_at = timestamp();
+    summary
 }
 
 async fn complete_generation(

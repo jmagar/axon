@@ -8,9 +8,7 @@ use axon_vectors::store::VectorStore;
 use uuid::Uuid;
 
 use super::LocalSourceIndexInput;
-use super::local_source_adapter::{
-    LocalAdapterRun, normalize_changed_documents, stable_token, timestamp,
-};
+use super::local_source_adapter::{LocalAdapterRun, normalize_changed_documents, timestamp};
 use super::local_source_progress::{LocalSourceProgress, record_progress, record_progress_error};
 
 const LOCAL_CHANGED_DOCUMENT_BATCH_SIZE: usize = 64;
@@ -22,49 +20,18 @@ pub(super) struct VectorizeStats {
     pub(super) points_written: u64,
 }
 
+#[derive(Debug, Clone, Default)]
+pub(super) struct VectorizeResult {
+    pub(super) stats: VectorizeStats,
+    pub(super) document_statuses: Vec<DocumentStatus>,
+}
+
 impl VectorizeStats {
     fn add(&mut self, other: VectorizeStats) {
         self.documents_prepared += other.documents_prepared;
         self.chunks_prepared += other.chunks_prepared;
         self.points_written += other.points_written;
     }
-}
-
-pub(super) async fn cleanup_replaced_vector_points(
-    vector_store: &dyn VectorStore,
-    collection: &str,
-    diff: &SourceManifestDiff,
-) -> Result<u64, ApiError> {
-    let Some(previous_generation) = diff.previous_generation.clone() else {
-        return Ok(0);
-    };
-    let mut deleted = 0;
-    for chunk in diff
-        .removed
-        .iter()
-        .chain(diff.modified.iter())
-        .collect::<Vec<_>>()
-        .chunks(LOCAL_CHANGED_DOCUMENT_BATCH_SIZE)
-    {
-        if chunk.is_empty() {
-            continue;
-        }
-        let document_ids = chunk
-            .iter()
-            .map(|item| local_document_id(&diff.source_id, &item.source_item_key).0)
-            .collect::<Vec<_>>();
-        let result = vector_store
-            .delete(VectorDeleteSelector::Filter {
-                collection: collection.to_string(),
-                filter: serde_json::json!({
-                    "source_generation": previous_generation.0,
-                    "document_id": document_ids,
-                }),
-            })
-            .await?;
-        deleted += result.points_deleted;
-    }
-    Ok(deleted)
 }
 
 pub(super) async fn vectorize_changed_documents(
@@ -77,11 +44,11 @@ pub(super) async fn vectorize_changed_documents(
     vector_store: &dyn VectorStore,
     progress: Option<&dyn LocalSourceProgress>,
     collection: CollectionSpec,
-) -> anyhow::Result<VectorizeStats> {
-    let mut stats = VectorizeStats::default();
+) -> anyhow::Result<VectorizeResult> {
+    let mut result = VectorizeResult::default();
     for batch_diff in changed_diff_batches(diff, LOCAL_CHANGED_DOCUMENT_BATCH_SIZE) {
         let documents = prepare_changed_documents(run, &batch_diff, generation).await?;
-        let batch_stats = vectorize_documents(
+        let batch_result = vectorize_documents(
             input,
             ledger,
             embedding_provider,
@@ -91,9 +58,12 @@ pub(super) async fn vectorize_changed_documents(
             documents,
         )
         .await?;
-        stats.add(batch_stats);
+        result.stats.add(batch_result.stats);
+        result
+            .document_statuses
+            .extend(batch_result.document_statuses);
     }
-    Ok(stats)
+    Ok(result)
 }
 
 async fn prepare_changed_documents(
@@ -127,32 +97,59 @@ fn changed_diff_batches(diff: &SourceManifestDiff, batch_size: usize) -> Vec<Sou
     let changed = diff
         .added
         .iter()
-        .chain(diff.modified.iter())
         .cloned()
+        .map(ChangedManifestItem::Added)
+        .chain(
+            diff.modified
+                .iter()
+                .cloned()
+                .map(ChangedManifestItem::Modified),
+        )
         .collect::<Vec<_>>();
     changed
         .chunks(batch_size.max(1))
-        .map(|chunk| SourceManifestDiff {
-            header: diff.header.clone(),
-            source_id: diff.source_id.clone(),
-            previous_generation: diff.previous_generation.clone(),
-            next_generation: diff.next_generation.clone(),
-            added: chunk.to_vec(),
-            modified: Vec::new(),
-            removed: Vec::new(),
-            unchanged: Vec::new(),
-            skipped: Vec::new(),
-            failed: Vec::new(),
-            counts: DiffCounts {
-                added: chunk.len() as u64,
-                modified: 0,
-                removed: 0,
-                unchanged: 0,
-                skipped: 0,
-                failed: 0,
-            },
+        .map(|chunk| {
+            let mut batch = empty_diff_like(diff);
+            for item in chunk {
+                match item {
+                    ChangedManifestItem::Added(item) => batch.added.push(item.clone()),
+                    ChangedManifestItem::Modified(item) => batch.modified.push(item.clone()),
+                }
+            }
+            batch.counts.added = batch.added.len() as u64;
+            batch.counts.modified = batch.modified.len() as u64;
+            batch
         })
         .collect()
+}
+
+#[derive(Debug, Clone)]
+enum ChangedManifestItem {
+    Added(ManifestItem),
+    Modified(ManifestItem),
+}
+
+fn empty_diff_like(diff: &SourceManifestDiff) -> SourceManifestDiff {
+    SourceManifestDiff {
+        header: diff.header.clone(),
+        source_id: diff.source_id.clone(),
+        previous_generation: diff.previous_generation.clone(),
+        next_generation: diff.next_generation.clone(),
+        added: Vec::new(),
+        modified: Vec::new(),
+        removed: Vec::new(),
+        unchanged: Vec::new(),
+        skipped: Vec::new(),
+        failed: Vec::new(),
+        counts: DiffCounts {
+            added: 0,
+            modified: 0,
+            removed: 0,
+            unchanged: 0,
+            skipped: 0,
+            failed: 0,
+        },
+    }
 }
 
 async fn vectorize_documents(
@@ -163,10 +160,10 @@ async fn vectorize_documents(
     progress: Option<&dyn LocalSourceProgress>,
     collection: CollectionSpec,
     documents: Vec<PreparedDocument>,
-) -> anyhow::Result<VectorizeStats> {
-    let mut stats = VectorizeStats::default();
+) -> anyhow::Result<VectorizeResult> {
+    let mut result = VectorizeResult::default();
     if documents.is_empty() {
-        return Ok(stats);
+        return Ok(result);
     }
     let batch = embedding_batch_for_documents(input, &documents)?;
     let embeddings = match embedding_provider.embed(batch).await {
@@ -186,15 +183,19 @@ async fn vectorize_documents(
         }
     };
     record_progress(progress, PipelinePhase::Vectorizing, None).await?;
-    stats.points_written += write.points_written;
+    result.stats.points_written += write.points_written;
     for document in documents {
-        stats.chunks_prepared += document.chunks.len() as u64;
-        stats.documents_prepared += 1;
-        ledger
-            .update_document_status(document_status(&document, document.chunks.len() as u64))
-            .await?;
+        result.stats.chunks_prepared += document.chunks.len() as u64;
+        result.stats.documents_prepared += 1;
+        let status = document_status(
+            &document,
+            document.chunks.len() as u64,
+            DocumentLifecycleStatus::Vectorized,
+        );
+        ledger.update_document_status(status.clone()).await?;
+        result.document_statuses.push(status);
     }
-    Ok(stats)
+    Ok(result)
 }
 
 fn embedding_batch_for_documents(
@@ -289,20 +290,25 @@ fn embedding_result_for_document(
     }
 }
 
-fn local_document_id(source_id: &SourceId, item_key: &SourceItemKey) -> DocumentId {
-    DocumentId::from(format!(
-        "doc_local_{}",
-        stable_token(&format!("{}\0{}", source_id.0, item_key.0))
-    ))
+pub(super) fn publish_document_status(status: &DocumentStatus) -> DocumentStatus {
+    DocumentStatus {
+        status: DocumentLifecycleStatus::Published,
+        updated_at: timestamp(),
+        ..status.clone()
+    }
 }
 
-fn document_status(document: &PreparedDocument, points_written: u64) -> DocumentStatus {
+fn document_status(
+    document: &PreparedDocument,
+    points_written: u64,
+    status: DocumentLifecycleStatus,
+) -> DocumentStatus {
     DocumentStatus {
         document_id: document.document_id.clone(),
         source_id: document.source_id.clone(),
         source_item_key: document.source_item_key.clone(),
         generation: document.generation.clone(),
-        status: DocumentLifecycleStatus::Published,
+        status,
         updated_at: timestamp(),
         chunk_count: document.chunks.len() as u32,
         vector_point_count: u32::try_from(points_written).unwrap_or(u32::MAX),

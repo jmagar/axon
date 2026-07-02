@@ -139,7 +139,7 @@ fn payload(
                 "embedding_batch_id".to_string(),
                 json!("00000000-0000-0000-0000-00000000000a"),
             ),
-            ("document_status".to_string(), json!("prepared")),
+            ("document_status".to_string(), json!("vectorized")),
             ("embedding_model".to_string(), json!("fake-embedding")),
             ("embedding_dimensions".to_string(), json!(3)),
             ("embedding_provider".to_string(), json!("fake-vector")),
@@ -338,6 +338,31 @@ async fn fake_vector_store_filters_searches_by_indexed_payload_fields() {
             .iter()
             .all(|result| result.payload["source_generation"] == "7")
     );
+}
+
+#[tokio::test]
+async fn mark_generation_committed_updates_visibility_and_document_status() {
+    let store = FakeVectorStore::new("fake-vector");
+    store.ensure_collection(collection()).await.unwrap();
+    store.upsert(batch()).await.unwrap();
+
+    let write = store
+        .mark_generation_committed(
+            "axon-test".to_string(),
+            SourceId::new("src-a"),
+            SourceGenerationId::new("7"),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(write.points_written, 1);
+    let result = store
+        .search(search(filter("document_id", json!("doc-a"))))
+        .await
+        .unwrap();
+    assert_eq!(result.results.len(), 1);
+    assert_eq!(result.results[0].payload["committed_generation"], "7");
+    assert_eq!(result.results[0].payload["document_status"], "published");
 }
 
 #[tokio::test]

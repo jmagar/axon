@@ -55,8 +55,15 @@ async fn target_code_search_refresh_uses_local_source_runtime_when_available() {
     .await
     .expect("target refresh");
 
-    assert_eq!(refreshed.freshness.status, "fresh");
-    assert_eq!(refreshed.freshness.warning, None);
+    assert_eq!(refreshed.freshness.status, "stale");
+    assert!(
+        refreshed
+            .freshness
+            .warning
+            .as_deref()
+            .unwrap_or_default()
+            .contains("target code-search retrieval is not wired yet")
+    );
     assert_eq!(refreshed.freshness.indexed_files, 1);
     assert_eq!(refreshed.freshness.removed_files, 0);
     assert_eq!(
