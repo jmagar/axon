@@ -42,7 +42,6 @@ pub mod types;
 pub mod watch;
 
 #[cfg(test)]
-#[cfg(test)]
 #[path = "client_contract_tests.rs"]
 mod client_contract_tests;
 #[cfg(test)]
@@ -51,3 +50,5 @@ mod freshness_tests;
 #[cfg(test)]
 #[path = "sync_tests.rs"]
 mod sync_tests;
+#[cfg(test)]
+pub(crate) mod test_support;

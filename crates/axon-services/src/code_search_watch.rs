@@ -206,14 +206,25 @@ async fn refresh_code_search_watch_root(
         reason,
     });
     let progress = WatchProgressSink { events };
-    match query::refresh_code_search_index_with_progress(
-        ctx,
-        Some(root),
-        CodeSearchCaller::Cli,
-        Some(&progress),
-    )
-    .await
-    {
+    let refresh = if ctx.target_local_source_runtime().is_some() {
+        query::refresh_code_search_index_with_backend(
+            ctx,
+            Some(root),
+            CodeSearchCaller::Cli,
+            query::CodeSearchRefreshBackend::TargetLocalSource,
+            None,
+        )
+        .await
+    } else {
+        query::refresh_code_search_index_with_progress(
+            ctx,
+            Some(root),
+            CodeSearchCaller::Cli,
+            Some(&progress),
+        )
+        .await
+    };
+    match refresh {
         Ok(result) => {
             let status = result.freshness.status;
             let warning = result.freshness.warning;
@@ -284,22 +295,5 @@ async fn shutdown_signal() {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn watcher_event_storm_coalesces_to_one_refresh() {
-        let root = PathBuf::from("/workspace/repo");
-        let mut dirty = BTreeMap::new();
-        let old_enough = Instant::now() - Duration::from_secs(5);
-
-        for _ in 0..100 {
-            mark_dirty_root(&mut dirty, root.clone(), old_enough);
-        }
-
-        let refreshes_started = due_dirty_roots(&dirty, Duration::from_secs(1)).len();
-
-        assert_eq!(refreshes_started, 1);
-        assert_eq!(dirty.get(&root).map(|state| state.paths), Some(100));
-    }
-}
+#[path = "code_search_watch_tests.rs"]
+mod tests;

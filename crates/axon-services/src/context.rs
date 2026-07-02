@@ -2,13 +2,52 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::runtime::{ServiceJobRuntime, resolve_runtime_with_workers};
+use axon_api::source::ProviderId;
 use axon_core::config::Config;
+use axon_embedding::provider::EmbeddingProvider;
 use axon_jobs::backend::JobKind;
+use axon_jobs::boundary::JobStore;
+use axon_ledger::store::LedgerStore;
+use axon_vectors::store::VectorStore;
 
 #[derive(Clone)]
 pub struct ServiceContext {
     pub cfg: Arc<Config>,
     pub jobs: Arc<dyn ServiceJobRuntime>,
+    target_local_source: Option<Arc<TargetLocalSourceRuntime>>,
+}
+
+#[derive(Clone)]
+pub struct TargetLocalSourceRuntime {
+    pub jobs: Arc<dyn JobStore>,
+    pub ledger: Arc<dyn LedgerStore>,
+    pub embedding_provider: Arc<dyn EmbeddingProvider>,
+    pub vector_store: Arc<dyn VectorStore>,
+    pub embedding_provider_id: ProviderId,
+    pub embedding_model: String,
+    pub embedding_dimensions: u32,
+}
+
+impl TargetLocalSourceRuntime {
+    pub fn new(
+        jobs: Arc<dyn JobStore>,
+        ledger: Arc<dyn LedgerStore>,
+        embedding_provider: Arc<dyn EmbeddingProvider>,
+        vector_store: Arc<dyn VectorStore>,
+        embedding_provider_id: ProviderId,
+        embedding_model: impl Into<String>,
+        embedding_dimensions: u32,
+    ) -> Self {
+        Self {
+            jobs,
+            ledger,
+            embedding_provider,
+            vector_store,
+            embedding_provider_id,
+            embedding_model: embedding_model.into(),
+            embedding_dimensions,
+        }
+    }
 }
 
 impl ServiceContext {
@@ -21,6 +60,7 @@ impl ServiceContext {
         let context = Self {
             cfg: Arc::clone(&cfg),
             jobs: Arc::clone(&jobs),
+            target_local_source: None,
         };
         if spawn_freshness_scheduler {
             crate::freshness::spawn_freshness_scheduler(context.clone());
@@ -61,12 +101,25 @@ impl ServiceContext {
 
     /// Factory for test helpers — inject a mock `ServiceJobRuntime`.
     pub fn from_runtime(cfg: Arc<Config>, jobs: Arc<dyn ServiceJobRuntime>) -> Self {
-        Self { cfg, jobs }
+        Self {
+            cfg,
+            jobs,
+            target_local_source: None,
+        }
     }
 
     pub fn with_jobs_runtime(mut self, jobs: Arc<dyn ServiceJobRuntime>) -> Self {
         self.jobs = jobs;
         self
+    }
+
+    pub fn with_target_local_source_runtime(mut self, runtime: TargetLocalSourceRuntime) -> Self {
+        self.target_local_source = Some(Arc::new(runtime));
+        self
+    }
+
+    pub fn target_local_source_runtime(&self) -> Option<&TargetLocalSourceRuntime> {
+        self.target_local_source.as_deref()
     }
 
     /// Convenience accessor for the resolved config (A-H1).
