@@ -10,8 +10,8 @@ use commands::{
     run_dedupe, run_diff, run_doctor, run_domains, run_embed, run_endpoints, run_evaluate,
     run_extract, run_fresh, run_ingest, run_map, run_mcp, run_memory, run_migrate, run_monitor,
     run_palette, run_purge, run_query, run_refresh, run_research, run_retrieve, run_scrape,
-    run_screenshot, run_search, run_serve, run_sessions, run_setup, run_sources, run_stats,
-    run_status, run_suggest, run_summarize, run_sync, run_train, run_update, run_watch,
+    run_screenshot, run_search, run_serve, run_sessions, run_setup, run_source, run_sources,
+    run_stats, run_status, run_suggest, run_summarize, run_sync, run_train, run_update, run_watch,
     start_url_from_cfg,
 };
 use std::error::Error;
@@ -66,6 +66,7 @@ async fn run_once(
         CommandKind::Ingest => run_ingest(cfg, service_context).await?,
         CommandKind::Memory => run_memory(cfg, service_context).await?,
         CommandKind::Sessions => run_sessions(cfg, service_context).await?,
+        CommandKind::Source => run_source(cfg, service_context).await?,
         CommandKind::Research => run_research(cfg, service_context).await?,
         CommandKind::Screenshot => run_screenshot(cfg).await?,
         CommandKind::Completions => run_completions(cfg).await?,
