@@ -1,5 +1,7 @@
 use axon_api::source::*;
 
+use super::FakeJobWatchState;
+
 pub(super) fn apply_visibility_filter(items: &mut Vec<JobEvent>, visibility: Option<Visibility>) {
     match visibility {
         Some(visibility) => items.retain(|event| event.visibility == visibility),
@@ -22,6 +24,64 @@ pub(super) fn event_details(event: &SourceProgressEvent) -> MetadataMap {
         details.insert("dedupe_key".to_string(), serde_json::json!(dedupe_key));
     }
     details
+}
+
+pub(super) fn append_event_locked(
+    state: &mut FakeJobWatchState,
+    event: SourceProgressEvent,
+) -> crate::boundary::Result<()> {
+    if !state.jobs.contains_key(&event.job_id) {
+        return Err(missing_job(event.job_id));
+    }
+    let expected_sequence = state
+        .events
+        .get(&event.job_id)
+        .and_then(|events| events.last())
+        .map(|event| event.sequence + 1)
+        .unwrap_or(1);
+    if event.sequence != expected_sequence {
+        if let Some(dedupe_key) = event.dedupe_key.as_ref()
+            && has_dedupe_key(state, event.job_id, dedupe_key)
+        {
+            return Ok(());
+        }
+        return Err(ApiError::new(
+            "job_event.sequence_invalid",
+            ErrorStage::Publishing,
+            format!(
+                "expected event sequence {} for job {}, got {}",
+                expected_sequence, event.job_id.0, event.sequence
+            ),
+        ));
+    }
+    let duplicate_dedupe = event
+        .dedupe_key
+        .as_ref()
+        .is_some_and(|dedupe_key| has_dedupe_key(state, event.job_id, dedupe_key));
+    let mut details = event_details(&event);
+    if duplicate_dedupe {
+        details.remove("dedupe_key");
+        details.insert("dedupe_duplicate".to_string(), serde_json::json!(true));
+    }
+    state
+        .events
+        .entry(event.job_id)
+        .or_default()
+        .push(JobEvent {
+            event_id: event.event_id,
+            sequence: event.sequence,
+            job_id: event.job_id,
+            attempt: event.attempt,
+            stage_id: event.stage_id,
+            phase: event.phase,
+            status: event.status,
+            severity: event.severity,
+            visibility: event.visibility,
+            message: event.message,
+            timestamp: event.timestamp,
+            details,
+        });
+    Ok(())
 }
 
 pub(super) fn new_job_descriptor(
@@ -109,8 +169,68 @@ pub(super) fn is_terminal_status(status: LifecycleStatus) -> bool {
     )
 }
 
+pub(super) fn source_error_to_api_error(error: &SourceError) -> ApiError {
+    ApiError::new(
+        error.code.clone(),
+        ErrorStage::Publishing,
+        error.message.clone(),
+    )
+}
+
+pub(super) fn recovery_api_error() -> ApiError {
+    ApiError::new(
+        "job.recovered_stale",
+        ErrorStage::Publishing,
+        "stale running job was failed by recovery",
+    )
+}
+
+impl FakeJobWatchState {
+    pub(super) fn timestamp(&mut self) -> Timestamp {
+        self.next_tick += 1;
+        Timestamp(format!("2026-07-01T00:00:{:02}Z", self.next_tick))
+    }
+
+    pub(super) fn peek_timestamp(&self) -> Timestamp {
+        Timestamp(format!("2026-07-01T00:00:{:02}Z", self.next_tick + 1))
+    }
+}
+
+pub(super) fn missing_job(job_id: JobId) -> ApiError {
+    ApiError::new(
+        "job.not_found",
+        ErrorStage::Retrieving,
+        format!("job {} not found", job_id.0),
+    )
+}
+
+pub(super) fn missing_stage(job_id: JobId, stage_id: StageId) -> ApiError {
+    ApiError::new(
+        "job_stage.not_found",
+        ErrorStage::Publishing,
+        format!("stage {} not found for job {}", stage_id.0, job_id.0),
+    )
+}
+
+pub(super) fn missing_watch(watch_id: &WatchId) -> ApiError {
+    ApiError::new(
+        "watch.not_found",
+        ErrorStage::Retrieving,
+        format!("watch {} not found", watch_id.0),
+    )
+}
+
 fn timestamp_age_seconds(now: &Timestamp, then: &Timestamp) -> Option<u64> {
     let now = chrono::DateTime::parse_from_rfc3339(&now.0).ok()?;
     let then = chrono::DateTime::parse_from_rfc3339(&then.0).ok()?;
     (now - then).num_seconds().try_into().ok()
+}
+
+fn has_dedupe_key(state: &FakeJobWatchState, job_id: JobId, dedupe_key: &str) -> bool {
+    state
+        .events
+        .get(&job_id)
+        .into_iter()
+        .flatten()
+        .any(|existing| existing.details.get("dedupe_key") == Some(&serde_json::json!(dedupe_key)))
 }

@@ -66,7 +66,7 @@ fn database_defs() -> Value {
                 "tables": {
                     "type": "array",
                     "items": { "type": "string" },
-                    "const": ["jobs", "job_attempts", "job_stages", "job_events", "job_heartbeats", "job_artifacts"]
+                    "const": ["jobs", "job_attempts", "job_stages", "job_events", "job_heartbeats", "provider_reservations", "job_artifacts"]
                 }
             },
             "additionalProperties": false,
@@ -78,12 +78,14 @@ fn database_defs() -> Value {
                         "primary_key": ["job_id"],
                         "foreign_keys": ["source_id", "watch_id", "parent_job_id", "root_job_id"],
                         "json_columns": ["counts_json", "current_json", "heartbeat_json", "last_error_json", "warnings_json", "request_json", "metadata_json"],
-                        "indexes": ["jobs_idempotency_key_idx", "jobs_created_at_desc_idx", "jobs_status_created_at_idx", "jobs_kind_status_created_at_idx", "jobs_status_updated_at_idx", "jobs_source_id_idx", "jobs_watch_id_idx"]
+                        "indexes": ["jobs_idempotency_key_idx", "jobs_created_at_desc_idx", "jobs_status_created_at_idx", "jobs_kind_status_created_at_idx", "jobs_status_updated_at_idx", "jobs_source_id_idx", "jobs_watch_id_idx", "jobs_source_id_created_at_idx", "jobs_watch_id_created_at_idx"]
                     },
                     "job_attempts": {
-                        "primary_key": ["job_id", "attempt"],
+                        "primary_key": ["attempt_id"],
                         "foreign_keys": ["job_id"],
-                        "json_columns": ["error_json"]
+                        "unique": [["job_id", "attempt"]],
+                        "json_columns": ["error_json"],
+                        "indexes": ["job_attempts_job_id_idx"]
                     },
                     "job_stages": {
                         "primary_key": ["stage_id"],
@@ -95,14 +97,27 @@ fn database_defs() -> Value {
                         "primary_key": ["event_id"],
                         "foreign_keys": ["job_id", "stage_id"],
                         "unique": [["job_id", "sequence"], ["job_id", "dedupe_key"]],
+                        "partial_unique_indexes": [
+                            {
+                                "name": "job_events_job_dedupe_key_idx",
+                                "columns": ["job_id", "dedupe_key"],
+                                "predicate": "dedupe_key IS NOT NULL"
+                            }
+                        ],
                         "json_columns": ["details_json"],
-                        "indexes": ["job_events_job_sequence_idx", "job_events_job_phase_idx", "job_events_job_severity_idx", "job_events_job_visibility_idx"]
+                        "indexes": ["job_events_job_dedupe_key_idx", "job_events_job_sequence_idx", "job_events_job_phase_idx", "job_events_job_severity_idx", "job_events_job_visibility_idx"]
                     },
                     "job_heartbeats": {
                         "primary_key": ["job_id", "attempt"],
                         "foreign_keys": ["job_id"],
                         "json_columns": ["heartbeat_json"],
                         "indexes": ["job_heartbeats_job_id_idx", "job_heartbeats_heartbeat_at_idx"]
+                    },
+                    "provider_reservations": {
+                        "primary_key": ["reservation_id"],
+                        "foreign_keys": ["job_id", "stage_id"],
+                        "json_columns": ["cooling_json"],
+                        "indexes": ["provider_reservations_job_id_idx", "provider_reservations_stage_id_idx", "provider_reservations_provider_kind_idx"]
                     },
                     "job_artifacts": {
                         "primary_key": ["artifact_id"],
@@ -141,19 +156,24 @@ fn database_markdown(inputs: &[SourceInput]) -> String {
         (
             "jobs",
             "job_id",
-            "jobs_created_at_desc_idx, jobs_status_created_at_idx, jobs_kind_status_created_at_idx",
+            "jobs_created_at_desc_idx, jobs_status_created_at_idx, jobs_kind_status_created_at_idx, jobs_source_id_created_at_idx, jobs_watch_id_created_at_idx",
         ),
-        ("job_attempts", "job_id, attempt", ""),
+        ("job_attempts", "attempt_id", "job_attempts_job_id_idx"),
         ("job_stages", "stage_id", "job_stages_job_id_idx"),
         (
             "job_events",
             "event_id",
-            "job_events_job_sequence_idx, job_events_job_visibility_idx",
+            "job_events_job_dedupe_key_idx (partial unique WHERE dedupe_key IS NOT NULL), job_events_job_sequence_idx, job_events_job_visibility_idx",
         ),
         (
             "job_heartbeats",
             "job_id, attempt",
             "job_heartbeats_heartbeat_at_idx",
+        ),
+        (
+            "provider_reservations",
+            "reservation_id",
+            "provider_reservations_job_id_idx, provider_reservations_stage_id_idx, provider_reservations_provider_kind_idx",
         ),
         ("job_artifacts", "artifact_id", "job_artifacts_job_kind_idx"),
     ] {

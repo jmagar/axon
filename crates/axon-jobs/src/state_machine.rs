@@ -14,9 +14,11 @@ pub(crate) fn validate_transition(
         (LifecycleStatus::Queued, LifecycleStatus::Pending)
             | (LifecycleStatus::Queued, LifecycleStatus::Running)
             | (LifecycleStatus::Queued, LifecycleStatus::Canceling)
+            | (LifecycleStatus::Queued, LifecycleStatus::Canceled)
             | (LifecycleStatus::Queued, LifecycleStatus::Skipped)
             | (LifecycleStatus::Pending, LifecycleStatus::Running)
             | (LifecycleStatus::Pending, LifecycleStatus::Canceling)
+            | (LifecycleStatus::Pending, LifecycleStatus::Canceled)
             | (LifecycleStatus::Pending, LifecycleStatus::Expired)
             | (LifecycleStatus::Running, LifecycleStatus::Waiting)
             | (LifecycleStatus::Running, LifecycleStatus::Canceling)
@@ -25,7 +27,9 @@ pub(crate) fn validate_transition(
             | (LifecycleStatus::Running, LifecycleStatus::Failed)
             | (LifecycleStatus::Waiting, LifecycleStatus::Running)
             | (LifecycleStatus::Waiting, LifecycleStatus::Canceling)
+            | (LifecycleStatus::Waiting, LifecycleStatus::Canceled)
             | (LifecycleStatus::Waiting, LifecycleStatus::Failed)
+            | (LifecycleStatus::Running, LifecycleStatus::Canceled)
             | (LifecycleStatus::Canceling, LifecycleStatus::Canceled)
     );
 

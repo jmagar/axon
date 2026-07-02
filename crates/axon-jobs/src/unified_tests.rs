@@ -52,6 +52,7 @@ async fn migration_creates_canonical_job_tables() {
         "job_stages",
         "job_events",
         "job_heartbeats",
+        "provider_reservations",
         "job_artifacts",
     ];
     for table in tables {
@@ -264,6 +265,13 @@ async fn append_event_requires_monotonic_sequences_and_filters_events() {
         .append_event(duplicate)
         .await
         .expect("duplicate dedupe event is idempotent");
+    let mut next_duplicate = progress_event(job.job_id, 4, Visibility::Public);
+    next_duplicate.event_id = "event-dedupe-c".to_string();
+    next_duplicate.dedupe_key = Some("embedding:src/lib.rs".to_string());
+    store
+        .append_event(next_duplicate)
+        .await
+        .expect("expected duplicate dedupe event still consumes sequence");
 
     let public_events = store
         .events(JobEventListRequest {
@@ -277,8 +285,13 @@ async fn append_event_requires_monotonic_sequences_and_filters_events() {
         })
         .await
         .expect("list events");
-    assert_eq!(public_events.events.len(), 2);
+    assert_eq!(public_events.events.len(), 3);
     assert_eq!(public_events.events[1].sequence, 3);
+    assert_eq!(public_events.events[2].sequence, 4);
+    assert_eq!(
+        public_events.events[2].details.get("dedupe_duplicate"),
+        Some(&serde_json::json!(true))
+    );
 }
 
 #[tokio::test]
@@ -295,7 +308,19 @@ async fn heartbeat_updates_latest_job_summary_and_history() {
         heartbeat_at: Timestamp("2026-07-01T12:00:00Z".to_string()),
         last_event_sequence: Some(7),
         counts: None,
-        provider_reservations: Vec::new(),
+        provider_reservations: vec![ProviderReservationSnapshot {
+            reservation_id: ReservationId::new("res_test"),
+            provider_kind: ProviderKind::Embedding,
+            provider_id: Some(ProviderId::new("tei")),
+            priority: JobPriority::Background,
+            requested_units: 2,
+            granted_units: 1,
+            acquired_at: Some(Timestamp("2026-07-01T11:59:59Z".to_string())),
+            expires_at: Some(Timestamp("2026-07-01T12:05:00Z".to_string())),
+            status: LifecycleStatus::Running,
+            queue_depth: Some(3),
+            cooling: None,
+        }],
     };
 
     store.heartbeat(heartbeat.clone()).await.expect("heartbeat");
@@ -309,6 +334,13 @@ async fn heartbeat_updates_latest_job_summary_and_history() {
     assert_eq!(summary.status, LifecycleStatus::Running);
     assert_eq!(summary.attempt, 1);
     assert_eq!(summary.heartbeat, Some(heartbeat));
+    let reservation_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM provider_reservations WHERE job_id = ?")
+            .bind(job.job_id.0.to_string())
+            .fetch_one(&store.pool)
+            .await
+            .expect("reservation count");
+    assert_eq!(reservation_count, 1);
 }
 
 #[tokio::test]
@@ -440,7 +472,8 @@ async fn control_operations_cancel_retry_recover_cleanup_and_list_artifacts() {
         )
         .await
         .expect("cancel queued");
-    assert_eq!(queued_cancel.status, LifecycleStatus::Canceling);
+    assert_eq!(queued_cancel.status, LifecycleStatus::Canceled);
+    assert!(queued_cancel.canceled_at.is_some());
 
     let job = store.create(create_request()).await.expect("create job");
     store
@@ -497,6 +530,21 @@ async fn control_operations_cancel_retry_recover_cleanup_and_list_artifacts() {
         .expect("retry");
     assert_eq!(retry.original_job_id, job.job_id);
     assert_eq!(retry.retry_job.status, LifecycleStatus::Queued);
+    let retry_stages = store
+        .stages(retry.retry_job.job_id)
+        .await
+        .expect("retry stages");
+    assert_eq!(retry_stages.len(), 1);
+    let retry_request: Option<String> =
+        sqlx::query_scalar("SELECT request_json FROM jobs WHERE job_id = ?")
+            .bind(retry.retry_job.job_id.0.to_string())
+            .fetch_one(&store.pool)
+            .await
+            .expect("retry request");
+    assert_eq!(
+        retry_request.as_deref(),
+        Some("{\"source\":\"/tmp/project\"}")
+    );
 
     sqlx::query(
         "INSERT INTO job_artifacts (
@@ -546,6 +594,21 @@ async fn control_operations_cancel_retry_recover_cleanup_and_list_artifacts() {
         })
         .await
         .expect("running");
+    store
+        .heartbeat(JobHeartbeat {
+            job_id: running.job_id,
+            attempt: 1,
+            worker_id: Some("recover-worker".to_string()),
+            phase: PipelinePhase::Embedding,
+            status: LifecycleStatus::Running,
+            stage_id: None,
+            heartbeat_at: Timestamp("2026-07-01T12:00:00Z".to_string()),
+            last_event_sequence: None,
+            counts: None,
+            provider_reservations: Vec::new(),
+        })
+        .await
+        .expect("running heartbeat");
     let recovery = store
         .recover(JobRecoveryRequest {
             kind: Some(JobKind::Source),
@@ -556,6 +619,9 @@ async fn control_operations_cancel_retry_recover_cleanup_and_list_artifacts() {
         .expect("recover");
     assert_eq!(recovery.jobs_scanned, 1);
     assert_eq!(recovery.jobs_failed, 1);
+    let attempts = store.attempts(running.job_id).await.expect("attempts");
+    assert_eq!(attempts[0].status, LifecycleStatus::Failed);
+    assert!(attempts[0].finished_at.is_some());
 
     let cleanup = store
         .cleanup(JobCleanupRequest {
@@ -564,7 +630,7 @@ async fn control_operations_cancel_retry_recover_cleanup_and_list_artifacts() {
         })
         .await
         .expect("cleanup");
-    assert_eq!(cleanup.jobs_pruned, 2);
+    assert_eq!(cleanup.jobs_pruned, 3);
     assert_eq!(cleanup.artifacts_pruned, 1);
 }
 

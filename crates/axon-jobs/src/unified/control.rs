@@ -23,19 +23,35 @@ impl SqliteUnifiedJobStore {
         let current = parse_enum::<LifecycleStatus>(row.get::<String, _>("status"))?;
         validate_transition(job_id, current, LifecycleStatus::Canceling)?;
         let now = now_timestamp();
-        sqlx::query("UPDATE jobs SET status = ?, phase = ?, updated_at = ? WHERE job_id = ?")
-            .bind(enum_name(LifecycleStatus::Canceling)?)
-            .bind(enum_name(PipelinePhase::Canceled)?)
-            .bind(now.0.as_str())
-            .bind(job_id.0.to_string())
-            .execute(&mut *tx)
-            .await
-            .map_err(sql_error)?;
+        let target = if matches!(current, LifecycleStatus::Queued | LifecycleStatus::Pending)
+            || request.force_after_ms == Some(0)
+        {
+            LifecycleStatus::Canceled
+        } else {
+            LifecycleStatus::Canceling
+        };
+        let canceled_at = (target == LifecycleStatus::Canceled).then(|| now.clone());
+        sqlx::query(
+            "UPDATE jobs SET
+                status = ?,
+                phase = ?,
+                updated_at = ?,
+                finished_at = COALESCE(?, finished_at)
+             WHERE job_id = ?",
+        )
+        .bind(enum_name(target)?)
+        .bind(enum_name(PipelinePhase::Canceled)?)
+        .bind(now.0.as_str())
+        .bind(canceled_at.as_ref().map(|ts| ts.0.as_str()))
+        .bind(job_id.0.to_string())
+        .execute(&mut *tx)
+        .await
+        .map_err(sql_error)?;
         tx.commit().await.map_err(sql_error)?;
         Ok(JobCancelResult {
             job_id,
-            status: LifecycleStatus::Canceling,
-            canceled_at: None,
+            status: target,
+            canceled_at,
             reason: request.reason,
         })
     }
@@ -43,12 +59,39 @@ impl SqliteUnifiedJobStore {
     pub(crate) async fn retry_job(
         &self,
         job_id: JobId,
-        _request: JobRetryRequest,
+        request: JobRetryRequest,
     ) -> Result<JobRetryResult> {
         let original = self
             .get_job(job_id)
             .await?
             .ok_or_else(|| missing_job(job_id))?;
+        let row = sqlx::query("SELECT request_json, metadata_json FROM jobs WHERE job_id = ?")
+            .bind(job_id.0.to_string())
+            .fetch_one(&self.pool)
+            .await
+            .map_err(sql_error)?;
+        let request_json = row.get::<Option<String>, _>("request_json");
+        let metadata_json = row.get::<String, _>("metadata_json");
+        let mut metadata = from_json::<MetadataMap>(metadata_json)?;
+        metadata.0.extend(request.overrides.0);
+        let mut stage_plan = self
+            .job_stages(job_id)
+            .await?
+            .into_iter()
+            .map(|stage| JobStagePlan {
+                phase: stage.phase,
+                required: stage.required,
+                provider_requirements: stage.provider_requirements,
+                estimated_items: stage.counts.items_total,
+            })
+            .collect::<Vec<_>>();
+        if let Some(from_phase) = request.from_phase
+            && let Some(index) = stage_plan
+                .iter()
+                .position(|stage| stage.phase == from_phase)
+        {
+            stage_plan = stage_plan.split_off(index);
+        }
         let attempt = original.attempt + 1;
         let retry_job = self
             .create_job(JobCreateRequest {
@@ -59,10 +102,10 @@ impl SqliteUnifiedJobStore {
                 parent_job_id: Some(job_id),
                 root_job_id: Some(original.root_job_id.unwrap_or(job_id)),
                 priority: original.priority,
-                idempotency_key: None,
-                stage_plan: Vec::new(),
-                request: None,
-                metadata: MetadataMap::new(),
+                idempotency_key: request.idempotency_key,
+                stage_plan,
+                request: request_json.map(from_json).transpose()?,
+                metadata,
             })
             .await?;
         Ok(JobRetryResult {
@@ -87,10 +130,13 @@ impl SqliteUnifiedJobStore {
             query = query.bind(cutoff.0.as_str());
         }
         let rows = query.fetch_all(&self.pool).await.map_err(sql_error)?;
+        let job_ids = rows
+            .iter()
+            .map(|row| row.get::<String, _>("job_id"))
+            .collect::<Vec<_>>();
         let scanned = rows.len() as u64;
         if !request.dry_run && scanned > 0 {
-            self.fail_recoverable_jobs(kind_filter.as_deref(), cutoff.as_ref())
-                .await?;
+            self.fail_recoverable_jobs(&job_ids).await?;
         }
         Ok(JobRecoveryResult {
             jobs_scanned: scanned,
@@ -210,21 +256,53 @@ impl SqliteUnifiedJobStore {
         .into())
     }
 
-    async fn fail_recoverable_jobs(
-        &self,
-        kind: Option<&str>,
-        cutoff: Option<&Timestamp>,
-    ) -> Result<()> {
-        let now = now_timestamp();
-        let mut sql = "UPDATE jobs SET status = 'failed', phase = 'complete', updated_at = ? \
-             WHERE status IN ('running', 'waiting')"
-            .to_string();
-        append_recovery_filter(&mut sql, kind, cutoff);
-        let mut update = sqlx::query(&sql).bind(now.0.as_str());
-        if let Some(cutoff) = cutoff {
-            update = update.bind(cutoff.0.as_str());
+    async fn fail_recoverable_jobs(&self, job_ids: &[String]) -> Result<()> {
+        if job_ids.is_empty() {
+            return Ok(());
         }
-        update.execute(&self.pool).await.map_err(sql_error)?;
+        let now = now_timestamp();
+        let source_error = recovery_source_error();
+        let api_error = recovery_api_error();
+        let ids = quoted_job_ids(job_ids);
+        sqlx::query(&format!(
+            "UPDATE jobs SET
+                status = 'failed',
+                phase = 'complete',
+                updated_at = ?,
+                finished_at = COALESCE(finished_at, ?),
+                last_error_json = ?
+             WHERE job_id IN ({ids})"
+        ))
+        .bind(now.0.as_str())
+        .bind(now.0.as_str())
+        .bind(to_json(&Some(source_error))?)
+        .execute(&self.pool)
+        .await
+        .map_err(sql_error)?;
+        sqlx::query(&format!(
+            "UPDATE job_attempts SET
+                status = 'failed',
+                finished_at = COALESCE(finished_at, ?),
+                error_json = ?
+             WHERE job_id IN ({ids}) AND status IN ('running', 'waiting')"
+        ))
+        .bind(now.0.as_str())
+        .bind(to_json(&Some(api_error.clone()))?)
+        .execute(&self.pool)
+        .await
+        .map_err(sql_error)?;
+        sqlx::query(&format!(
+            "UPDATE job_stages SET
+                status = 'failed',
+                completed_at = COALESCE(completed_at, ?),
+                error_json = ?
+             WHERE job_id IN ({ids}) AND status IN ('running', 'waiting')"
+        ))
+        .bind(now.0.as_str())
+        .bind(to_json(&Some(api_error))?)
+        .execute(&self.pool)
+        .await
+        .map_err(sql_error)?;
         Ok(())
     }
 }
@@ -240,4 +318,32 @@ fn append_recovery_filter(sql: &mut String, kind: Option<&str>, cutoff: Option<&
             " AND COALESCE(json_extract(heartbeat_json, '$.heartbeat_at'), updated_at) < ?",
         );
     }
+}
+
+fn quoted_job_ids(job_ids: &[String]) -> String {
+    job_ids
+        .iter()
+        .map(|id| format!("'{}'", escape_sql(id)))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn recovery_source_error() -> SourceError {
+    SourceError {
+        code: "job.recovered_stale".to_string(),
+        severity: Severity::Failed,
+        message: "stale running job was failed by recovery".to_string(),
+        source_item_key: None,
+        retryable: true,
+        provider_id: None,
+        cause: None,
+    }
+}
+
+fn recovery_api_error() -> ApiError {
+    ApiError::new(
+        "job.recovered_stale",
+        ErrorStage::Publishing,
+        "stale running job was failed by recovery",
+    )
 }

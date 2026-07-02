@@ -249,6 +249,16 @@ pub(crate) fn optional_to_json<T: serde::Serialize>(value: &Option<T>) -> Result
     value.as_ref().map(to_json).transpose()
 }
 
+pub(crate) fn from_json<T: serde::de::DeserializeOwned>(value: String) -> Result<T> {
+    serde_json::from_str(&value).map_err(json_error)
+}
+
+pub(crate) fn from_optional_json<T: serde::de::DeserializeOwned>(
+    value: Option<String>,
+) -> Result<Option<T>> {
+    value.map(from_json).transpose()
+}
+
 pub(crate) fn now_timestamp() -> Timestamp {
     Timestamp::from(chrono::Utc::now())
 }
@@ -267,6 +277,24 @@ pub(crate) fn is_terminal(status: LifecycleStatus) -> bool {
 
 pub(crate) fn escape_sql(value: &str) -> String {
     value.replace('\'', "''")
+}
+
+pub(crate) fn attempt_id(job_id: JobId, attempt: u32) -> String {
+    format!("{}:{attempt}", job_id.0)
+}
+
+pub(crate) fn reject_non_public_visibility(visibility: Option<Visibility>) -> Result<()> {
+    if matches!(
+        visibility,
+        Some(Visibility::Internal | Visibility::Sensitive)
+    ) {
+        return Err(ApiError::new(
+            "job_event.visibility_forbidden",
+            ErrorStage::Authorizing,
+            "internal and sensitive job events require an internal/admin event API",
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) fn missing_job(job_id: JobId) -> ApiError {
@@ -296,14 +324,6 @@ pub(crate) fn is_sqlite_unique_violation(error: &sqlx::Error) -> bool {
 
 fn parse_optional_enum<T: serde::de::DeserializeOwned>(value: Option<String>) -> Result<Option<T>> {
     value.map(parse_enum).transpose()
-}
-
-fn from_json<T: serde::de::DeserializeOwned>(value: String) -> Result<T> {
-    serde_json::from_str(&value).map_err(json_error)
-}
-
-fn from_optional_json<T: serde::de::DeserializeOwned>(value: Option<String>) -> Result<Option<T>> {
-    value.map(from_json).transpose()
 }
 
 fn parse_uuid(value: String) -> Result<Uuid> {

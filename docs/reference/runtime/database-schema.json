@@ -11,6 +11,7 @@
             "job_stages",
             "job_events",
             "job_heartbeats",
+            "provider_reservations",
             "job_artifacts"
           ],
           "items": {
@@ -43,12 +44,20 @@
             "foreign_keys": [
               "job_id"
             ],
+            "indexes": [
+              "job_attempts_job_id_idx"
+            ],
             "json_columns": [
               "error_json"
             ],
             "primary_key": [
-              "job_id",
-              "attempt"
+              "attempt_id"
+            ],
+            "unique": [
+              [
+                "job_id",
+                "attempt"
+              ]
             ]
           },
           "job_events": {
@@ -57,6 +66,7 @@
               "stage_id"
             ],
             "indexes": [
+              "job_events_job_dedupe_key_idx",
               "job_events_job_sequence_idx",
               "job_events_job_phase_idx",
               "job_events_job_severity_idx",
@@ -64,6 +74,16 @@
             ],
             "json_columns": [
               "details_json"
+            ],
+            "partial_unique_indexes": [
+              {
+                "columns": [
+                  "job_id",
+                  "dedupe_key"
+                ],
+                "name": "job_events_job_dedupe_key_idx",
+                "predicate": "dedupe_key IS NOT NULL"
+              }
             ],
             "primary_key": [
               "event_id"
@@ -125,7 +145,9 @@
               "jobs_kind_status_created_at_idx",
               "jobs_status_updated_at_idx",
               "jobs_source_id_idx",
-              "jobs_watch_id_idx"
+              "jobs_watch_id_idx",
+              "jobs_source_id_created_at_idx",
+              "jobs_watch_id_created_at_idx"
             ],
             "json_columns": [
               "counts_json",
@@ -138,6 +160,23 @@
             ],
             "primary_key": [
               "job_id"
+            ]
+          },
+          "provider_reservations": {
+            "foreign_keys": [
+              "job_id",
+              "stage_id"
+            ],
+            "indexes": [
+              "provider_reservations_job_id_idx",
+              "provider_reservations_stage_id_idx",
+              "provider_reservations_provider_kind_idx"
+            ],
+            "json_columns": [
+              "cooling_json"
+            ],
+            "primary_key": [
+              "reservation_id"
             ]
           }
         }
@@ -160,7 +199,7 @@
     ],
     "source_inputs": [
       {
-        "checksum": "sha256:f5040fccade667e49c039a302e1864f974b7efd09ecf2e1e2404febe85058e99",
+        "checksum": "sha256:e4bc38fac874e4392bb2ad61985d9865ab91b7b9d55b712362d193df9434ac5f",
         "kind": "sql_migration_directory",
         "path": "crates/axon-jobs/src/migrations"
       },

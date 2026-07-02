@@ -34,8 +34,11 @@ CREATE INDEX jobs_kind_status_created_at_idx ON jobs(kind, status, created_at DE
 CREATE INDEX jobs_status_updated_at_idx ON jobs(status, updated_at);
 CREATE INDEX jobs_source_id_idx ON jobs(source_id);
 CREATE INDEX jobs_watch_id_idx ON jobs(watch_id);
+CREATE INDEX jobs_source_id_created_at_idx ON jobs(source_id, created_at DESC);
+CREATE INDEX jobs_watch_id_created_at_idx ON jobs(watch_id, created_at DESC);
 
 CREATE TABLE job_attempts (
+    attempt_id TEXT PRIMARY KEY NOT NULL,
     job_id TEXT NOT NULL REFERENCES jobs(job_id) ON DELETE CASCADE,
     attempt INTEGER NOT NULL CHECK (attempt >= 0),
     status TEXT NOT NULL CHECK (status IN ('queued', 'pending', 'running', 'waiting', 'blocked', 'canceling', 'completed', 'completed_degraded', 'failed', 'canceled', 'expired', 'skipped')),
@@ -44,8 +47,10 @@ CREATE TABLE job_attempts (
     finished_at TEXT,
     heartbeat_at TEXT,
     error_json TEXT CHECK (error_json IS NULL OR json_valid(error_json)),
-    PRIMARY KEY (job_id, attempt)
+    UNIQUE(job_id, attempt)
 );
+
+CREATE INDEX job_attempts_job_id_idx ON job_attempts(job_id);
 
 CREATE TABLE job_stages (
     stage_id TEXT PRIMARY KEY NOT NULL,
@@ -97,6 +102,27 @@ CREATE TABLE job_heartbeats (
 
 CREATE INDEX job_heartbeats_job_id_idx ON job_heartbeats(job_id);
 CREATE INDEX job_heartbeats_heartbeat_at_idx ON job_heartbeats(heartbeat_at);
+
+CREATE TABLE provider_reservations (
+    reservation_id TEXT PRIMARY KEY NOT NULL,
+    job_id TEXT NOT NULL REFERENCES jobs(job_id) ON DELETE CASCADE,
+    stage_id TEXT REFERENCES job_stages(stage_id) ON DELETE SET NULL,
+    provider_kind TEXT NOT NULL CHECK (provider_kind IN ('embedding', 'vector', 'llm', 'fetch', 'render', 'search', 'storage', 'cache', 'network_capture', 'artifact')),
+    provider_id TEXT,
+    priority TEXT NOT NULL CHECK (priority IN ('interactive', 'high', 'normal', 'background', 'maintenance')),
+    requested_units INTEGER NOT NULL CHECK (requested_units >= 0),
+    granted_units INTEGER NOT NULL CHECK (granted_units >= 0),
+    acquired_at TEXT,
+    expires_at TEXT,
+    status TEXT NOT NULL CHECK (status IN ('queued', 'pending', 'running', 'waiting', 'blocked', 'canceling', 'completed', 'completed_degraded', 'failed', 'canceled', 'expired', 'skipped')),
+    queue_depth INTEGER CHECK (queue_depth IS NULL OR queue_depth >= 0),
+    cooling_json TEXT CHECK (cooling_json IS NULL OR json_valid(cooling_json)),
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX provider_reservations_job_id_idx ON provider_reservations(job_id);
+CREATE INDEX provider_reservations_stage_id_idx ON provider_reservations(stage_id);
+CREATE INDEX provider_reservations_provider_kind_idx ON provider_reservations(provider_kind);
 
 CREATE TABLE job_artifacts (
     artifact_id TEXT PRIMARY KEY NOT NULL,

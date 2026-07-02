@@ -6,6 +6,8 @@ use crate::boundary::{JobStore, Result};
 
 #[path = "unified/control.rs"]
 mod control;
+#[path = "unified/heartbeat.rs"]
+mod heartbeat;
 #[path = "unified/ops.rs"]
 mod ops;
 

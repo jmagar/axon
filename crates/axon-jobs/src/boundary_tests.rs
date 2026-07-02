@@ -219,7 +219,7 @@ async fn fake_job_store_filters_events_and_resets_job_ids_only() {
                 phase,
                 status: LifecycleStatus::Running,
                 severity,
-                visibility: Visibility::Internal,
+                visibility: Visibility::Redacted,
                 message: "progress".to_string(),
                 timestamp: Timestamp(format!("2026-07-01T00:00:0{sequence}Z")),
                 source_id: None,
@@ -246,7 +246,7 @@ async fn fake_job_store_filters_events_and_resets_job_ids_only() {
             job_id: job.job_id,
             phase: Some(PipelinePhase::Embedding),
             severity: Some(Severity::Warning),
-            visibility: Some(Visibility::Internal),
+            visibility: Some(Visibility::Redacted),
             since_sequence: Some(1),
             limit: Some(10),
             cursor: None,
@@ -256,6 +256,22 @@ async fn fake_job_store_filters_events_and_resets_job_ids_only() {
     .unwrap();
     assert_eq!(events.events.len(), 1);
     assert_eq!(events.events[0].sequence, 2);
+
+    let forbidden = JobStore::events(
+        &store,
+        JobEventListRequest {
+            job_id: job.job_id,
+            phase: None,
+            severity: None,
+            visibility: Some(Visibility::Internal),
+            since_sequence: None,
+            limit: Some(10),
+            cursor: None,
+        },
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(forbidden.code.to_string(), "job_event.visibility_forbidden");
 
     let watch = WatchStore::create(
         &store,

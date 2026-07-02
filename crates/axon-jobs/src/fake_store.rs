@@ -9,6 +9,7 @@ use uuid::Uuid;
 use crate::boundary::{JobStore, Result};
 use crate::limits::clamp_page_limit;
 use crate::state_machine::validate_transition;
+use crate::unified_codec::reject_non_public_visibility;
 
 #[path = "fake_store/helpers.rs"]
 mod helpers;
@@ -153,11 +154,20 @@ impl JobStore for FakeJobWatchStore {
             job.current = status.current;
             job.last_error = status.error.clone();
             job.updated_at = updated_at.clone();
+            if status.status == LifecycleStatus::Running && job.started_at.is_none() {
+                job.started_at = Some(updated_at.clone());
+            }
+            if is_terminal_status(status.status) {
+                job.finished_at = Some(updated_at.clone());
+            }
         }
-        if let Some(stage_id) = status.stage_id
-            && let Some(stages) = state.stages.get_mut(&status.job_id)
-            && let Some(stage) = stages.iter_mut().find(|stage| stage.stage_id == stage_id)
-        {
+        if let Some(stage_id) = status.stage_id {
+            let Some(stages) = state.stages.get_mut(&status.job_id) else {
+                return Err(missing_stage(status.job_id, stage_id));
+            };
+            let Some(stage) = stages.iter_mut().find(|stage| stage.stage_id == stage_id) else {
+                return Err(missing_stage(status.job_id, stage_id));
+            };
             stage.status = status.status;
             if let Some(counts) = stage_counts {
                 stage.counts = counts;
@@ -168,64 +178,14 @@ impl JobStore for FakeJobWatchStore {
             if is_terminal_status(status.status) {
                 stage.completed_at = Some(updated_at);
             }
-            stage.error = None;
+            stage.error = status.error.as_ref().map(source_error_to_api_error);
         }
         Ok(())
     }
 
     async fn append_event(&self, event: SourceProgressEvent) -> Result<()> {
         let mut state = self.state.lock().await;
-        if !state.jobs.contains_key(&event.job_id) {
-            return Err(missing_job(event.job_id));
-        }
-        let expected_sequence = state
-            .events
-            .get(&event.job_id)
-            .and_then(|events| events.last())
-            .map(|event| event.sequence + 1)
-            .unwrap_or(1);
-        if event.sequence != expected_sequence {
-            if let Some(dedupe_key) = event.dedupe_key.as_ref()
-                && state
-                    .events
-                    .get(&event.job_id)
-                    .into_iter()
-                    .flatten()
-                    .any(|existing| {
-                        existing.details.get("dedupe_key") == Some(&serde_json::json!(dedupe_key))
-                    })
-            {
-                return Ok(());
-            }
-            return Err(ApiError::new(
-                "job_event.sequence_invalid",
-                ErrorStage::Publishing,
-                format!(
-                    "expected event sequence {} for job {}, got {}",
-                    expected_sequence, event.job_id.0, event.sequence
-                ),
-            ));
-        }
-        let details = event_details(&event);
-        state
-            .events
-            .entry(event.job_id)
-            .or_default()
-            .push(JobEvent {
-                event_id: event.event_id,
-                sequence: event.sequence,
-                job_id: event.job_id,
-                attempt: event.attempt,
-                stage_id: event.stage_id,
-                phase: event.phase,
-                status: event.status,
-                severity: event.severity,
-                visibility: event.visibility,
-                message: event.message,
-                timestamp: event.timestamp,
-                details,
-            });
-        Ok(())
+        append_event_locked(&mut state, event)
     }
 
     async fn heartbeat(&self, heartbeat: JobHeartbeat) -> Result<()> {
@@ -292,6 +252,7 @@ impl JobStore for FakeJobWatchStore {
                 "fake job store does not implement event cursor pagination",
             ));
         }
+        reject_non_public_visibility(request.visibility)?;
         let mut items = self
             .state
             .lock()
@@ -342,13 +303,25 @@ impl JobStore for FakeJobWatchStore {
             .get_mut(&job_id)
             .ok_or_else(|| missing_job(job_id))?;
         validate_transition(job_id, job.status, LifecycleStatus::Canceling)?;
-        job.status = LifecycleStatus::Canceling;
+        let target = if matches!(
+            job.status,
+            LifecycleStatus::Queued | LifecycleStatus::Pending
+        ) || request.force_after_ms == Some(0)
+        {
+            LifecycleStatus::Canceled
+        } else {
+            LifecycleStatus::Canceling
+        };
+        job.status = target;
         job.phase = PipelinePhase::Canceled;
-        job.updated_at = updated_at;
+        job.updated_at = updated_at.clone();
+        if target == LifecycleStatus::Canceled {
+            job.finished_at = Some(updated_at.clone());
+        }
         Ok(JobCancelResult {
             job_id,
-            status: LifecycleStatus::Canceling,
-            canceled_at: None,
+            status: target,
+            canceled_at: (target == LifecycleStatus::Canceled).then_some(updated_at),
             reason: request.reason,
         })
     }
@@ -369,7 +342,17 @@ impl JobStore for FakeJobWatchStore {
                 root_job_id: Some(original.root_job_id.unwrap_or(job_id)),
                 priority: original.priority,
                 idempotency_key: None,
-                stage_plan: Vec::new(),
+                stage_plan: self
+                    .stages(job_id)
+                    .await?
+                    .into_iter()
+                    .map(|stage| JobStagePlan {
+                        phase: stage.phase,
+                        required: stage.required,
+                        provider_requirements: stage.provider_requirements,
+                        estimated_items: stage.counts.items_total,
+                    })
+                    .collect(),
                 request: None,
                 metadata: MetadataMap::new(),
             },
@@ -402,7 +385,37 @@ impl JobStore for FakeJobWatchStore {
                 job.status = LifecycleStatus::Failed;
                 job.phase = PipelinePhase::Complete;
                 job.updated_at = now.clone();
+                job.finished_at = Some(now.clone());
+                if let Some(heartbeat) = job.heartbeat.as_mut() {
+                    heartbeat.status = LifecycleStatus::Failed;
+                    heartbeat.phase = PipelinePhase::Complete;
+                    heartbeat.heartbeat_at = now.clone();
+                }
                 failed += 1;
+            }
+        }
+        if !request.dry_run {
+            for job_id in state
+                .jobs
+                .iter()
+                .filter_map(|(job_id, job)| {
+                    (job.status == LifecycleStatus::Failed && job.updated_at == now)
+                        .then_some(*job_id)
+                })
+                .collect::<Vec<_>>()
+            {
+                if let Some(stages) = state.stages.get_mut(&job_id) {
+                    for stage in stages {
+                        if matches!(
+                            stage.status,
+                            LifecycleStatus::Running | LifecycleStatus::Waiting
+                        ) {
+                            stage.status = LifecycleStatus::Failed;
+                            stage.completed_at = Some(now.clone());
+                            stage.error = Some(recovery_api_error());
+                        }
+                    }
+                }
             }
         }
         Ok(JobRecoveryResult {
@@ -463,33 +476,6 @@ impl JobStore for FakeJobWatchStore {
     async fn capabilities(&self) -> Result<JobStoreCapability> {
         Ok(capability("fake-job-store").into())
     }
-}
-
-impl FakeJobWatchState {
-    fn timestamp(&mut self) -> Timestamp {
-        self.next_tick += 1;
-        Timestamp(format!("2026-07-01T00:00:{:02}Z", self.next_tick))
-    }
-
-    pub(super) fn peek_timestamp(&self) -> Timestamp {
-        Timestamp(format!("2026-07-01T00:00:{:02}Z", self.next_tick + 1))
-    }
-}
-
-pub(super) fn missing_job(job_id: JobId) -> ApiError {
-    ApiError::new(
-        "job.not_found",
-        ErrorStage::Retrieving,
-        format!("job {} not found", job_id.0),
-    )
-}
-
-pub(super) fn missing_watch(watch_id: &WatchId) -> ApiError {
-    ApiError::new(
-        "watch.not_found",
-        ErrorStage::Retrieving,
-        format!("watch {} not found", watch_id.0),
-    )
 }
 
 #[cfg(test)]

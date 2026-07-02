@@ -149,7 +149,7 @@ impl SqliteUnifiedJobStore {
         started_at: &Option<String>,
         finished_at: &Option<String>,
     ) -> Result<()> {
-        sqlx::query(
+        let result = sqlx::query(
             "UPDATE job_stages SET
                 status = ?,
                 counts_json = ?,
@@ -168,6 +168,13 @@ impl SqliteUnifiedJobStore {
         .execute(&mut **tx)
         .await
         .map_err(sql_error)?;
+        if result.rows_affected() == 0 {
+            return Err(ApiError::new(
+                "job_stage.not_found",
+                ErrorStage::Publishing,
+                format!("stage {} not found for job {}", stage_id.0, status.job_id.0),
+            ));
+        }
         Ok(())
     }
 
@@ -207,7 +214,26 @@ impl SqliteUnifiedJobStore {
                 ),
             ));
         }
-        let details = event_details(&event);
+        let duplicate_dedupe = if let Some(dedupe_key) = event.dedupe_key.as_deref() {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM job_events WHERE job_id = ? AND dedupe_key = ?",
+            )
+            .bind(event.job_id.0.to_string())
+            .bind(dedupe_key)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(sql_error)?
+                > 0
+        } else {
+            false
+        };
+        let mut details = event_details(&event);
+        let dedupe_key = if duplicate_dedupe {
+            details.insert("dedupe_duplicate".to_string(), serde_json::json!(true));
+            None
+        } else {
+            event.dedupe_key.as_deref()
+        };
         let result = sqlx::query(
             "INSERT INTO job_events (
                 event_id, job_id, sequence, attempt, stage_id, phase, status, severity,
@@ -225,7 +251,7 @@ impl SqliteUnifiedJobStore {
         .bind(enum_name(event.visibility)?)
         .bind(event.message)
         .bind(event.timestamp.0)
-        .bind(event.dedupe_key.as_deref())
+        .bind(dedupe_key)
         .bind(to_json(&details)?)
         .execute(&mut *tx)
         .await;
@@ -237,97 +263,6 @@ impl SqliteUnifiedJobStore {
             return Err(sql_error(error));
         }
         tx.commit().await.map_err(sql_error)
-    }
-
-    pub(crate) async fn record_heartbeat(&self, heartbeat: JobHeartbeat) -> Result<()> {
-        let row = sqlx::query("SELECT status FROM jobs WHERE job_id = ?")
-            .bind(heartbeat.job_id.0.to_string())
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(sql_error)?
-            .ok_or_else(|| missing_job(heartbeat.job_id))?;
-        let current = parse_enum::<LifecycleStatus>(row.get::<String, _>("status"))?;
-        if current != heartbeat.status {
-            validate_transition(heartbeat.job_id, current, heartbeat.status)?;
-        }
-        self.update_heartbeat_summary(&heartbeat).await?;
-        self.upsert_heartbeat_history(&heartbeat).await?;
-        self.upsert_attempt_from_heartbeat(&heartbeat).await
-    }
-
-    async fn update_heartbeat_summary(&self, heartbeat: &JobHeartbeat) -> Result<()> {
-        sqlx::query(
-            "UPDATE jobs SET
-                status = ?,
-                phase = ?,
-                attempt = ?,
-                counts_json = ?,
-                heartbeat_json = ?,
-                updated_at = ?,
-                started_at = COALESCE(started_at, ?),
-                finished_at = COALESCE(?, finished_at)
-             WHERE job_id = ?",
-        )
-        .bind(enum_name(heartbeat.status)?)
-        .bind(enum_name(heartbeat.phase)?)
-        .bind(heartbeat.attempt as i64)
-        .bind(optional_to_json(&heartbeat.counts)?)
-        .bind(to_json(heartbeat)?)
-        .bind(heartbeat.heartbeat_at.0.as_str())
-        .bind(
-            (heartbeat.status == LifecycleStatus::Running)
-                .then_some(heartbeat.heartbeat_at.0.as_str()),
-        )
-        .bind(is_terminal(heartbeat.status).then_some(heartbeat.heartbeat_at.0.as_str()))
-        .bind(heartbeat.job_id.0.to_string())
-        .execute(&self.pool)
-        .await
-        .map_err(sql_error)?;
-        Ok(())
-    }
-
-    async fn upsert_heartbeat_history(&self, heartbeat: &JobHeartbeat) -> Result<()> {
-        sqlx::query(
-            "INSERT INTO job_heartbeats (
-                job_id, attempt, heartbeat_at, heartbeat_json
-            ) VALUES (?, ?, ?, ?)
-            ON CONFLICT(job_id, attempt) DO UPDATE SET
-                heartbeat_at = excluded.heartbeat_at,
-                heartbeat_json = excluded.heartbeat_json",
-        )
-        .bind(heartbeat.job_id.0.to_string())
-        .bind(heartbeat.attempt as i64)
-        .bind(heartbeat.heartbeat_at.0.as_str())
-        .bind(to_json(heartbeat)?)
-        .execute(&self.pool)
-        .await
-        .map_err(sql_error)?;
-        Ok(())
-    }
-
-    async fn upsert_attempt_from_heartbeat(&self, heartbeat: &JobHeartbeat) -> Result<()> {
-        sqlx::query(
-            "INSERT INTO job_attempts (
-                job_id, attempt, status, worker_id, started_at, finished_at,
-                heartbeat_at, error_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
-            ON CONFLICT(job_id, attempt) DO UPDATE SET
-                status = excluded.status,
-                worker_id = COALESCE(excluded.worker_id, job_attempts.worker_id),
-                heartbeat_at = excluded.heartbeat_at,
-                finished_at = COALESCE(excluded.finished_at, job_attempts.finished_at)",
-        )
-        .bind(heartbeat.job_id.0.to_string())
-        .bind(heartbeat.attempt as i64)
-        .bind(enum_name(heartbeat.status)?)
-        .bind(heartbeat.worker_id.as_deref())
-        .bind(heartbeat.heartbeat_at.0.as_str())
-        .bind(is_terminal(heartbeat.status).then_some(heartbeat.heartbeat_at.0.as_str()))
-        .bind(heartbeat.heartbeat_at.0.as_str())
-        .execute(&self.pool)
-        .await
-        .map_err(sql_error)?;
-        Ok(())
     }
 
     pub(crate) async fn list_jobs(&self, request: JobListRequest) -> Result<Page<JobSummary>> {
@@ -365,6 +300,7 @@ impl SqliteUnifiedJobStore {
     }
 
     pub(crate) async fn list_events(&self, request: JobEventListRequest) -> Result<JobEventPage> {
+        reject_non_public_visibility(request.visibility)?;
         if request.cursor.is_some() {
             return Err(ApiError::new(
                 "job_event.cursor_unsupported",
