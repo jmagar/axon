@@ -167,13 +167,16 @@ pub fn canonical_uri_filter_json(canonical_uri: &str, prefix: bool) -> serde_jso
     } else {
         json!({ "value": canonical_uri })
     };
+    // A bare `should` array already means "match at least one" (Qdrant defaults
+    // min_should to 1). Do NOT add a sibling `"min_should": {"min_count": 1}` —
+    // Qdrant's MinShould requires the matched conditions nested *inside*
+    // min_should, so a sibling form is rejected with HTTP 400.
     json!({
         "should": [
             { "key": "url", "match": matcher.clone() },
             { "key": "source_item_key", "match": matcher.clone() },
             { "key": "chunk_locator.canonical_uri", "match": matcher },
         ],
-        "min_should": { "min_count": 1 }
     })
 }
 
@@ -187,9 +190,10 @@ fn condition_json(field: &str, value: &serde_json::Value) -> serde_json::Value {
     if values.len() == 1 {
         return match_json(field, &values[0]);
     }
+    // Bare `should` = OR (min_should defaults to 1). A sibling min_should object
+    // is both redundant and malformed for Qdrant's REST filter API.
     json!({
         "should": values.iter().map(|value| match_json(field, value)).collect::<Vec<_>>(),
-        "min_should": { "min_count": 1 }
     })
 }
 
@@ -207,3 +211,7 @@ fn match_json(field: &str, value: &serde_json::Value) -> serde_json::Value {
     };
     json!({ "key": field, "match": matcher })
 }
+
+#[cfg(test)]
+#[path = "rest_tests.rs"]
+mod rest_tests;
