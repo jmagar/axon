@@ -89,6 +89,7 @@ pub(super) fn web_source_document(
         json!(NORMALIZATION_VERSION),
     );
     let structured_payload = metadata.remove("structured_payload");
+    metadata.remove("crawl_relative_path");
     let title = structured_title(structured_payload.as_ref());
     SourceDocument {
         document_id: web_document_id(&acquisition.source_id, &item.manifest_item.source_item_key),

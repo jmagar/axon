@@ -889,6 +889,7 @@ dependencies = [
  "axon-ingest",
  "axon-jobs",
  "axon-ledger",
+ "axon-route",
  "axon-source-ledger",
  "axon-vector",
  "axon-vectors",
