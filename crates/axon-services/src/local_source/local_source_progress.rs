@@ -17,10 +17,23 @@ pub(super) trait LocalSourceProgress: Send + Sync {
 pub(super) async fn ensure_providers_ready(
     embedding_provider: &dyn EmbeddingProvider,
     vector_store: &dyn VectorStore,
-) -> anyhow::Result<()> {
+) -> Result<(), ApiError> {
     ensure_provider_capability_ready(embedding_provider.capabilities().await?)?;
     ensure_provider_capability_ready(vector_store.capabilities().await?)?;
     Ok(())
+}
+
+pub(super) fn phase_for_api_error(error: &ApiError) -> PipelinePhase {
+    match error.stage {
+        ErrorStage::Embedding => PipelinePhase::Embedding,
+        ErrorStage::Upserting => PipelinePhase::Vectorizing,
+        ErrorStage::Publishing => PipelinePhase::Publishing,
+        ErrorStage::Cleaning => PipelinePhase::Cleaning,
+        ErrorStage::Discovering => PipelinePhase::Discovering,
+        ErrorStage::Diffing => PipelinePhase::Diffing,
+        ErrorStage::Preparing => PipelinePhase::Preparing,
+        _ => PipelinePhase::Planning,
+    }
 }
 
 pub(super) async fn record_progress(
@@ -54,7 +67,7 @@ pub(super) async fn record_progress_error(
     Ok(())
 }
 
-fn ensure_provider_capability_ready(capability: ProviderCapability) -> anyhow::Result<()> {
+fn ensure_provider_capability_ready(capability: ProviderCapability) -> Result<(), ApiError> {
     if matches!(
         capability.health,
         HealthStatus::Healthy | HealthStatus::Degraded
@@ -62,16 +75,27 @@ fn ensure_provider_capability_ready(capability: ProviderCapability) -> anyhow::R
         return Ok(());
     }
     if let Some(error) = capability.last_error {
-        return Err(anyhow::Error::new(error));
+        return Err(error);
     }
-    Err(anyhow::anyhow!(
-        "provider {} is not ready: {:?}",
-        capability.provider_id.0,
-        capability.health
-    ))
+    let stage = match capability.provider_kind {
+        ProviderKind::Embedding => ErrorStage::Embedding,
+        ProviderKind::Vector => ErrorStage::Upserting,
+        _ => ErrorStage::Planning,
+    };
+    let mut error = ApiError::new(
+        "provider.not_ready",
+        stage,
+        format!(
+            "provider {} is not ready: {:?}",
+            capability.provider_id.0, capability.health
+        ),
+    )
+    .with_provider_id(capability.provider_id.0);
+    error.retryable = true;
+    Err(error)
 }
 
-fn source_error_from_api_error(error: &ApiError) -> SourceError {
+pub(super) fn source_error_from_api_error(error: &ApiError) -> SourceError {
     SourceError {
         code: error.code.0.clone(),
         severity: Severity::Failed,

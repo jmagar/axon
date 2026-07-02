@@ -597,6 +597,14 @@ async fn qdrant_vector_store_live_calls_return_not_wired_errors() {
     };
     for err in [
         store.upsert(batch).await.unwrap_err(),
+        store
+            .mark_generation_committed(
+                "axon-test".to_string(),
+                SourceId::new("src-web"),
+                SourceGenerationId::new("7"),
+            )
+            .await
+            .unwrap_err(),
         store.delete(delete).await.unwrap_err(),
         store.search(search).await.unwrap_err(),
     ] {

@@ -150,6 +150,8 @@ async fn vector_failure_leaves_generation_uncommitted_and_releases_lease() {
 
     let source_id = super::local_source_id(&tokio::fs::canonicalize(&path).await.unwrap());
     assert_eq!(ledger.committed_generation(&source_id).await, None);
+    assert_eq!(ledger.generation_count().await, 0);
+    assert_eq!(ledger.manifest_count().await, 0);
 
     let healthy_vectors = FakeVectorStore::new("fake-vector");
     let output = index_local_source(input(path), &ledger, &embedder, &healthy_vectors)
@@ -183,6 +185,101 @@ async fn embedding_failure_keeps_generation_uncommitted() {
     );
     let source_id = super::local_source_id(&tokio::fs::canonicalize(&path).await.unwrap());
     assert_eq!(ledger.committed_generation(&source_id).await, None);
+    assert_eq!(ledger.generation_count().await, 0);
+    assert_eq!(ledger.manifest_count().await, 0);
+}
+
+#[tokio::test]
+async fn source_job_terminal_failure_preserves_provider_retryability() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lib.rs");
+    tokio::fs::write(&path, "pub fn answer() -> i32 {\n    42\n}\n")
+        .await
+        .unwrap();
+    let jobs = FakeJobWatchStore::new();
+    let ledger = FakeLedgerStore::new();
+    let embedder =
+        FakeEmbeddingProvider::new("fake-embedding", 8).with_mode(FakeEmbeddingMode::RateLimited);
+    let vectors = FakeVectorStore::new("fake-vector");
+
+    let err = index_local_source_with_job(input(path), &jobs, &ledger, &embedder, &vectors)
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("rate"),
+        "unexpected error: {err:#}"
+    );
+
+    let summary = JobStore::list(
+        &jobs,
+        JobListRequest {
+            status: None,
+            kind: Some(JobKind::Source),
+            source_id: None,
+            watch_id: None,
+            limit: Some(1),
+            cursor: None,
+        },
+    )
+    .await
+    .unwrap()
+    .items
+    .pop()
+    .expect("job summary");
+    let last_error = summary.last_error.expect("last error");
+    assert_eq!(
+        last_error.provider_id,
+        Some(ProviderId::new("fake-embedding"))
+    );
+    assert!(last_error.retryable);
+
+    let events = JobStore::events(
+        &jobs,
+        JobEventListRequest {
+            job_id: summary.job_id,
+            phase: Some(PipelinePhase::Complete),
+            severity: Some(Severity::Failed),
+            visibility: Some(Visibility::Public),
+            since_sequence: None,
+            limit: Some(10),
+            cursor: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(events.events.len(), 1);
+    assert_eq!(events.events[0].status, LifecycleStatus::Failed);
+}
+
+#[tokio::test]
+async fn vector_commit_marker_failure_leaves_generation_uncommitted() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lib.rs");
+    tokio::fs::write(&path, "pub fn answer() -> i32 {\n    42\n}\n")
+        .await
+        .unwrap();
+    let ledger = FakeLedgerStore::new();
+    let embedder = FakeEmbeddingProvider::new("fake-embedding", 8);
+    let vectors = FakeVectorStore::new("fake-vector").with_mode(FakeVectorMode::CommitFailure);
+
+    let err = index_local_source(input(path.clone()), &ledger, &embedder, &vectors)
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("mark generation committed"),
+        "unexpected error: {err:#}"
+    );
+
+    let source_id = super::local_source_id(&tokio::fs::canonicalize(&path).await.unwrap());
+    assert_eq!(ledger.committed_generation(&source_id).await, None);
+    assert_eq!(ledger.generation_count().await, 1);
+    assert!(
+        vectors
+            .points("axon-test")
+            .await
+            .iter()
+            .all(|point| point.payload["committed_generation"].as_str() == Some("uncommitted"))
+    );
 }
 
 #[tokio::test]

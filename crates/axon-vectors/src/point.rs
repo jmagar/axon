@@ -19,7 +19,6 @@ pub struct VectorPointBatchBuilder {
     document: PreparedDocument,
     embeddings: EmbeddingResult,
     context: VectorPointBatchBuildContext,
-    committed_generation: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -159,13 +158,7 @@ impl VectorPointBatchBuilder {
             document,
             embeddings,
             context,
-            committed_generation: false,
         }
-    }
-
-    pub fn committed_generation(mut self) -> Self {
-        self.committed_generation = true;
-        self
     }
 
     pub fn build(self) -> Result<VectorPointBatch, VectorPointBatchBuildError> {
@@ -203,7 +196,6 @@ impl VectorPointBatchBuilder {
                 &provider_id,
                 &model,
                 &self.context,
-                self.committed_generation,
             )?;
             points.push(VectorPoint {
                 point_id: stable_point_id(
@@ -338,7 +330,6 @@ fn build_payload(
     provider_id: &ProviderId,
     model: &str,
     context: &VectorPointBatchBuildContext,
-    committed_generation: bool,
 ) -> Result<MetadataMap, VectorPointBatchBuildError> {
     let mut metadata = document.metadata.clone();
     metadata.remove("embedding_batch_id");
@@ -366,14 +357,7 @@ fn build_payload(
         "source_generation".to_string(),
         json!(document.generation.0),
     );
-    if committed_generation {
-        metadata.insert(
-            "committed_generation".to_string(),
-            json!(document.generation.0.clone()),
-        );
-    } else {
-        insert_default_string(&mut metadata, "committed_generation", "uncommitted");
-    }
+    metadata.insert("committed_generation".to_string(), json!("uncommitted"));
     metadata.insert("document_id".to_string(), json!(document.document_id.0));
     metadata.insert("chunk_id".to_string(), json!(chunk.chunk_id.0));
     metadata.insert("chunk_key".to_string(), json!(chunk.chunk_key));

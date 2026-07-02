@@ -21,7 +21,8 @@ use self::local_source_discovery::{
 };
 pub use self::local_source_job::index_local_source_with_job;
 use self::local_source_progress::{
-    LocalSourceProgress, ensure_providers_ready, record_progress, record_progress_error,
+    LocalSourceProgress, ensure_providers_ready, phase_for_api_error, record_progress,
+    record_progress_error,
 };
 
 const LOCAL_ADAPTER_VERSION: &str = "target-local-pr11";
@@ -176,7 +177,10 @@ async fn index_local_source_with_lease(
         });
     }
 
-    ensure_providers_ready(embedding_provider, vector_store).await?;
+    if let Err(err) = ensure_providers_ready(embedding_provider, vector_store).await {
+        record_progress_error(progress, phase_for_api_error(&err), &err).await?;
+        return Err(anyhow::Error::new(err));
+    }
     let generation = ledger.create_generation(source_id.clone()).await?;
     let manifest = source_manifest(
         source_id.clone(),
@@ -201,19 +205,20 @@ async fn index_local_source_with_lease(
         documents,
     )
     .await?;
-    let published =
-        publish_generation(ledger, generation, &diff, items.len() as u64, &vectorized).await?;
+    let completed =
+        complete_generation(ledger, generation, &diff, items.len() as u64, &vectorized).await?;
     if let Err(err) = vector_store
         .mark_generation_committed(
             collection.collection.clone(),
             source_id.clone(),
-            published.generation.clone(),
+            completed.generation.clone(),
         )
         .await
     {
         record_progress_error(progress, PipelinePhase::Publishing, &err).await?;
         return Err(anyhow::Error::new(err));
     }
+    let published = publish_completed_generation(ledger, completed).await?;
     record_progress(progress, PipelinePhase::Publishing, None).await?;
     record_progress(progress, PipelinePhase::Cleaning, None).await?;
 
@@ -319,7 +324,7 @@ async fn vectorize_documents(
     Ok(stats)
 }
 
-async fn publish_generation(
+async fn complete_generation(
     ledger: &dyn LedgerStore,
     generation: SourceGeneration,
     diff: &SourceManifestDiff,
@@ -346,7 +351,13 @@ async fn publish_generation(
         },
         ..generation
     };
-    let completed = ledger.complete_generation(completed).await?;
+    Ok(ledger.complete_generation(completed).await?)
+}
+
+async fn publish_completed_generation(
+    ledger: &dyn LedgerStore,
+    completed: SourceGeneration,
+) -> anyhow::Result<SourceGeneration> {
     Ok(ledger
         .publish_generation(PublishGenerationRequest {
             source_id: completed.source_id.clone(),

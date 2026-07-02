@@ -55,6 +55,7 @@ pub enum FakeVectorMode {
     Fatal,
     PartialFailure,
     SlowWrite,
+    CommitFailure,
 }
 
 #[derive(Debug, Default)]
@@ -110,7 +111,8 @@ impl FakeVectorStore {
         match self.mode {
             FakeVectorMode::Success
             | FakeVectorMode::PartialFailure
-            | FakeVectorMode::SlowWrite => None,
+            | FakeVectorMode::SlowWrite
+            | FakeVectorMode::CommitFailure => None,
             FakeVectorMode::Unavailable => Some(
                 ApiError::new("provider.unavailable", stage, "vector store unavailable")
                     .with_provider_id(&self.provider_id.0),
@@ -140,7 +142,8 @@ impl FakeVectorStore {
         match self.mode {
             FakeVectorMode::Success
             | FakeVectorMode::PartialFailure
-            | FakeVectorMode::SlowWrite => FakeProviderModeState::Success,
+            | FakeVectorMode::SlowWrite
+            | FakeVectorMode::CommitFailure => FakeProviderModeState::Success,
             FakeVectorMode::Unavailable => FakeProviderModeState::Fatal,
             FakeVectorMode::Timeout => FakeProviderModeState::Timeout,
             FakeVectorMode::RateLimited => FakeProviderModeState::RateLimited,
@@ -257,6 +260,14 @@ impl VectorStore for FakeVectorStore {
     ) -> Result<VectorStoreWriteResult> {
         let mut state = self.state.lock().await;
         state.calls.push("mark_generation_committed");
+        if self.mode == FakeVectorMode::CommitFailure {
+            return Err(ApiError::new(
+                "provider.commit_failed",
+                axon_error::ErrorStage::Publishing,
+                "vector store failed to mark generation committed",
+            )
+            .with_provider_id(&self.provider_id.0));
+        }
         if let Some(err) = self.mode_error_for(axon_error::ErrorStage::Publishing) {
             return Err(err);
         }

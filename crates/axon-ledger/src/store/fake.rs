@@ -59,6 +59,14 @@ impl FakeLedgerStore {
     pub async fn cleanup_debt_count(&self) -> usize {
         self.state.lock().await.cleanup_debt.len()
     }
+
+    pub async fn generation_count(&self) -> usize {
+        self.state.lock().await.generations.len()
+    }
+
+    pub async fn manifest_count(&self) -> usize {
+        self.state.lock().await.manifests.len()
+    }
 }
 
 #[async_trait]

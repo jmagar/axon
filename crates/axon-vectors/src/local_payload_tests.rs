@@ -21,20 +21,6 @@ fn builder(
     )
 }
 
-fn committed_builder(
-    collection: CollectionSpec,
-    document: PreparedDocument,
-    embeddings: EmbeddingResult,
-) -> VectorPointBatchBuilder {
-    VectorPointBatchBuilder::new(
-        collection,
-        document,
-        embeddings,
-        test_vector_build_context(),
-    )
-    .committed_generation()
-}
-
 fn local_document() -> PreparedDocument {
     let mut document = test_prepared_document();
     let canonical_uri = "file://local/fnv1a64:7d0f9a22/docs/README.md";
@@ -102,22 +88,6 @@ fn local_payload_includes_target_source_lineage_fields() {
 }
 
 #[test]
-fn local_payload_can_mark_generation_committed_when_publish_safe() {
-    let document = local_document();
-    let generation = document.generation.clone();
-    let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
-
-    let batch = committed_builder(test_collection_spec(3), document, embeddings)
-        .build()
-        .unwrap();
-
-    assert_eq!(
-        batch.points[0].payload["committed_generation"],
-        generation.0
-    );
-}
-
-#[test]
 fn local_payload_requires_shared_local_lineage_fields() {
     let document = local_document();
     let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
@@ -143,6 +113,24 @@ fn local_payload_requires_shared_local_lineage_fields() {
             VectorPayloadValidationError::MissingRequiredField { field: missing } if missing == field
         ));
     }
+}
+
+#[test]
+fn point_build_never_marks_generation_committed_before_publish() {
+    let mut document = local_document();
+    document
+        .metadata
+        .insert("committed_generation".to_string(), json!("gen_local_0001"));
+    let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
+
+    let batch = builder(test_collection_spec(3), document, embeddings)
+        .build()
+        .unwrap();
+
+    assert_eq!(
+        batch.points[0].payload["committed_generation"],
+        "uncommitted"
+    );
 }
 
 #[test]

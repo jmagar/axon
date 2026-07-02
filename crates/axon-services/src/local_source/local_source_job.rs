@@ -8,7 +8,7 @@ use axon_vectors::store::VectorStore;
 use tokio::sync::Mutex;
 
 use super::local_source_discovery::{local_source_id, timestamp};
-use super::local_source_progress::LocalSourceProgress;
+use super::local_source_progress::{LocalSourceProgress, source_error_from_api_error};
 use super::{LocalSourceIndexInput, LocalSourceIndexOutput, index_local_source_with_progress};
 
 pub async fn index_local_source_with_job(
@@ -48,15 +48,7 @@ pub async fn index_local_source_with_job(
             Ok(output)
         }
         Err(err) => {
-            let source_error = SourceError {
-                code: "source.local.index_failed".to_string(),
-                severity: Severity::Failed,
-                message: err.to_string(),
-                source_item_key: None,
-                retryable: false,
-                provider_id: None,
-                cause: Some(err.to_string()),
-            };
+            let source_error = terminal_source_error(&err);
             let _ = progress
                 .record_phase(
                     PipelinePhase::Complete,
@@ -67,6 +59,21 @@ pub async fn index_local_source_with_job(
                 .await;
             Err(err)
         }
+    }
+}
+
+fn terminal_source_error(err: &anyhow::Error) -> SourceError {
+    if let Some(api_error) = err.downcast_ref::<ApiError>() {
+        return source_error_from_api_error(api_error);
+    }
+    SourceError {
+        code: "source.local.index_failed".to_string(),
+        severity: Severity::Failed,
+        message: err.to_string(),
+        source_item_key: None,
+        retryable: false,
+        provider_id: None,
+        cause: Some(err.to_string()),
     }
 }
 
