@@ -134,6 +134,71 @@ async fn local_adapter_acquires_and_normalizes_source_documents() {
     assert!(!serde_json::to_string(&docs).unwrap().contains("/home/"));
 }
 
+#[tokio::test]
+async fn local_adapter_applies_include_exclude_gitignore_and_binary_policy() {
+    let adapter = LocalSourceAdapter::new();
+    let root = temp_source_dir();
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::create_dir_all(root.join("target")).unwrap();
+    fs::write(root.join(".gitignore"), "ignored.md\n").unwrap();
+    fs::write(root.join("src/lib.rs"), "pub fn local() {}").unwrap();
+    fs::write(root.join("README.md"), "# Axon").unwrap();
+    fs::write(root.join("ignored.md"), "# ignored").unwrap();
+    fs::write(root.join("target/generated.rs"), "pub fn generated() {}").unwrap();
+    fs::write(root.join("image.png"), [0, 159, 146, 150]).unwrap();
+    let mut plan = source_plan(root, SourceScope::Directory);
+    plan.route.validated_options.values = local_options();
+
+    let manifest = adapter.discover(&plan).await.unwrap();
+    let keys = manifest
+        .items
+        .iter()
+        .map(|item| item.source_item_key.0.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(keys, vec!["src/lib.rs"]);
+}
+
+#[tokio::test]
+async fn local_repo_scope_prunes_generated_and_lock_files() {
+    let adapter = LocalSourceAdapter::new();
+    let root = temp_source_dir();
+    fs::create_dir_all(root.join(".git/objects")).unwrap();
+    fs::create_dir_all(root.join("node_modules/pkg")).unwrap();
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::write(root.join(".git/config"), "[core]").unwrap();
+    fs::write(root.join("node_modules/pkg/index.js"), "export {}").unwrap();
+    fs::write(root.join("Cargo.lock"), "# lock").unwrap();
+    fs::write(root.join("README.md"), "# Axon").unwrap();
+    fs::write(root.join("src/lib.rs"), "pub fn local() {}").unwrap();
+
+    let plan = source_plan(root, SourceScope::Repo);
+    let manifest = adapter.discover(&plan).await.unwrap();
+    let keys = manifest
+        .items
+        .iter()
+        .map(|item| item.source_item_key.0.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(keys, vec!["README.md", "src/lib.rs"]);
+}
+
+#[tokio::test]
+async fn local_map_scope_discovers_manifest_but_acquires_no_documents() {
+    let adapter = LocalSourceAdapter::new();
+    let root = temp_source_dir();
+    fs::write(root.join("README.md"), "# Axon").unwrap();
+    let plan = source_plan(root, SourceScope::Map);
+    let manifest = adapter.discover(&plan).await.unwrap();
+    let diff = manifest_diff(&plan, manifest.items.clone());
+
+    let acquisition = adapter.acquire(&plan, &diff).await.unwrap();
+    let normalized = adapter.normalize(&plan, acquisition).await.unwrap();
+
+    assert_eq!(manifest.items.len(), 1);
+    assert!(normalized.data.is_empty());
+}
+
 fn local_options() -> MetadataMap {
     let mut values = MetadataMap::new();
     values.insert("include_globs".to_string(), vec!["**/*.rs"].into());

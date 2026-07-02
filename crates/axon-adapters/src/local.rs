@@ -10,29 +10,14 @@ use uuid::Uuid;
 
 use crate::adapter::{Result, SourceAdapter};
 use crate::capability::AdapterCapability;
+use crate::local_select::{LocalOptions, validate_options};
 use crate::manifest::item_identity;
 
 pub const MODULE_NAME: &str = "local";
 
 const ADAPTER_NAME: &str = "local";
-const ALLOWED_OPTIONS: &[&str] = &[
-    "include_globs",
-    "exclude_globs",
-    "respect_gitignore",
-    "follow_symlinks",
-    "max_file_bytes",
-    "binary_policy",
-    "watch_policy",
-];
-
 #[derive(Debug, Clone, Default)]
 pub struct LocalSourceAdapter;
-
-#[derive(Debug, Clone, Copy)]
-struct LocalOptions {
-    follow_symlinks: bool,
-    max_file_bytes: Option<u64>,
-}
 
 impl LocalSourceAdapter {
     pub fn new() -> Self {
@@ -69,9 +54,10 @@ impl SourceAdapter for LocalSourceAdapter {
         let capability = self.capabilities().await?;
         capability.validate_scope(plan.route.scope)?;
         validate_adapter(plan)?;
-        let options = validate_options(&plan.route.validated_options)?;
+        let mut options = validate_options(&plan.route.validated_options)?;
 
         let root = PathBuf::from(&plan.request.source);
+        options.load_gitignore(root.as_path());
         let mut files = Vec::new();
         match plan.route.scope {
             SourceScope::File => files.push(root.clone()),
@@ -79,7 +65,7 @@ impl SourceAdapter for LocalSourceAdapter {
             | SourceScope::Workspace
             | SourceScope::Repo
             | SourceScope::Map => {
-                collect_files(&root, options, &mut files)?;
+                collect_files(&root, &options, &mut files)?;
             }
             _ => {
                 return Err(ApiError::new(
@@ -111,6 +97,9 @@ impl SourceAdapter for LocalSourceAdapter {
                 continue;
             }
             let key = relative_key(root_for_keys, &file)?;
+            if !options.should_include_file(plan.route.scope, &key, &file) {
+                continue;
+            }
             let identity = item_identity(SourceKind::Local, &base_uri, &key)?;
             items.push(ManifestItem {
                 source_id: plan.route.source.source_id.clone(),
@@ -148,6 +137,31 @@ impl SourceAdapter for LocalSourceAdapter {
         diff: &SourceManifestDiff,
     ) -> Result<SourceAcquisition> {
         validate_adapter(plan)?;
+        if plan.route.scope == SourceScope::Map {
+            return Ok(SourceAcquisition {
+                header: stage_header(plan.job_id, "local_fetch", PipelinePhase::Fetching, 0),
+                source_id: plan.route.source.source_id.clone(),
+                generation: diff.next_generation.clone(),
+                adapter: plan.route.adapter.clone(),
+                scope: plan.route.scope,
+                manifest: SourceManifest {
+                    source_id: plan.route.source.source_id.clone(),
+                    generation: diff.next_generation.clone(),
+                    adapter: plan.route.adapter.clone(),
+                    scope: plan.route.scope,
+                    items: diff
+                        .added
+                        .iter()
+                        .chain(diff.modified.iter())
+                        .cloned()
+                        .collect(),
+                    created_at: timestamp(),
+                    metadata: MetadataMap::new(),
+                },
+                fetched_items: Vec::new(),
+                artifacts: Vec::new(),
+            });
+        }
         let root = PathBuf::from(&plan.request.source);
         let root_for_keys = if root.is_file() {
             root.parent().unwrap_or_else(|| Path::new(""))
@@ -239,89 +253,7 @@ fn validate_adapter(plan: &SourcePlan) -> Result<()> {
     .with_context("adapter", plan.route.adapter.name.clone()))
 }
 
-fn validate_options(options: &AdapterOptions) -> Result<LocalOptions> {
-    for key in options.values.keys() {
-        if !ALLOWED_OPTIONS.contains(&key.as_str()) {
-            return Err(ApiError::new(
-                "adapter.local.option.unsupported",
-                axon_error::ErrorStage::Routing,
-                "local adapter option is not supported",
-            )
-            .with_context("option", key.clone()));
-        }
-    }
-    require_string_array(options, "include_globs")?;
-    require_string_array(options, "exclude_globs")?;
-    require_bool(options, "respect_gitignore")?;
-    let follow_symlinks = optional_bool(options, "follow_symlinks")?.unwrap_or(false);
-    let max_file_bytes = optional_u64(options, "max_file_bytes")?;
-    require_enum(options, "binary_policy", &["skip", "metadata", "include"])?;
-    require_enum(options, "watch_policy", &["manual", "auto", "disabled"])?;
-    Ok(LocalOptions {
-        follow_symlinks,
-        max_file_bytes,
-    })
-}
-
-fn require_string_array(options: &AdapterOptions, key: &str) -> Result<()> {
-    let Some(value) = options.values.get(key) else {
-        return Ok(());
-    };
-    let valid = value
-        .as_array()
-        .is_some_and(|values| values.iter().all(|value| value.is_string()));
-    valid
-        .then_some(())
-        .ok_or_else(|| option_invalid(key, "expected an array of strings"))
-}
-
-fn require_bool(options: &AdapterOptions, key: &str) -> Result<()> {
-    optional_bool(options, key).map(|_| ())
-}
-
-fn optional_bool(options: &AdapterOptions, key: &str) -> Result<Option<bool>> {
-    let Some(value) = options.values.get(key) else {
-        return Ok(None);
-    };
-    value
-        .as_bool()
-        .map(Some)
-        .ok_or_else(|| option_invalid(key, "expected a boolean"))
-}
-
-fn optional_u64(options: &AdapterOptions, key: &str) -> Result<Option<u64>> {
-    let Some(value) = options.values.get(key) else {
-        return Ok(None);
-    };
-    value
-        .as_u64()
-        .map(Some)
-        .ok_or_else(|| option_invalid(key, "expected an unsigned integer"))
-}
-
-fn require_enum(options: &AdapterOptions, key: &str, allowed: &[&str]) -> Result<()> {
-    let Some(value) = options.values.get(key) else {
-        return Ok(());
-    };
-    let Some(value) = value.as_str() else {
-        return Err(option_invalid(key, "expected a string"));
-    };
-    allowed
-        .contains(&value)
-        .then_some(())
-        .ok_or_else(|| option_invalid(key, "unsupported value"))
-}
-
-fn option_invalid(key: &str, message: &str) -> ApiError {
-    ApiError::new(
-        "adapter.local.option.invalid",
-        axon_error::ErrorStage::Routing,
-        message,
-    )
-    .with_context("option", key.to_string())
-}
-
-fn collect_files(root: &Path, options: LocalOptions, files: &mut Vec<PathBuf>) -> Result<()> {
+fn collect_files(root: &Path, options: &LocalOptions, files: &mut Vec<PathBuf>) -> Result<()> {
     let entries =
         fs::read_dir(root).map_err(|err| fs_error("adapter.local.read_dir_failed", root, err))?;
     for entry in entries {
@@ -337,7 +269,13 @@ fn collect_files(root: &Path, options: LocalOptions, files: &mut Vec<PathBuf>) -
             continue;
         }
         if metadata.is_dir() {
-            collect_files(&path, options, files)?;
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("");
+            if options.should_descend_dir(name) {
+                collect_files(&path, options, files)?;
+            }
         } else if metadata.is_file() {
             files.push(path);
         }

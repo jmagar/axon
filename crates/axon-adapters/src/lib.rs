@@ -11,6 +11,7 @@ pub mod cli_tool;
 pub mod feed;
 pub mod git;
 pub mod local;
+mod local_select;
 pub mod manifest;
 pub mod mcp_tool;
 pub mod reddit;
