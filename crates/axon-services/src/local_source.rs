@@ -119,23 +119,67 @@ async fn index_local_source_with_lease(
     adapter: AdapterRef,
     scope: SourceScope,
 ) -> anyhow::Result<LocalSourceIndexOutput> {
-    let generation = ledger.create_generation(source_id.clone()).await?;
     let items = discover_items(root, root_is_file, &source_id, &source_token).await?;
-    let manifest = SourceManifest {
-        source_id: source_id.clone(),
-        generation: generation.generation.clone(),
+    let diff_manifest = source_manifest(
+        source_id.clone(),
+        SourceGenerationId::new("diff_probe"),
+        adapter.clone(),
+        scope,
+        &items,
+    );
+    let diff = ledger.diff_manifest(diff_manifest).await?;
+    if !manifest_diff_has_changes(&diff)
+        && let Some(committed_generation) = diff.previous_generation
+    {
+        return Ok(LocalSourceIndexOutput {
+            source_id,
+            generation: committed_generation,
+            documents_prepared: 0,
+            chunks_prepared: 0,
+            vector_points_written: 0,
+        });
+    }
+
+    let generation = ledger.create_generation(source_id.clone()).await?;
+    let manifest = source_manifest(
+        source_id.clone(),
+        generation.generation.clone(),
         adapter,
         scope,
-        items: items
-            .iter()
-            .map(|item| item.manifest_item.clone())
-            .collect(),
-        created_at: timestamp(),
-        metadata: MetadataMap::new(),
-    };
-    let diff = ledger.diff_manifest(manifest.clone()).await?;
+        &items,
+    );
     ledger.put_manifest(manifest).await?;
 
+    let documents = prepare_changed_documents(&items, &diff, &generation.generation, scope)?;
+    let collection = collection_spec(&input.collection, input.embedding_dimensions);
+    vector_store.ensure_collection(collection.clone()).await?;
+    let vectorized = vectorize_documents(
+        input,
+        ledger,
+        embedding_provider,
+        vector_store,
+        collection,
+        documents,
+    )
+    .await?;
+    let published =
+        publish_generation(ledger, generation, &diff, items.len() as u64, &vectorized).await?;
+
+    Ok(LocalSourceIndexOutput {
+        source_id,
+        generation: published.generation,
+        documents_prepared: vectorized.documents_prepared,
+        chunks_prepared: vectorized.chunks_prepared,
+        vector_points_written: vectorized.points_written,
+    })
+}
+
+fn prepare_changed_documents(
+    items: &[LocalItem],
+    diff: &SourceManifestDiff,
+    generation: &SourceGenerationId,
+    scope: SourceScope,
+) -> anyhow::Result<Vec<PreparedDocument>> {
     let changed = diff
         .added
         .iter()
@@ -154,7 +198,7 @@ async fn index_local_source_with_lease(
         let prepared = preparer
             .prepare(PrepareSourceDocumentRequest {
                 document,
-                generation: generation.generation.clone(),
+                generation: generation.clone(),
                 profile: None,
                 parse_facts: Vec::new(),
                 graph_candidates: Vec::new(),
@@ -165,13 +209,25 @@ async fn index_local_source_with_lease(
             .document;
         documents.push(prepared);
     }
+    Ok(documents)
+}
 
-    let collection = collection_spec(&input.collection, input.embedding_dimensions);
-    vector_store.ensure_collection(collection.clone()).await?;
+#[derive(Debug, Clone, Copy, Default)]
+struct VectorizeStats {
+    documents_prepared: u64,
+    chunks_prepared: u64,
+    points_written: u64,
+}
 
-    let mut documents_prepared = 0;
-    let mut chunks_prepared = 0;
-    let mut points_written = 0;
+async fn vectorize_documents(
+    input: &LocalSourceIndexInput,
+    ledger: &dyn LedgerStore,
+    embedding_provider: &dyn EmbeddingProvider,
+    vector_store: &dyn VectorStore,
+    collection: CollectionSpec,
+    documents: Vec<PreparedDocument>,
+) -> anyhow::Result<VectorizeStats> {
+    let mut stats = VectorizeStats::default();
     for document in documents {
         let batch = embedding_batch_for_document(input, &document)?;
         let embeddings = embedding_provider.embed(batch).await?;
@@ -185,14 +241,23 @@ async fn index_local_source_with_lease(
         )
         .build()?;
         let write = vector_store.upsert(point_batch).await?;
-        points_written += write.points_written;
-        chunks_prepared += document.chunks.len() as u64;
-        documents_prepared += 1;
+        stats.points_written += write.points_written;
+        stats.chunks_prepared += document.chunks.len() as u64;
+        stats.documents_prepared += 1;
         ledger
             .update_document_status(document_status(&document, write.points_written))
             .await?;
     }
+    Ok(stats)
+}
 
+async fn publish_generation(
+    ledger: &dyn LedgerStore,
+    generation: SourceGeneration,
+    diff: &SourceManifestDiff,
+    discovered_count: u64,
+    vectorized: &VectorizeStats,
+) -> anyhow::Result<SourceGeneration> {
     let completed = SourceGeneration {
         status: LifecycleStatus::Completed,
         publish_state: PublishState::Publishing,
@@ -205,30 +270,51 @@ async fn index_local_source_with_lease(
             failed: diff.counts.failed,
         },
         document_counts: DocumentCounts {
-            discovered: items.len() as u64,
-            prepared: documents_prepared,
-            embedded: documents_prepared,
-            published: documents_prepared,
+            discovered: discovered_count,
+            prepared: vectorized.documents_prepared,
+            embedded: vectorized.documents_prepared,
+            published: vectorized.documents_prepared,
             failed: 0,
         },
         ..generation
     };
     let completed = ledger.complete_generation(completed).await?;
-    let published = ledger
+    Ok(ledger
         .publish_generation(PublishGenerationRequest {
-            source_id: source_id.clone(),
+            source_id: completed.source_id.clone(),
             generation: completed.generation.clone(),
             expected_previous_generation: completed.previous_generation.clone(),
         })
-        .await?;
+        .await?)
+}
 
-    Ok(LocalSourceIndexOutput {
-        source_id,
-        generation: published.generation,
-        documents_prepared,
-        chunks_prepared,
-        vector_points_written: points_written,
-    })
+fn source_manifest(
+    source_id: SourceId,
+    generation: SourceGenerationId,
+    adapter: AdapterRef,
+    scope: SourceScope,
+    items: &[LocalItem],
+) -> SourceManifest {
+    SourceManifest {
+        source_id: source_id.clone(),
+        generation,
+        adapter,
+        scope,
+        items: items
+            .iter()
+            .map(|item| item.manifest_item.clone())
+            .collect(),
+        created_at: timestamp(),
+        metadata: MetadataMap::new(),
+    }
+}
+
+fn manifest_diff_has_changes(diff: &SourceManifestDiff) -> bool {
+    diff.counts.added > 0
+        || diff.counts.modified > 0
+        || diff.counts.removed > 0
+        || diff.counts.skipped > 0
+        || diff.counts.failed > 0
 }
 
 fn source_document_for_item(

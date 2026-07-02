@@ -103,3 +103,98 @@ async fn embedding_failure_keeps_generation_uncommitted() {
     let source_id = super::local_source_id(&tokio::fs::canonicalize(&path).await.unwrap());
     assert_eq!(ledger.committed_generation(&source_id).await, None);
 }
+
+#[tokio::test]
+async fn unchanged_refresh_reuses_committed_generation_without_vector_work() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lib.rs");
+    tokio::fs::write(&path, "pub fn answer() -> i32 {\n    42\n}\n")
+        .await
+        .unwrap();
+    let ledger = FakeLedgerStore::new();
+    let embedder = FakeEmbeddingProvider::new("fake-embedding", 8);
+    let vectors = FakeVectorStore::new("fake-vector");
+
+    let first = index_local_source(input(path.clone()), &ledger, &embedder, &vectors)
+        .await
+        .unwrap();
+    let embedding_calls = embedder.calls().await.len();
+    let vector_calls = vectors.calls().await;
+
+    let second = index_local_source(input(path), &ledger, &embedder, &vectors)
+        .await
+        .unwrap();
+
+    assert_eq!(second.generation, first.generation);
+    assert_eq!(
+        ledger.committed_generation(&first.source_id).await,
+        Some(first.generation)
+    );
+    assert_eq!(second.documents_prepared, 0);
+    assert_eq!(second.chunks_prepared, 0);
+    assert_eq!(second.vector_points_written, 0);
+    assert_eq!(embedder.calls().await.len(), embedding_calls);
+    assert_eq!(vectors.calls().await, vector_calls);
+}
+
+#[tokio::test]
+async fn refresh_vectorizes_added_and_modified_docs_and_debts_removed_and_replaced_items() {
+    let dir = tempfile::tempdir().unwrap();
+    let old_path = dir.path().join("old.rs");
+    let keep_path = dir.path().join("keep.rs");
+    let new_path = dir.path().join("new.rs");
+    tokio::fs::write(&old_path, "pub fn old() -> i32 { 1 }\n")
+        .await
+        .unwrap();
+    tokio::fs::write(&keep_path, "pub fn keep() -> i32 { 1 }\n")
+        .await
+        .unwrap();
+    let ledger = FakeLedgerStore::new();
+    let embedder = FakeEmbeddingProvider::new("fake-embedding", 8);
+    let vectors = FakeVectorStore::new("fake-vector");
+
+    let first = index_local_source(
+        input(dir.path().to_path_buf()),
+        &ledger,
+        &embedder,
+        &vectors,
+    )
+    .await
+    .unwrap();
+    assert_eq!(first.documents_prepared, 2);
+
+    tokio::fs::remove_file(old_path).await.unwrap();
+    tokio::fs::write(&keep_path, "pub fn keep() -> i32 { 2 }\n")
+        .await
+        .unwrap();
+    tokio::fs::write(&new_path, "pub fn new() -> i32 { 3 }\n")
+        .await
+        .unwrap();
+
+    let second = index_local_source(
+        input(dir.path().to_path_buf()),
+        &ledger,
+        &embedder,
+        &vectors,
+    )
+    .await
+    .unwrap();
+
+    assert_ne!(second.generation, first.generation);
+    assert_eq!(second.documents_prepared, 2);
+    assert_eq!(embedder.calls().await.len(), 4);
+    assert_eq!(
+        vectors
+            .calls()
+            .await
+            .into_iter()
+            .filter(|call| *call == "upsert")
+            .count(),
+        4
+    );
+    assert_eq!(ledger.cleanup_debt_count().await, 2);
+    assert_eq!(
+        ledger.committed_generation(&second.source_id).await,
+        Some(second.generation)
+    );
+}
