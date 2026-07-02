@@ -1,21 +1,15 @@
 use anyhow::Context;
+use async_trait::async_trait;
 use axon_api::source::*;
 use axon_embedding::provider::EmbeddingProvider;
 use axon_jobs::boundary::JobStore;
 use axon_ledger::store::LedgerStore;
 use axon_vectors::store::VectorStore;
+use tokio::sync::Mutex;
 
 use super::local_source_discovery::{local_source_id, timestamp};
-use super::{LocalSourceIndexInput, LocalSourceIndexOutput, index_local_source};
-
-const LOCAL_SOURCE_PHASES: &[PipelinePhase] = &[
-    PipelinePhase::Discovering,
-    PipelinePhase::Diffing,
-    PipelinePhase::Preparing,
-    PipelinePhase::Embedding,
-    PipelinePhase::Vectorizing,
-    PipelinePhase::Publishing,
-];
+use super::local_source_progress::LocalSourceProgress;
+use super::{LocalSourceIndexInput, LocalSourceIndexOutput, index_local_source_with_progress};
 
 pub async fn index_local_source_with_job(
     mut input: LocalSourceIndexInput,
@@ -32,30 +26,25 @@ pub async fn index_local_source_with_job(
         .create(job_create_request(&input, source_id.clone()))
         .await?;
     input.job_id = descriptor.job_id;
-    for (index, phase) in LOCAL_SOURCE_PHASES.iter().copied().enumerate() {
-        record_phase(jobs, &input, &source_id, phase, index as u64 + 1).await?;
-    }
-    match index_local_source(input.clone(), ledger, embedding_provider, vector_store).await {
+    let progress = JobProgressSink::new(jobs, input.job_id, source_id.clone());
+    match index_local_source_with_progress(
+        input.clone(),
+        ledger,
+        embedding_provider,
+        vector_store,
+        Some(&progress),
+    )
+    .await
+    {
         Ok(output) => {
-            record_phase(
-                jobs,
-                &input,
-                &output.source_id,
-                PipelinePhase::Complete,
-                LOCAL_SOURCE_PHASES.len() as u64 + 1,
-            )
-            .await?;
-            jobs.update_status(JobStatusUpdate {
-                job_id: input.job_id,
-                status: LifecycleStatus::Completed,
-                phase: PipelinePhase::Complete,
-                stage_id: None,
-                counts: Some(counts_for_output(&output)),
-                current: None,
-                message: Some("local source indexing complete".to_string()),
-                error: None,
-            })
-            .await?;
+            progress
+                .record_phase(
+                    PipelinePhase::Complete,
+                    LifecycleStatus::Completed,
+                    Some(counts_for_output(&output)),
+                    None,
+                )
+                .await?;
             Ok(output)
         }
         Err(err) => {
@@ -68,17 +57,13 @@ pub async fn index_local_source_with_job(
                 provider_id: None,
                 cause: Some(err.to_string()),
             };
-            let _ = jobs
-                .update_status(JobStatusUpdate {
-                    job_id: input.job_id,
-                    status: LifecycleStatus::Failed,
-                    phase: PipelinePhase::Complete,
-                    stage_id: None,
-                    counts: None,
-                    current: None,
-                    message: Some("local source indexing failed".to_string()),
-                    error: Some(source_error),
-                })
+            let _ = progress
+                .record_phase(
+                    PipelinePhase::Complete,
+                    LifecycleStatus::Failed,
+                    None,
+                    Some(source_error),
+                )
                 .await;
             Err(err)
         }
@@ -106,73 +91,170 @@ fn job_create_request(input: &LocalSourceIndexInput, source_id: SourceId) -> Job
     }
 }
 
-async fn record_phase(
-    jobs: &dyn JobStore,
-    input: &LocalSourceIndexInput,
-    source_id: &SourceId,
+struct JobProgressSink<'a> {
+    jobs: &'a dyn JobStore,
+    job_id: JobId,
+    source_id: SourceId,
+    sequence: Mutex<u64>,
+}
+
+impl<'a> JobProgressSink<'a> {
+    fn new(jobs: &'a dyn JobStore, job_id: JobId, source_id: SourceId) -> Self {
+        Self {
+            jobs,
+            job_id,
+            source_id,
+            sequence: Mutex::new(0),
+        }
+    }
+}
+
+#[async_trait]
+impl LocalSourceProgress for JobProgressSink<'_> {
+    async fn record_phase(
+        &self,
+        phase: PipelinePhase,
+        status: LifecycleStatus,
+        counts: Option<StageCounts>,
+        error: Option<SourceError>,
+    ) -> anyhow::Result<()> {
+        let mut sequence = self.sequence.lock().await;
+        *sequence += 1;
+        let sequence = *sequence;
+        let event_error = error
+            .as_ref()
+            .map(|error| source_error_to_api_error(error, phase, self.job_id, &self.source_id));
+        self.jobs
+            .update_status(JobStatusUpdate {
+                job_id: self.job_id,
+                status,
+                phase,
+                stage_id: None,
+                counts: counts.clone(),
+                current: None,
+                message: Some(format!("local source {phase:?}").to_ascii_lowercase()),
+                error: error.clone(),
+            })
+            .await?;
+        self.jobs
+            .append_event(SourceProgressEvent {
+                event_id: format!("evt_local_{}_{}", self.job_id.0, sequence),
+                sequence,
+                job_id: self.job_id,
+                attempt: 1,
+                stage_id: None,
+                batch_id: None,
+                reservation_id: None,
+                checkpoint_id: None,
+                dedupe_key: None,
+                phase,
+                status,
+                severity: if status == LifecycleStatus::Failed {
+                    Severity::Failed
+                } else {
+                    Severity::Info
+                },
+                visibility: Visibility::Public,
+                message: format!("local source {phase:?}").to_ascii_lowercase(),
+                timestamp: timestamp(),
+                source_id: Some(self.source_id.clone()),
+                canonical_uri: None,
+                adapter: None,
+                scope: None,
+                generation: None,
+                counts: counts.clone().unwrap_or_else(empty_counts),
+                timing: None,
+                current: None,
+                throughput: None,
+                retry: None,
+                warning: None,
+                error: event_error,
+            })
+            .await?;
+        self.jobs
+            .heartbeat(JobHeartbeat {
+                job_id: self.job_id,
+                attempt: 1,
+                worker_id: Some("local-source".to_string()),
+                phase,
+                status,
+                stage_id: None,
+                heartbeat_at: timestamp(),
+                last_event_sequence: Some(sequence),
+                counts,
+                provider_reservations: Vec::new(),
+            })
+            .await?;
+        Ok(())
+    }
+}
+
+fn source_error_to_api_error(
+    error: &SourceError,
     phase: PipelinePhase,
-    sequence: u64,
-) -> anyhow::Result<()> {
-    let status = if phase == PipelinePhase::Complete {
-        LifecycleStatus::Completed
-    } else {
-        LifecycleStatus::Running
-    };
-    jobs.update_status(JobStatusUpdate {
-        job_id: input.job_id,
-        status,
-        phase,
-        stage_id: None,
-        counts: None,
-        current: None,
-        message: Some(format!("local source {phase:?}").to_ascii_lowercase()),
-        error: None,
-    })
-    .await?;
-    jobs.append_event(SourceProgressEvent {
-        event_id: format!("evt_local_{}_{}", input.job_id.0, sequence),
-        sequence,
-        job_id: input.job_id,
-        attempt: 1,
-        stage_id: None,
-        batch_id: None,
-        reservation_id: None,
-        checkpoint_id: None,
-        dedupe_key: None,
-        phase,
-        status,
-        severity: Severity::Info,
-        visibility: Visibility::Public,
-        message: format!("local source {phase:?}").to_ascii_lowercase(),
-        timestamp: timestamp(),
-        source_id: Some(source_id.clone()),
-        canonical_uri: None,
-        adapter: None,
-        scope: None,
-        generation: None,
-        counts: empty_counts(),
-        timing: None,
-        current: None,
-        throughput: None,
-        retry: None,
-        warning: None,
-        error: None,
-    })
-    .await?;
-    jobs.heartbeat(JobHeartbeat {
-        job_id: input.job_id,
-        attempt: 1,
-        worker_id: Some("local-source".to_string()),
-        phase,
-        status,
-        stage_id: None,
-        heartbeat_at: timestamp(),
-        last_event_sequence: Some(sequence),
-        counts: None,
-        provider_reservations: Vec::new(),
-    })
-    .await?;
-    Ok(())
+    job_id: JobId,
+    source_id: &SourceId,
+) -> ApiError {
+    let mut api_error = ApiError::new(
+        error.code.clone(),
+        error_stage_for_phase(phase),
+        error.message.clone(),
+    )
+    .with_job_id(job_id.0.to_string())
+    .with_source_id(source_id.0.clone())
+    .with_severity(error_severity(error.severity));
+    api_error.retryable = error.retryable;
+    if let Some(provider_id) = &error.provider_id {
+        api_error = api_error.with_provider_id(provider_id.0.clone());
+    }
+    if let Some(source_item_key) = &error.source_item_key {
+        api_error.source_item_key = Some(source_item_key.0.clone());
+    }
+    if let Some(cause) = &error.cause {
+        api_error = api_error.with_context("cause", cause.clone());
+    }
+    api_error
+}
+
+fn error_stage_for_phase(phase: PipelinePhase) -> ErrorStage {
+    match phase {
+        PipelinePhase::Resolving => ErrorStage::Resolving,
+        PipelinePhase::Routing => ErrorStage::Routing,
+        PipelinePhase::Authorizing => ErrorStage::Authorizing,
+        PipelinePhase::Planning => ErrorStage::Planning,
+        PipelinePhase::Leasing => ErrorStage::Leasing,
+        PipelinePhase::Discovering => ErrorStage::Discovering,
+        PipelinePhase::Diffing => ErrorStage::Diffing,
+        PipelinePhase::Fetching => ErrorStage::Fetching,
+        PipelinePhase::Rendering => ErrorStage::Rendering,
+        PipelinePhase::Normalizing => ErrorStage::Normalizing,
+        PipelinePhase::Parsing => ErrorStage::ParsingContent,
+        PipelinePhase::Graphing => ErrorStage::Graphing,
+        PipelinePhase::Preparing | PipelinePhase::Batching => ErrorStage::Preparing,
+        PipelinePhase::Embedding => ErrorStage::Embedding,
+        PipelinePhase::Vectorizing | PipelinePhase::Upserting => ErrorStage::Upserting,
+        PipelinePhase::Retrieving => ErrorStage::Retrieving,
+        PipelinePhase::Synthesizing => ErrorStage::Synthesizing,
+        PipelinePhase::Publishing => ErrorStage::Publishing,
+        PipelinePhase::Cleaning => ErrorStage::Cleaning,
+        PipelinePhase::Queued
+        | PipelinePhase::Requested
+        | PipelinePhase::Enriching
+        | PipelinePhase::Evaluating
+        | PipelinePhase::Complete
+        | PipelinePhase::Canceled => ErrorStage::Observing,
+    }
+}
+
+fn error_severity(severity: Severity) -> ErrorSeverity {
+    match severity {
+        Severity::Debug => ErrorSeverity::Info,
+        Severity::Info => ErrorSeverity::Info,
+        Severity::Warning => ErrorSeverity::Warning,
+        Severity::Degraded => ErrorSeverity::Degraded,
+        Severity::Failed => ErrorSeverity::Failed,
+        Severity::Fatal => ErrorSeverity::Fatal,
+    }
 }
 
 fn empty_counts() -> StageCounts {

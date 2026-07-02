@@ -49,7 +49,18 @@ async fn local_file_refresh_writes_vectors_then_commits_source_generation() {
     assert!(output.documents_prepared >= 1);
     assert!(output.chunks_prepared >= 1);
     assert!(output.vector_points_written >= 1);
-    assert_eq!(vectors.calls().await, vec!["ensure_collection", "upsert"]);
+    assert_eq!(
+        vectors.calls().await,
+        vec!["ensure_collection", "upsert", "mark_generation_committed"]
+    );
+    assert!(
+        vectors
+            .points("axon-test")
+            .await
+            .iter()
+            .all(|point| point.payload["committed_generation"].as_str()
+                == Some(output.generation.0.as_str()))
+    );
 }
 
 #[tokio::test]
@@ -105,6 +116,7 @@ async fn local_source_job_emits_progress_events_for_pipeline_phases() {
             PipelinePhase::Embedding,
             PipelinePhase::Vectorizing,
             PipelinePhase::Publishing,
+            PipelinePhase::Cleaning,
             PipelinePhase::Complete,
         ]
     );

@@ -16,6 +16,7 @@ mod qdrant;
 pub mod query;
 mod sparse;
 pub mod store;
+mod store_helpers;
 pub mod testing;
 mod validation;
 

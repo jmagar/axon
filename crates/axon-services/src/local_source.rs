@@ -1,5 +1,6 @@
 mod local_source_discovery;
 mod local_source_job;
+mod local_source_progress;
 
 use std::path::PathBuf;
 
@@ -19,6 +20,9 @@ use self::local_source_discovery::{
     source_token, stable_token, timestamp,
 };
 pub use self::local_source_job::index_local_source_with_job;
+use self::local_source_progress::{
+    LocalSourceProgress, ensure_providers_ready, record_progress, record_progress_error,
+};
 
 const LOCAL_ADAPTER_VERSION: &str = "target-local-pr11";
 const LOCAL_LEASE_TTL_SECONDS: u64 = 30 * 60;
@@ -57,6 +61,16 @@ pub async fn index_local_source(
     embedding_provider: &dyn EmbeddingProvider,
     vector_store: &dyn VectorStore,
 ) -> anyhow::Result<LocalSourceIndexOutput> {
+    index_local_source_with_progress(input, ledger, embedding_provider, vector_store, None).await
+}
+
+async fn index_local_source_with_progress(
+    input: LocalSourceIndexInput,
+    ledger: &dyn LedgerStore,
+    embedding_provider: &dyn EmbeddingProvider,
+    vector_store: &dyn VectorStore,
+    progress: Option<&dyn LocalSourceProgress>,
+) -> anyhow::Result<LocalSourceIndexOutput> {
     let root = tokio::fs::canonicalize(&input.root)
         .await
         .with_context(|| format!("invalid local source root {}", input.root.display()))?;
@@ -94,6 +108,7 @@ pub async fn index_local_source(
         ledger,
         embedding_provider,
         vector_store,
+        progress,
         &root,
         root_is_file,
         source_id.clone(),
@@ -122,6 +137,7 @@ async fn index_local_source_with_lease(
     ledger: &dyn LedgerStore,
     embedding_provider: &dyn EmbeddingProvider,
     vector_store: &dyn VectorStore,
+    progress: Option<&dyn LocalSourceProgress>,
     root: &std::path::Path,
     root_is_file: bool,
     source_id: SourceId,
@@ -137,6 +153,7 @@ async fn index_local_source_with_lease(
         input.selection_policy,
     )
     .await?;
+    record_progress(progress, PipelinePhase::Discovering, None).await?;
     let diff_manifest = source_manifest(
         source_id.clone(),
         SourceGenerationId::new("diff_probe"),
@@ -145,6 +162,7 @@ async fn index_local_source_with_lease(
         &items,
     );
     let diff = ledger.diff_manifest(diff_manifest).await?;
+    record_progress(progress, PipelinePhase::Diffing, None).await?;
     if !manifest_diff_has_changes(&diff)
         && let Some(committed_generation) = diff.previous_generation
     {
@@ -158,6 +176,7 @@ async fn index_local_source_with_lease(
         });
     }
 
+    ensure_providers_ready(embedding_provider, vector_store).await?;
     let generation = ledger.create_generation(source_id.clone()).await?;
     let manifest = source_manifest(
         source_id.clone(),
@@ -169,6 +188,7 @@ async fn index_local_source_with_lease(
     ledger.put_manifest(manifest).await?;
 
     let documents = prepare_changed_documents(&items, &diff, &generation.generation, scope)?;
+    record_progress(progress, PipelinePhase::Preparing, None).await?;
     let collection = collection_spec(&input.collection, input.embedding_dimensions);
     vector_store.ensure_collection(collection.clone()).await?;
     let vectorized = vectorize_documents(
@@ -176,12 +196,26 @@ async fn index_local_source_with_lease(
         ledger,
         embedding_provider,
         vector_store,
-        collection,
+        progress,
+        collection.clone(),
         documents,
     )
     .await?;
     let published =
         publish_generation(ledger, generation, &diff, items.len() as u64, &vectorized).await?;
+    if let Err(err) = vector_store
+        .mark_generation_committed(
+            collection.collection.clone(),
+            source_id.clone(),
+            published.generation.clone(),
+        )
+        .await
+    {
+        record_progress_error(progress, PipelinePhase::Publishing, &err).await?;
+        return Err(anyhow::Error::new(err));
+    }
+    record_progress(progress, PipelinePhase::Publishing, None).await?;
+    record_progress(progress, PipelinePhase::Cleaning, None).await?;
 
     Ok(LocalSourceIndexOutput {
         job_id: input.job_id,
@@ -243,13 +277,21 @@ async fn vectorize_documents(
     ledger: &dyn LedgerStore,
     embedding_provider: &dyn EmbeddingProvider,
     vector_store: &dyn VectorStore,
+    progress: Option<&dyn LocalSourceProgress>,
     collection: CollectionSpec,
     documents: Vec<PreparedDocument>,
 ) -> anyhow::Result<VectorizeStats> {
     let mut stats = VectorizeStats::default();
     for document in documents {
         let batch = embedding_batch_for_document(input, &document)?;
-        let embeddings = embedding_provider.embed(batch).await?;
+        let embeddings = match embedding_provider.embed(batch).await {
+            Ok(embeddings) => embeddings,
+            Err(err) => {
+                record_progress_error(progress, PipelinePhase::Embedding, &err).await?;
+                return Err(anyhow::Error::new(err));
+            }
+        };
+        record_progress(progress, PipelinePhase::Embedding, None).await?;
         let point_batch = VectorPointBatchBuilder::new(
             collection.clone(),
             document.clone(),
@@ -259,7 +301,14 @@ async fn vectorize_documents(
             },
         )
         .build()?;
-        let write = vector_store.upsert(point_batch).await?;
+        let write = match vector_store.upsert(point_batch).await {
+            Ok(write) => write,
+            Err(err) => {
+                record_progress_error(progress, PipelinePhase::Vectorizing, &err).await?;
+                return Err(anyhow::Error::new(err));
+            }
+        };
+        record_progress(progress, PipelinePhase::Vectorizing, None).await?;
         stats.points_written += write.points_written;
         stats.chunks_prepared += document.chunks.len() as u64;
         stats.documents_prepared += 1;

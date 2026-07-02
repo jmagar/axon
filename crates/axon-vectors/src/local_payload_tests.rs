@@ -1,6 +1,7 @@
 use axon_api::source::*;
 use serde_json::json;
 
+use crate::payload::{VectorPayload, VectorPayloadValidationError};
 use crate::point::VectorPointBatchBuilder;
 use crate::testing::{
     test_collection_spec, test_embedding_result_for, test_prepared_document,
@@ -18,6 +19,20 @@ fn builder(
         embeddings,
         test_vector_build_context(),
     )
+}
+
+fn committed_builder(
+    collection: CollectionSpec,
+    document: PreparedDocument,
+    embeddings: EmbeddingResult,
+) -> VectorPointBatchBuilder {
+    VectorPointBatchBuilder::new(
+        collection,
+        document,
+        embeddings,
+        test_vector_build_context(),
+    )
+    .committed_generation()
 }
 
 fn local_document() -> PreparedDocument {
@@ -84,6 +99,50 @@ fn local_payload_includes_target_source_lineage_fields() {
     assert_eq!(payload["document_id"], "doc_local_readme");
     assert_eq!(payload["chunk_id"], "chunk-web-1");
     assert_eq!(payload["job_id"], uuid::Uuid::from_u128(43).to_string());
+}
+
+#[test]
+fn local_payload_can_mark_generation_committed_when_publish_safe() {
+    let document = local_document();
+    let generation = document.generation.clone();
+    let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
+
+    let batch = committed_builder(test_collection_spec(3), document, embeddings)
+        .build()
+        .unwrap();
+
+    assert_eq!(
+        batch.points[0].payload["committed_generation"],
+        generation.0
+    );
+}
+
+#[test]
+fn local_payload_requires_shared_local_lineage_fields() {
+    let document = local_document();
+    let embeddings = test_embedding_result_for(&document, "text-embedding-test", 3);
+    let batch = builder(test_collection_spec(3), document, embeddings)
+        .build()
+        .unwrap();
+    let valid_payload = batch.points[0].payload.clone();
+
+    for field in [
+        "source_kind",
+        "source_adapter",
+        "source_scope",
+        "source_item_key",
+        "item_canonical_uri",
+    ] {
+        let mut payload = valid_payload.clone();
+        payload.remove(field);
+
+        let err = VectorPayload::try_from_metadata(payload).unwrap_err();
+
+        assert!(matches!(
+            err,
+            VectorPayloadValidationError::MissingRequiredField { field: missing } if missing == field
+        ));
+    }
 }
 
 #[test]
