@@ -215,6 +215,26 @@ async fn local_repo_scope_respects_nested_gitignore_and_nested_globs() {
 }
 
 #[tokio::test]
+async fn local_repo_scope_respects_gitignore_by_default() {
+    let adapter = LocalSourceAdapter::new();
+    let root = temp_source_dir();
+    fs::create_dir_all(root.join(".git")).unwrap();
+    fs::write(root.join(".gitignore"), "ignored.rs\n").unwrap();
+    fs::write(root.join("ignored.rs"), "pub fn ignored() {}").unwrap();
+    fs::write(root.join("visible.rs"), "pub fn visible() {}").unwrap();
+
+    let plan = source_plan(root, SourceScope::Repo);
+    let manifest = adapter.discover(&plan).await.unwrap();
+    let keys = manifest
+        .items
+        .iter()
+        .map(|item| item.source_item_key.0.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(keys, vec!["visible.rs"]);
+}
+
+#[tokio::test]
 async fn local_binary_policy_metadata_keeps_manifest_but_skips_document_body() {
     let adapter = LocalSourceAdapter::new();
     let root = temp_source_dir();

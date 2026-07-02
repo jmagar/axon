@@ -94,7 +94,7 @@ pub(crate) fn validate_options(options: &AdapterOptions) -> Result<LocalOptions>
     Ok(LocalOptions {
         follow_symlinks,
         max_file_bytes,
-        respect_gitignore: optional_bool(options, "respect_gitignore")?.unwrap_or(false),
+        respect_gitignore: optional_bool(options, "respect_gitignore")?.unwrap_or(true),
         binary_policy,
         include_set,
         exclude_set,
@@ -291,7 +291,7 @@ fn is_config_ext(ext: &str) -> bool {
 fn is_known_config(name: &str) -> bool {
     matches!(
         name,
-        "Dockerfile" | ".env.example" | ".gitignore" | "Makefile" | "Justfile"
+        "Dockerfile" | ".env.example" | "Makefile" | "Justfile"
     )
 }
 
