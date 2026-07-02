@@ -2,6 +2,7 @@ use axon_api::source::*;
 use axon_document::{DocumentPreparer, PrepareSourceDocumentRequest};
 use axon_embedding::batch::EmbeddingBatchBuilder;
 use axon_embedding::provider::EmbeddingProvider;
+use axon_embedding::reservation::{ProviderReservation, ProviderReservationContext};
 use axon_ledger::store::LedgerStore;
 use axon_vectors::point::{VectorPointBatchBuildContext, VectorPointBatchBuilder};
 use axon_vectors::store::VectorStore;
@@ -9,7 +10,9 @@ use uuid::Uuid;
 
 use super::LocalSourceIndexInput;
 use super::local_source_adapter::{LocalAdapterRun, normalize_changed_documents, timestamp};
-use super::local_source_progress::{LocalSourceProgress, record_progress, record_progress_error};
+use super::local_source_progress::{
+    LocalSourceProgress, record_progress_error, record_progress_with_reservations,
+};
 
 const LOCAL_CHANGED_DOCUMENT_BATCH_SIZE: usize = 64;
 
@@ -166,6 +169,14 @@ async fn vectorize_documents(
         return Ok(result);
     }
     let batch = embedding_batch_for_documents(input, &documents)?;
+    let embedding_reservation = reserve_embedding(input).await?;
+    record_progress_with_reservations(
+        progress,
+        PipelinePhase::Embedding,
+        None,
+        reservation_snapshots([embedding_reservation.as_ref()]),
+    )
+    .await?;
     let embeddings = match embedding_provider.embed(batch).await {
         Ok(embeddings) => embeddings,
         Err(err) => {
@@ -173,8 +184,16 @@ async fn vectorize_documents(
             return Err(anyhow::Error::new(err));
         }
     };
-    record_progress(progress, PipelinePhase::Embedding, None).await?;
+    drop(embedding_reservation);
     let point_batch = vector_point_batch_for_documents(collection, &documents, &embeddings)?;
+    let vector_reservation = reserve_vector(input).await?;
+    record_progress_with_reservations(
+        progress,
+        PipelinePhase::Vectorizing,
+        None,
+        reservation_snapshots([vector_reservation.as_ref()]),
+    )
+    .await?;
     let write = match vector_store.upsert(point_batch).await {
         Ok(write) => write,
         Err(err) => {
@@ -182,7 +201,7 @@ async fn vectorize_documents(
             return Err(anyhow::Error::new(err));
         }
     };
-    record_progress(progress, PipelinePhase::Vectorizing, None).await?;
+    drop(vector_reservation);
     result.stats.points_written += write.points_written;
     for document in documents {
         result.stats.chunks_prepared += document.chunks.len() as u64;
@@ -196,6 +215,56 @@ async fn vectorize_documents(
         result.document_statuses.push(status);
     }
     Ok(result)
+}
+
+async fn reserve_embedding(
+    input: &LocalSourceIndexInput,
+) -> anyhow::Result<Option<ProviderReservation>> {
+    let Some(manager) = &input.embedding_reservations else {
+        return Ok(None);
+    };
+    Ok(Some(
+        manager
+            .reserve_with_context(ProviderReservationContext {
+                job_id: input.job_id,
+                stage_id: None,
+                provider_id: Some(input.embedding_provider_id.clone()),
+                priority: JobPriority::Background,
+                units: 1,
+                ttl_seconds: Some(300),
+            })
+            .await?,
+    ))
+}
+
+async fn reserve_vector(
+    input: &LocalSourceIndexInput,
+) -> anyhow::Result<Option<ProviderReservation>> {
+    let Some(manager) = &input.vector_reservations else {
+        return Ok(None);
+    };
+    Ok(Some(
+        manager
+            .reserve_with_context(ProviderReservationContext {
+                job_id: input.job_id,
+                stage_id: None,
+                provider_id: Some(input.vector_provider_id.clone()),
+                priority: JobPriority::Background,
+                units: 1,
+                ttl_seconds: Some(300),
+            })
+            .await?,
+    ))
+}
+
+fn reservation_snapshots<'a>(
+    reservations: impl IntoIterator<Item = Option<&'a ProviderReservation>>,
+) -> Vec<ProviderReservationSnapshot> {
+    reservations
+        .into_iter()
+        .flatten()
+        .map(ProviderReservation::snapshot)
+        .collect()
 }
 
 fn embedding_batch_for_documents(

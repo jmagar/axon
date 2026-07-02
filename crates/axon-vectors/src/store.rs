@@ -21,6 +21,9 @@ use crate::store_helpers::{
 };
 use crate::validation::validate_upsert_batch;
 
+#[path = "store/fake_state.rs"]
+mod fake_state;
+
 pub type Result<T> = std::result::Result<T, ApiError>;
 
 #[async_trait]
@@ -492,21 +495,5 @@ impl FakeVectorStore {
     pub async fn reset(&self) -> Result<()> {
         *self.state.lock().await = FakeVectorState::default();
         Ok(())
-    }
-}
-
-impl FakeVectorState {
-    fn collection_spec(
-        &self,
-        collection: &str,
-        stage: axon_error::ErrorStage,
-    ) -> Result<&CollectionSpec> {
-        self.collections.get(collection).ok_or_else(|| {
-            ApiError::new(
-                "vector.collection_not_found",
-                stage,
-                format!("collection {collection} has not been ensured"),
-            )
-        })
     }
 }

@@ -152,9 +152,12 @@ async fn refresh_target_local_code_search_index_with_progress(
         owner_id: format!("code-search:{}", identity.project_key),
         job_id: JobId::new(uuid::Uuid::new_v4()),
         embedding_provider_id: target.embedding_provider_id.clone(),
+        vector_provider_id: target.vector_provider_id.clone(),
         embedding_model: target.embedding_model.clone(),
         embedding_dimensions: target.embedding_dimensions,
         selection_policy: LocalSourceSelectionPolicy::CodeSearch,
+        embedding_reservations: Some(target.embedding_reservations.clone()),
+        vector_reservations: Some(target.vector_reservations.clone()),
     };
     match index_local_source_with_job(
         input,

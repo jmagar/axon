@@ -11,6 +11,7 @@ pub(super) trait LocalSourceProgress: Send + Sync {
         status: LifecycleStatus,
         counts: Option<StageCounts>,
         error: Option<SourceError>,
+        provider_reservations: Vec<ProviderReservationSnapshot>,
     ) -> anyhow::Result<()>;
 }
 
@@ -43,7 +44,27 @@ pub(super) async fn record_progress(
 ) -> anyhow::Result<()> {
     if let Some(progress) = progress {
         progress
-            .record_phase(phase, LifecycleStatus::Running, counts, None)
+            .record_phase(phase, LifecycleStatus::Running, counts, None, Vec::new())
+            .await?;
+    }
+    Ok(())
+}
+
+pub(super) async fn record_progress_with_reservations(
+    progress: Option<&dyn LocalSourceProgress>,
+    phase: PipelinePhase,
+    counts: Option<StageCounts>,
+    provider_reservations: Vec<ProviderReservationSnapshot>,
+) -> anyhow::Result<()> {
+    if let Some(progress) = progress {
+        progress
+            .record_phase(
+                phase,
+                LifecycleStatus::Running,
+                counts,
+                None,
+                provider_reservations,
+            )
             .await?;
     }
     Ok(())
@@ -61,6 +82,7 @@ pub(super) async fn record_progress_error(
                 LifecycleStatus::Failed,
                 None,
                 Some(source_error_from_api_error(error)),
+                Vec::new(),
             )
             .await?;
     }

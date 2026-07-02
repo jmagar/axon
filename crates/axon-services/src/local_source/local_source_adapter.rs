@@ -226,8 +226,29 @@ fn source_plan(
             effective: SourceLimits::default(),
         },
         config_snapshot_id: ConfigSnapshotId::new("cfg_local_source"),
-        provider_reservations: Vec::new(),
+        provider_reservations: provider_reservations(input),
     }
+}
+
+fn provider_reservations(input: &LocalSourceIndexInput) -> Vec<ProviderReservationRequest> {
+    let mut reservations = Vec::new();
+    if input.embedding_reservations.is_some() {
+        reservations.push(ProviderReservationRequest {
+            provider_kind: ProviderKind::Embedding,
+            priority: JobPriority::Background,
+            units: 1,
+            reason: "local source embedding".to_string(),
+        });
+    }
+    if input.vector_reservations.is_some() {
+        reservations.push(ProviderReservationRequest {
+            provider_kind: ProviderKind::Vector,
+            priority: JobPriority::Background,
+            units: 1,
+            reason: "local source vector write".to_string(),
+        });
+    }
+    reservations
 }
 
 fn adapter_options(selection_policy: LocalSourceSelectionPolicy) -> MetadataMap {

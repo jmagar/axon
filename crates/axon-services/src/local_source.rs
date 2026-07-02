@@ -7,8 +7,10 @@ use std::path::PathBuf;
 
 use axon_api::source::*;
 use axon_embedding::provider::EmbeddingProvider;
+use axon_embedding::reservation::ProviderReservationManager;
 use axon_ledger::store::LedgerStore;
 use axon_vectors::store::VectorStore;
+use std::sync::Arc;
 
 #[cfg(test)]
 pub(super) use self::local_source_adapter::local_source_id;
@@ -35,9 +37,12 @@ pub struct LocalSourceIndexInput {
     pub owner_id: String,
     pub job_id: JobId,
     pub embedding_provider_id: ProviderId,
+    pub vector_provider_id: ProviderId,
     pub embedding_model: String,
     pub embedding_dimensions: u32,
     pub selection_policy: LocalSourceSelectionPolicy,
+    pub embedding_reservations: Option<Arc<ProviderReservationManager>>,
+    pub vector_reservations: Option<Arc<ProviderReservationManager>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

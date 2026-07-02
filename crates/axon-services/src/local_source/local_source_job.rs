@@ -49,6 +49,7 @@ pub async fn index_local_source_with_job(
                     LifecycleStatus::Completed,
                     Some(counts_for_output(&output)),
                     None,
+                    Vec::new(),
                 )
                 .await?;
             Ok(output)
@@ -61,6 +62,7 @@ pub async fn index_local_source_with_job(
                     LifecycleStatus::Failed,
                     None,
                     Some(source_error),
+                    Vec::new(),
                 )
                 .await;
             Err(err)
@@ -156,6 +158,7 @@ impl LocalSourceProgress for JobProgressSink<'_> {
         status: LifecycleStatus,
         counts: Option<StageCounts>,
         error: Option<SourceError>,
+        provider_reservations: Vec<ProviderReservationSnapshot>,
     ) -> anyhow::Result<()> {
         let mut sequence = self.sequence.lock().await;
         *sequence += 1;
@@ -175,6 +178,9 @@ impl LocalSourceProgress for JobProgressSink<'_> {
                 error: error.clone(),
             })
             .await?;
+        let reservation_id = provider_reservations
+            .first()
+            .map(|reservation| reservation.reservation_id.clone());
         self.jobs
             .append_event(SourceProgressEvent {
                 event_id: format!("evt_local_{}_{}", self.job_id.0, sequence),
@@ -183,7 +189,7 @@ impl LocalSourceProgress for JobProgressSink<'_> {
                 attempt: 1,
                 stage_id: None,
                 batch_id: None,
-                reservation_id: None,
+                reservation_id,
                 checkpoint_id: None,
                 dedupe_key: None,
                 phase,
@@ -221,7 +227,7 @@ impl LocalSourceProgress for JobProgressSink<'_> {
                 heartbeat_at: timestamp(),
                 last_event_sequence: Some(sequence),
                 counts,
-                provider_reservations: Vec::new(),
+                provider_reservations,
             })
             .await?;
         Ok(())

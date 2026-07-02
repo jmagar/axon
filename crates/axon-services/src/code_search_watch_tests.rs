@@ -147,6 +147,27 @@ async fn watch_refresh_uses_target_local_source_runtime_when_available() {
             .iter()
             .any(|event| event.phase == PipelinePhase::Complete)
     );
+    assert!(
+        source_events
+            .events
+            .iter()
+            .filter(|event| {
+                matches!(
+                    event.phase,
+                    PipelinePhase::Embedding | PipelinePhase::Vectorizing
+                )
+            })
+            .all(|event| progress_reservation_id(event).is_some()),
+        "watch-triggered target refresh should expose provider reservation evidence"
+    );
+}
+
+fn progress_reservation_id(event: &JobEvent) -> Option<&str> {
+    event
+        .details
+        .get("source_progress_event")?
+        .get("reservation_id")?
+        .as_str()
 }
 
 #[tokio::test]

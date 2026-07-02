@@ -5,6 +5,7 @@ use crate::runtime::{ServiceJobRuntime, resolve_runtime_with_workers};
 use axon_api::source::ProviderId;
 use axon_core::config::Config;
 use axon_embedding::provider::EmbeddingProvider;
+use axon_embedding::reservation::{ProviderReservationConfig, ProviderReservationManager};
 use axon_jobs::backend::JobKind;
 use axon_jobs::boundary::JobStore;
 use axon_ledger::store::LedgerStore;
@@ -24,8 +25,11 @@ pub struct TargetLocalSourceRuntime {
     pub embedding_provider: Arc<dyn EmbeddingProvider>,
     pub vector_store: Arc<dyn VectorStore>,
     pub embedding_provider_id: ProviderId,
+    pub vector_provider_id: ProviderId,
     pub embedding_model: String,
     pub embedding_dimensions: u32,
+    pub embedding_reservations: Arc<ProviderReservationManager>,
+    pub vector_reservations: Arc<ProviderReservationManager>,
 }
 
 impl TargetLocalSourceRuntime {
@@ -43,6 +47,27 @@ impl TargetLocalSourceRuntime {
             ledger,
             embedding_provider,
             vector_store,
+            embedding_reservations: Arc::new(ProviderReservationManager::new(
+                ProviderReservationConfig {
+                    provider_id: embedding_provider_id.clone(),
+                    provider_kind: axon_api::source::ProviderKind::Embedding,
+                    capacity: 2,
+                    interactive_reserve: 1,
+                    cooldown_after_failures: 1,
+                    cooldown_secs: 30,
+                },
+            )),
+            vector_reservations: Arc::new(ProviderReservationManager::new(
+                ProviderReservationConfig {
+                    provider_id: ProviderId::new("target-local-vector"),
+                    provider_kind: axon_api::source::ProviderKind::Vector,
+                    capacity: 2,
+                    interactive_reserve: 1,
+                    cooldown_after_failures: 1,
+                    cooldown_secs: 30,
+                },
+            )),
+            vector_provider_id: ProviderId::new("target-local-vector"),
             embedding_provider_id,
             embedding_model: embedding_model.into(),
             embedding_dimensions,

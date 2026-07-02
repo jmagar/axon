@@ -1,8 +1,10 @@
 use axon_api::source::*;
 use axon_embedding::fake::{FakeEmbeddingMode, FakeEmbeddingProvider};
+use axon_embedding::reservation::{ProviderReservationConfig, ProviderReservationManager};
 use axon_jobs::boundary::{FakeJobWatchStore, JobStore};
 use axon_ledger::store::{FakeLedgerStore, LedgerStore};
 use axon_vectors::store::{FakeVectorMode, FakeVectorStore};
+use std::sync::Arc;
 
 use super::{
     LocalSourceIndexInput, LocalSourceSelectionPolicy, index_local_source,
@@ -20,10 +22,38 @@ fn input(root: std::path::PathBuf) -> LocalSourceIndexInput {
         owner_id: "test-owner".to_string(),
         job_id: job_id(),
         embedding_provider_id: ProviderId::new("fake-embedding"),
+        vector_provider_id: ProviderId::new("fake-vector"),
         embedding_model: "fake-embedding".to_string(),
         embedding_dimensions: 8,
         selection_policy: LocalSourceSelectionPolicy::Permissive,
+        embedding_reservations: None,
+        vector_reservations: None,
     }
+}
+
+fn input_with_reservations(root: std::path::PathBuf) -> LocalSourceIndexInput {
+    let mut input = input(root);
+    input.embedding_reservations = Some(Arc::new(ProviderReservationManager::new(
+        ProviderReservationConfig {
+            provider_id: input.embedding_provider_id.clone(),
+            provider_kind: ProviderKind::Embedding,
+            capacity: 2,
+            interactive_reserve: 1,
+            cooldown_after_failures: 1,
+            cooldown_secs: 30,
+        },
+    )));
+    input.vector_reservations = Some(Arc::new(ProviderReservationManager::new(
+        ProviderReservationConfig {
+            provider_id: input.vector_provider_id.clone(),
+            provider_kind: ProviderKind::Vector,
+            capacity: 2,
+            interactive_reserve: 1,
+            cooldown_after_failures: 1,
+            cooldown_secs: 30,
+        },
+    )));
+    input
 }
 
 #[tokio::test]
@@ -150,6 +180,70 @@ async fn local_source_job_emits_progress_events_for_pipeline_phases() {
             .iter()
             .all(|event| event.job_id == output.job_id)
     );
+}
+
+#[tokio::test]
+async fn local_source_job_records_provider_reservation_events() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lib.rs");
+    tokio::fs::write(&path, "pub fn answer() -> i32 {\n    42\n}\n")
+        .await
+        .unwrap();
+    let jobs = FakeJobWatchStore::new();
+    let ledger = FakeLedgerStore::new();
+    let embedder = FakeEmbeddingProvider::new("fake-embedding", 8);
+    let vectors = FakeVectorStore::new("fake-vector");
+
+    let output = index_local_source_with_job(
+        input_with_reservations(path),
+        &jobs,
+        &ledger,
+        &embedder,
+        &vectors,
+    )
+    .await
+    .unwrap();
+
+    let events = JobStore::events(
+        &jobs,
+        JobEventListRequest {
+            job_id: output.job_id,
+            phase: None,
+            severity: None,
+            visibility: Some(Visibility::Public),
+            since_sequence: None,
+            limit: Some(20),
+            cursor: None,
+        },
+    )
+    .await
+    .unwrap();
+    let embedding_event = events
+        .events
+        .iter()
+        .find(|event| event.phase == PipelinePhase::Embedding)
+        .expect("embedding event");
+    assert!(
+        progress_reservation_id(embedding_event).is_some(),
+        "embedding phase should expose reservation evidence"
+    );
+    let vectorizing_event = events
+        .events
+        .iter()
+        .find(|event| event.phase == PipelinePhase::Vectorizing)
+        .expect("vectorizing event");
+    assert!(
+        progress_reservation_id(vectorizing_event).is_some(),
+        "vectorizing phase should expose reservation evidence"
+    );
+}
+
+fn progress_reservation_id(event: &JobEvent) -> Option<&str> {
+    event
+        .details
+        .get("source_progress_event")?
+        .get("reservation_id")?
+        .as_str()
 }
 
 #[tokio::test]
