@@ -853,6 +853,13 @@ dependencies = [
 [[package]]
 name = "axon-prune"
 version = "6.2.1"
+dependencies = [
+ "async-trait",
+ "axon-api",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
 
 [[package]]
 name = "axon-retrieval"

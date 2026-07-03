@@ -16,6 +16,7 @@ pub mod lifecycle;
 pub mod listing;
 pub mod llm;
 pub mod provider_io;
+pub mod prune;
 pub mod stage;
 pub mod state;
 pub mod status;
