@@ -57,6 +57,57 @@ pub trait VectorStore: Send + Sync {
     async fn capabilities(&self) -> Result<ProviderCapability>;
 }
 
+/// Blanket forwarding impl so a boxed trait object (`Arc<dyn VectorStore>`) can
+/// itself satisfy a `S: VectorStore` bound. This lets generic consumers such as
+/// the retrieval engine be constructed from a runtime-held trait object without
+/// monomorphizing over the concrete store type.
+#[async_trait]
+impl VectorStore for Arc<dyn VectorStore> {
+    async fn ensure_collection(&self, spec: CollectionSpec) -> Result<()> {
+        (**self).ensure_collection(spec).await
+    }
+    async fn upsert(&self, batch: VectorPointBatch) -> Result<VectorStoreWriteResult> {
+        (**self).upsert(batch).await
+    }
+    async fn mark_generation_committed(
+        &self,
+        collection: String,
+        source_id: SourceId,
+        generation: SourceGenerationId,
+    ) -> Result<VectorStoreWriteResult> {
+        (**self)
+            .mark_generation_committed(collection, source_id, generation)
+            .await
+    }
+    async fn mark_unchanged_items_committed(
+        &self,
+        collection: String,
+        source_id: SourceId,
+        previous_generation: SourceGenerationId,
+        committed_generation: SourceGenerationId,
+        source_item_keys: Vec<SourceItemKey>,
+    ) -> Result<VectorStoreWriteResult> {
+        (**self)
+            .mark_unchanged_items_committed(
+                collection,
+                source_id,
+                previous_generation,
+                committed_generation,
+                source_item_keys,
+            )
+            .await
+    }
+    async fn delete(&self, selector: VectorDeleteSelector) -> Result<VectorStoreDeleteResult> {
+        (**self).delete(selector).await
+    }
+    async fn search(&self, request: VectorSearchRequest) -> Result<VectorSearchResult> {
+        (**self).search(request).await
+    }
+    async fn capabilities(&self) -> Result<ProviderCapability> {
+        (**self).capabilities().await
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct FakeVectorStore {
     provider_id: ProviderId,
