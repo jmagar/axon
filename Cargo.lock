@@ -823,8 +823,10 @@ dependencies = [
  "async-trait",
  "axon-api",
  "axon-error",
+ "rusqlite",
  "serde_json",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
