@@ -17,6 +17,7 @@ pub mod listing;
 pub mod llm;
 pub mod memory;
 pub mod provider_io;
+pub mod prune;
 pub mod stage;
 pub mod state;
 pub mod status;
