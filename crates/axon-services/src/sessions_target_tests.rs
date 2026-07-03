@@ -19,7 +19,10 @@ fn gemini_json_file_parses() {
     let sel = parse_session_selector("session:gemini:/tmp/exports/sess-42.json").expect("parses");
     assert_eq!(sel.provider, "gemini");
     assert_eq!(sel.session_id, "sess-42");
-    assert_eq!(sel.sessions_root, PathBuf::from("/tmp/exports/sess-42.json"));
+    assert_eq!(
+        sel.sessions_root,
+        PathBuf::from("/tmp/exports/sess-42.json")
+    );
 }
 
 #[test]
