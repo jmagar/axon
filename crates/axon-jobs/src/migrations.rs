@@ -253,11 +253,7 @@ async fn run_migration(
 }
 
 /// True when `(namespace, version)` is already recorded as applied.
-async fn is_applied(
-    pool: &SqlitePool,
-    namespace: &str,
-    version: i64,
-) -> Result<bool, sqlx::Error> {
+async fn is_applied(pool: &SqlitePool, namespace: &str, version: i64) -> Result<bool, sqlx::Error> {
     let count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM axon_applied_migrations WHERE namespace = ? AND version = ?",
     )

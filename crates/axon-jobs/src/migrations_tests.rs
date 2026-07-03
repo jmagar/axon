@@ -23,7 +23,11 @@ fn composed_order_is_dependency_first() {
 fn namespaces_are_unique() {
     let mut seen = std::collections::BTreeSet::new();
     for set in composed_sets() {
-        assert!(seen.insert(set.namespace), "duplicate namespace {}", set.namespace);
+        assert!(
+            seen.insert(set.namespace),
+            "duplicate namespace {}",
+            set.namespace
+        );
     }
 }
 
@@ -46,7 +50,10 @@ async fn fresh_db_migrates_all_namespaces() {
         .fetch_one(&pool)
         .await
         .expect("count applied");
-    let expected: i64 = composed_sets().iter().map(|s| s.migrations.len() as i64).sum();
+    let expected: i64 = composed_sets()
+        .iter()
+        .map(|s| s.migrations.len() as i64)
+        .sum();
     assert_eq!(applied, expected, "every migration recorded once");
 
     for table in [
