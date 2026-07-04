@@ -920,6 +920,7 @@ dependencies = [
  "axon-ledger",
  "axon-memory",
  "axon-observe",
+ "axon-prune",
  "axon-retrieval",
  "axon-route",
  "axon-vector",
