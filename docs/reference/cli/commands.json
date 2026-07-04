@@ -47,7 +47,7 @@
     ],
     "source_inputs": [
       {
-        "checksum": "sha256:2afdf74be9f45185fc35c3484503c4aff21cc0230fef35dcdf07efcf6c54f2be",
+        "checksum": "sha256:d005a89d88eb492a556b02c873313cbf323d1e8fe1bfcbc74cf8f132ecc0c057",
         "kind": "rust_directory",
         "path": "crates/axon-cli/src"
       },

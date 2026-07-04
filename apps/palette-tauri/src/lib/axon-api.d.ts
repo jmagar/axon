@@ -172,86 +172,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/crawl": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_jobs"];
-        put?: never;
-        post: operations["start_crawl"];
-        delete: operations["clear_jobs"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/crawl/cleanup": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["cleanup_jobs"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/crawl/recover": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["recover_jobs"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/crawl/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["job_status"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/crawl/{id}/cancel": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["cancel_job"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/dedupe": {
         parameters: {
             query?: never;
@@ -310,86 +230,6 @@ export interface paths {
         get: operations["domains"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/embed": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_embed_jobs"];
-        put?: never;
-        post: operations["start_embed"];
-        delete: operations["clear_embed_jobs"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/embed/cleanup": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["cleanup_embed_jobs"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/embed/recover": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["recover_embed_jobs"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/embed/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["embed_job_status"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/embed/{id}/cancel": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["cancel_embed_job"];
         delete?: never;
         options?: never;
         head?: never;
@@ -502,102 +342,6 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["cancel_extract_job"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/ingest": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_ingest_jobs"];
-        put?: never;
-        post: operations["start_ingest"];
-        delete: operations["clear_ingest_jobs"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/ingest/cleanup": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["cleanup_ingest_jobs"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/ingest/recover": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["recover_ingest_jobs"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/ingest/sessions/prepared": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["start_prepared_sessions_ingest"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/ingest/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["ingest_job_status"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/ingest/{id}/cancel": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["cancel_ingest_job"];
         delete?: never;
         options?: never;
         head?: never;
@@ -748,22 +492,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/scrape": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["scrape"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/screenshot": {
         parameters: {
             query?: never;
@@ -805,7 +533,7 @@ export interface paths {
         };
         get: operations["sources"];
         put?: never;
-        post?: never;
+        post: operations["index_source"];
         delete?: never;
         options?: never;
         head?: never;
@@ -933,6 +661,59 @@ export interface components {
             status: string;
             status_url: string;
         };
+        AdapterOptions: {
+            values: components["schemas"]["MetadataMap"];
+        };
+        AdapterRef: {
+            name: string;
+            version: string;
+        };
+        /**
+         * @description The shared, transport-neutral error shape.
+         *
+         *     Every crate reports failures as an `ApiError` so CLI, REST, MCP, jobs, logs,
+         *     and progress streams render one consistent structure.
+         */
+        ApiError: {
+            /** @description Chunk id. */
+            chunk_id?: string | null;
+            /** @description Stable machine code (e.g. `provider.unavailable`). */
+            code: components["schemas"]["ErrorCode"];
+            /**
+             * Format: date-time
+             * @description Provider/job cooling timestamp.
+             */
+            cooldown_until?: string | null;
+            /** @description Redacted structured context (safe key/value pairs only). */
+            details: {
+                [key: string]: string;
+            };
+            /** @description Document id. */
+            document_id?: string | null;
+            /** @description Job correlation id. */
+            job_id?: string | null;
+            /** @description Redacted human-readable message. */
+            message: string;
+            /** @description Provider that failed. */
+            provider_id?: string | null;
+            /**
+             * Format: int64
+             * @description Suggested retry delay, in milliseconds.
+             */
+            retry_after_ms?: number | null;
+            /** @description Whether retry may succeed. */
+            retryable: boolean;
+            /** @description Severity classification. */
+            severity: components["schemas"]["ErrorSeverity"];
+            /** @description Source id. */
+            source_id?: string | null;
+            /** @description Item/file/page key. */
+            source_item_key?: string | null;
+            /** @description Pipeline/transport stage. */
+            stage: components["schemas"]["ErrorStage"];
+            /** @description Where this error may be surfaced. */
+            visibility: components["schemas"]["ErrorVisibility"];
+        };
         ArtifactHandle: {
             /** Format: int64 */
             bytes: number;
@@ -944,6 +725,33 @@ export interface components {
             relative_path: string;
             url?: string | null;
         };
+        ArtifactId: string;
+        /** @enum {string} */
+        ArtifactKind: "raw_content" | "normalized_content" | "manifest" | "report" | "screenshot" | "warc" | "provider_trace";
+        /** @enum {string} */
+        ArtifactMode: "none" | "on_large_output" | "always";
+        ArtifactRef: {
+            artifact_id: components["schemas"]["ArtifactId"];
+            artifact_kind: components["schemas"]["ArtifactKind"];
+            content_hash?: string | null;
+            created_at: components["schemas"]["Timestamp"];
+            /** Format: int64 */
+            size_bytes?: number | null;
+            uri: string;
+        };
+        AuthorityEvidence: {
+            /** Format: float */
+            confidence: number;
+            evidence_kind: string;
+            value: string;
+        };
+        AuthorityHint: {
+            authority: components["schemas"]["AuthorityLevel"];
+            canonical_uri?: string | null;
+            evidence: components["schemas"]["AuthorityEvidence"][];
+        };
+        /** @enum {string} */
+        AuthorityLevel: "official" | "verified" | "user_pinned" | "inferred" | "community" | "mirror" | "conflicting" | "unknown";
         BrandColor: {
             count: number;
             hex: string;
@@ -961,6 +769,25 @@ export interface components {
         };
         /** @enum {string} */
         ColorUsage: "primary" | "secondary" | "background" | "text" | "accent" | "unknown";
+        ContentRef: {
+            /** @enum {string} */
+            kind: "inline_text";
+            text: string;
+        } | {
+            bytes_base64: string;
+            /** @enum {string} */
+            kind: "inline_bytes";
+            mime_type: string;
+        } | {
+            artifact_id: components["schemas"]["ArtifactId"];
+            /** @enum {string} */
+            kind: "artifact";
+        } | {
+            integrity?: string | null;
+            /** @enum {string} */
+            kind: "external";
+            uri: string;
+        };
         DedupeRequest: {
             collection?: string | null;
         };
@@ -1037,15 +864,74 @@ export interface components {
             kind: components["schemas"]["ErrorKind"];
             message: string;
         };
+        /** @description A stable, machine-readable error code (e.g. `provider.unavailable`). */
+        ErrorCode: string;
+        ErrorEnvelope: {
+            contract_version: string;
+            error: components["schemas"]["ApiError"];
+            ok: boolean;
+            request_id: string;
+            trace: components["schemas"]["TraceContext"];
+        };
         /** @enum {string} */
         ErrorKind: "bad_gateway" | "bad_request" | "challenge_detected" | "forbidden" | "internal" | "invalid_path" | "ladder_exhausted" | "not_found" | "output_dir_error" | "path_error" | "path_escape" | "payload_too_large" | "rate_limited" | "read_error" | "structured_data_malformed" | "symlink_not_allowed" | "timeout" | "unauthorized" | "unsupported_media_type" | "upstream_unavailable" | "vertical_auth_invalid" | "vertical_auth_missing" | "vertical_blocked_antibot" | "vertical_rate_limited" | "vertical_target_not_found" | "vertical_target_unavailable" | "vertical_unsupported_url";
-        IngestSessionsPreparedRequest: {
-            collection?: string | null;
-            docs: components["schemas"]["PreparedSessionDoc"][];
-            project?: string | null;
+        /**
+         * @description How severe an error is and whether it terminates the item/job.
+         * @enum {string}
+         */
+        ErrorSeverity: "info" | "warning" | "degraded" | "failed" | "fatal";
+        /**
+         * @description Pipeline/transport stage an error is attributed to.
+         * @enum {string}
+         */
+        ErrorStage: "parsing" | "validation" | "resolving" | "routing" | "authorizing" | "planning" | "leasing" | "discovering" | "diffing" | "fetching" | "rendering" | "normalizing" | "parsing_content" | "graphing" | "preparing" | "embedding" | "upserting" | "publishing" | "cleaning" | "retrieving" | "synthesizing" | "observing";
+        /**
+         * @description Where a context entry (or error) may be surfaced.
+         *
+         *     From the "visibility" field in the error shape: `public`, `internal`,
+         *     `sensitive`.
+         * @enum {string}
+         */
+        ErrorVisibility: "public" | "internal" | "sensitive";
+        /** @enum {string} */
+        ExecutionMode: "foreground" | "background" | "wait";
+        ExecutionPolicy: {
+            detached: boolean;
+            /** Format: int64 */
+            heartbeat_interval_secs: number;
+            mode: components["schemas"]["ExecutionMode"];
+            priority: components["schemas"]["JobPriority"];
+            /** Format: int64 */
+            wait_timeout_secs?: number | null;
+        };
+        GraphWriteSummary: {
+            degraded: boolean;
+            /** Format: int64 */
+            edges_upserted: number;
+            /** Format: int64 */
+            evidence_records: number;
+            /** Format: int64 */
+            nodes_upserted: number;
+        };
+        InlineSourceResult: {
+            content?: null | components["schemas"]["ContentRef"];
+            metadata: components["schemas"]["MetadataMap"];
+            summary?: string | null;
+        };
+        JobDescriptor: {
+            created_at: components["schemas"]["Timestamp"];
+            job_id: components["schemas"]["JobId"];
+            kind: components["schemas"]["JobKind"];
+            poll: components["schemas"]["PollDescriptor"];
+            status: components["schemas"]["LifecycleStatus"];
+            updated_at: components["schemas"]["Timestamp"];
         };
         /** @enum {string} */
         JobFamily: "embed" | "extract" | "ingest";
+        /** Format: uuid */
+        JobId: string;
+        /** @enum {string} */
+        JobKind: "source" | "watch" | "map" | "extract" | "research" | "ask" | "query" | "retrieve" | "memory" | "graph" | "prune" | "provider_probe" | "reset";
         /** @description One labelled, display-formatted counter (e.g. `{ "Chunks", "1,024" }`). */
         JobMetric: {
             label: string;
@@ -1060,6 +946,8 @@ export interface components {
         };
         /** @enum {string} */
         JobPhase: "pending" | "running" | "done" | "failed" | "canceled";
+        /** @enum {string} */
+        JobPriority: "interactive" | "high" | "normal" | "background" | "maintenance";
         /** @description Derived, transport-neutral progress for a generic async job. */
         JobProgress: {
             error?: string | null;
@@ -1086,6 +974,15 @@ export interface components {
             job: unknown;
             progress?: null | components["schemas"]["JobProgress"];
         };
+        LedgerSummary: {
+            committed_generation?: null | components["schemas"]["SourceGenerationId"];
+            counts: components["schemas"]["SourceCounts"];
+            generation: components["schemas"]["SourceGenerationId"];
+            source_id: components["schemas"]["SourceId"];
+            status: components["schemas"]["LifecycleStatus"];
+        };
+        /** @enum {string} */
+        LifecycleStatus: "queued" | "pending" | "running" | "waiting" | "blocked" | "canceling" | "completed" | "completed_degraded" | "failed" | "canceled" | "expired" | "skipped";
         LinkEntry: {
             href: string;
             text: string;
@@ -1123,6 +1020,7 @@ export interface components {
             new?: string | null;
             old?: string | null;
         };
+        MetadataMap: Record<string, never>;
         MobileChatItem: {
             kind: string;
             payload?: Record<string, never>;
@@ -1167,21 +1065,24 @@ export interface components {
             /** Format: int64 */
             updated_at: number;
         };
+        OutputPolicy: {
+            artifact_mode: components["schemas"]["ArtifactMode"];
+            include_progress: boolean;
+            /** Format: int64 */
+            inline_limit_bytes: number;
+            json: boolean;
+            response_mode: components["schemas"]["ResponseMode"];
+        };
         PanelCollectionsResponse: {
             collections: string[];
         };
-        PreparedSessionDoc: {
-            extra?: unknown;
-            session_date?: string | null;
-            session_file: string;
-            session_platform: string;
-            session_project?: string | null;
-            /** Format: int32 */
-            session_turn_count?: number | null;
-            text: string;
-            title?: string | null;
-            url: string;
+        PollDescriptor: {
+            events_url?: string | null;
+            status_url: string;
+            /** Format: int64 */
+            suggested_interval_ms: number;
         };
+        ProviderId: string;
         PurgeRequest: {
             collection?: string | null;
             /**
@@ -1259,34 +1160,10 @@ export interface components {
             message: string;
             model?: string | null;
         };
-        RestCrawlRequest: {
-            collection?: string | null;
-            /** Format: int64 */
-            delay_ms?: number | null;
-            discover_llms_txt?: boolean | null;
-            discover_sitemaps?: boolean | null;
-            headers?: string[];
-            include_subdomains?: boolean | null;
-            max_depth?: number | null;
-            max_llms_txt_urls?: number | null;
-            /** Format: int32 */
-            max_pages?: number | null;
-            max_sitemaps?: number | null;
-            render_mode?: null | components["schemas"]["RenderMode"];
-            respect_robots?: boolean | null;
-            /** Format: int32 */
-            sitemap_since_days?: number | null;
-            urls: string[];
-        };
         RestDiffRequest: {
             render_mode?: null | components["schemas"]["RenderMode"];
             url_a: string;
             url_b: string;
-        };
-        RestEmbedRequest: {
-            collection?: string | null;
-            input: string;
-            source_type?: string | null;
         };
         RestEvaluateRequest: {
             before?: string | null;
@@ -1310,14 +1187,6 @@ export interface components {
             render_mode?: null | components["schemas"]["RenderMode"];
             urls: string[];
         };
-        RestIngestRequest: {
-            include_source?: boolean | null;
-            sessions?: null | components["schemas"]["RestSessionsIngestOptions"];
-            source_type?: null | components["schemas"]["RestIngestSourceType"];
-            target?: string | null;
-        };
-        /** @enum {string} */
-        RestIngestSourceType: "github" | "gitlab" | "gitea" | "git" | "reddit" | "youtube" | "rss" | "sessions";
         RestMapRequest: {
             limit?: number | null;
             offset?: number | null;
@@ -1373,17 +1242,6 @@ export interface components {
             token_budget?: number | null;
             url: string;
         };
-        RestScrapeRequest: {
-            collection?: string | null;
-            embed?: boolean | null;
-            exclude_selector?: string | null;
-            format?: null | components["schemas"]["ScrapeFormat"];
-            headers?: string[];
-            render_mode?: null | components["schemas"]["RenderMode"];
-            root_selector?: string | null;
-            url?: string | null;
-            urls?: string[] | null;
-        };
         RestScreenshotRequest: {
             full_page?: boolean | null;
             url: string;
@@ -1394,12 +1252,6 @@ export interface components {
             offset?: number | null;
             query: string;
             time_range?: string | null;
-        };
-        RestSessionsIngestOptions: {
-            claude?: boolean | null;
-            codex?: boolean | null;
-            gemini?: boolean | null;
-            project?: string | null;
         };
         RestSuggestRequest: {
             collection?: string | null;
@@ -1444,8 +1296,6 @@ export interface components {
          * @enum {string}
          */
         RpcTransport: "http" | "sse";
-        /** @enum {string} */
-        ScrapeFormat: "markdown" | "html" | "rawHtml" | "json" | "llm";
         ScreenshotResult: {
             artifact_handle?: null | components["schemas"]["ArtifactHandle"];
             path: string;
@@ -1467,6 +1317,111 @@ export interface components {
             supported_routes: string[];
             version: string;
         };
+        /** @enum {string} */
+        Severity: "debug" | "info" | "warning" | "degraded" | "failed" | "fatal";
+        SourceCounts: {
+            /** Format: int64 */
+            bytes_total: number;
+            /** Format: int64 */
+            chunks_total: number;
+            /** Format: int64 */
+            documents_total: number;
+            /** Format: int64 */
+            items_changed: number;
+            /** Format: int64 */
+            items_total: number;
+            /** Format: int64 */
+            vector_points_total: number;
+        };
+        SourceError: {
+            cause?: string | null;
+            code: string;
+            message: string;
+            provider_id?: null | components["schemas"]["ProviderId"];
+            retryable: boolean;
+            severity: components["schemas"]["Severity"];
+            source_item_key?: null | components["schemas"]["SourceItemKey"];
+        };
+        SourceGenerationId: string;
+        SourceId: string;
+        /** @enum {string} */
+        SourceIntent: "acquire" | "refresh" | "watch" | "map";
+        SourceItemKey: string;
+        /** @enum {string} */
+        SourceKind: "web" | "local" | "git" | "registry" | "feed" | "reddit" | "youtube" | "session" | "cli_tool" | "mcp_tool" | "memory" | "upload";
+        SourceLimits: {
+            /** Format: int64 */
+            max_bytes_per_item?: number | null;
+            /** Format: int64 */
+            max_chunks?: number | null;
+            /** Format: int32 */
+            max_depth?: number | null;
+            /** Format: int64 */
+            max_items?: number | null;
+            /** Format: int64 */
+            max_pages?: number | null;
+            /** Format: int64 */
+            max_total_bytes?: number | null;
+            /** Format: int64 */
+            provider_timeout_ms?: number | null;
+        };
+        /** @enum {string} */
+        SourceRefreshPolicy: "if_stale" | "force" | "never";
+        SourceRequest: {
+            adapter?: string | null;
+            authority_hint?: null | components["schemas"]["AuthorityHint"];
+            collection?: string | null;
+            embed?: boolean;
+            execution?: components["schemas"]["ExecutionPolicy"];
+            idempotency_key?: string | null;
+            intent?: components["schemas"]["SourceIntent"];
+            limits?: components["schemas"]["SourceLimits"];
+            metadata?: components["schemas"]["MetadataMap"];
+            options?: components["schemas"]["AdapterOptions"];
+            output?: components["schemas"]["OutputPolicy"];
+            refresh?: components["schemas"]["SourceRefreshPolicy"];
+            scope?: null | components["schemas"]["SourceScope"];
+            source: string;
+            watch?: components["schemas"]["SourceWatchPolicy"];
+        };
+        SourceResult: {
+            adapter: components["schemas"]["AdapterRef"];
+            artifacts: components["schemas"]["ArtifactRef"][];
+            canonical_uri: string;
+            counts: components["schemas"]["SourceCounts"];
+            errors: components["schemas"]["SourceError"][];
+            graph: components["schemas"]["GraphWriteSummary"];
+            inline?: null | components["schemas"]["InlineSourceResult"];
+            job?: null | components["schemas"]["JobDescriptor"];
+            job_id: components["schemas"]["JobId"];
+            ledger: components["schemas"]["LedgerSummary"];
+            scope: components["schemas"]["SourceScope"];
+            source_id: components["schemas"]["SourceId"];
+            source_kind: components["schemas"]["SourceKind"];
+            status: components["schemas"]["LifecycleStatus"];
+            warnings: components["schemas"]["SourceWarning"][];
+            watch?: null | components["schemas"]["WatchResult"];
+        };
+        /** @enum {string} */
+        SourceScope: "page" | "site" | "docs" | "repo" | "workspace" | "branch" | "org" | "package" | "version" | "feed" | "subreddit" | "thread" | "comment" | "video" | "playlist" | "channel" | "issue" | "pull_request" | "merge_request" | "release" | "wiki" | "file" | "directory" | "map" | "tool" | "script" | "api";
+        SourceWarning: {
+            code: string;
+            message: string;
+            retryable: boolean;
+            severity: components["schemas"]["Severity"];
+            source_item_key?: null | components["schemas"]["SourceItemKey"];
+        };
+        /** @enum {string} */
+        SourceWatchPolicy: "disabled" | "ensure" | "enabled";
+        /** Format: date-time */
+        Timestamp: string;
+        TraceContext: {
+            attributes: components["schemas"]["MetadataMap"];
+            parent_span_id?: string | null;
+            sampled: boolean;
+            span_id?: string | null;
+            trace_id: string;
+        };
         UpsertMobileSessionRequest: {
             session: components["schemas"]["MobileSession"];
         };
@@ -1483,6 +1438,25 @@ export interface components {
             next_run_at?: string | null;
             task_payload: unknown;
             task_type: string;
+        };
+        WatchId: string;
+        WatchResult: {
+            adapter: components["schemas"]["AdapterRef"];
+            canonical_uri: string;
+            enabled: boolean;
+            job?: null | components["schemas"]["JobDescriptor"];
+            latest_job?: null | components["schemas"]["JobDescriptor"];
+            schedule: components["schemas"]["WatchSchedule"];
+            scope: components["schemas"]["SourceScope"];
+            source_id: components["schemas"]["SourceId"];
+            warnings: components["schemas"]["SourceWarning"][];
+            watch_id: components["schemas"]["WatchId"];
+        };
+        WatchSchedule: {
+            cron?: string | null;
+            /** Format: int64 */
+            every_seconds: number;
+            timezone?: string | null;
         };
     };
     responses: never;
@@ -1576,7 +1550,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Path escapes the output root */
@@ -1636,7 +1610,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -1645,7 +1619,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Ask request exceeds limits */
@@ -1714,7 +1688,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -1723,7 +1697,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Ask request exceeds limits */
@@ -1774,7 +1748,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -1783,7 +1757,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Upstream page fetch unavailable */
@@ -1830,7 +1804,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -1872,7 +1846,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -1881,7 +1855,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Chat request exceeds limits */
@@ -1941,7 +1915,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -1950,7 +1924,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Chat request exceeds limits */
@@ -1988,7 +1962,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -1997,317 +1971,11 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Qdrant collections request failed */
             502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    list_jobs: {
-        parameters: {
-            query?: {
-                limit?: number;
-                offset?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Crawl jobs */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Missing or invalid authentication */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Authenticated token lacks Axon access */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    start_crawl: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RestCrawlRequest"];
-            };
-        };
-        responses: {
-            /** @description Crawl job accepted */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AcceptedJob"];
-                };
-            };
-            /** @description Invalid crawl request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Missing or invalid authentication */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Authenticated token lacks Axon access */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Upstream crawl service unavailable */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    clear_jobs: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Crawl clear result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Missing or invalid authentication */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Authenticated token lacks Axon access */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    cleanup_jobs: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Crawl cleanup result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Missing or invalid authentication */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Authenticated token lacks Axon access */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    recover_jobs: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Crawl recovery result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Missing or invalid authentication */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Authenticated token lacks Axon access */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    job_status: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Crawl job ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Crawl job status */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["JobStatusResponse"];
-                };
-            };
-            /** @description Missing or invalid authentication */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Authenticated token lacks Axon access */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Job not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    cancel_job: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Crawl job ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Crawl cancellation result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Missing or invalid authentication */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Authenticated token lacks Axon access */
-            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2354,7 +2022,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -2363,7 +2031,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Unsupported request body content type */
@@ -2423,7 +2091,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -2432,7 +2100,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Upstream scrape unavailable */
@@ -2470,7 +2138,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -2479,7 +2147,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Health check failed */
@@ -2522,7 +2190,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -2531,317 +2199,11 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Upstream vector service unavailable */
             502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    list_embed_jobs: {
-        parameters: {
-            query?: {
-                limit?: number;
-                offset?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Embed jobs */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Missing or invalid authentication */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Authenticated token lacks Axon access */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    start_embed: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RestEmbedRequest"];
-            };
-        };
-        responses: {
-            /** @description Embed job accepted */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AcceptedJob"];
-                };
-            };
-            /** @description Invalid embed request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Missing or invalid authentication */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Authenticated token lacks Axon access */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Upstream embedding service unavailable */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    clear_embed_jobs: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Embed clear result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Missing or invalid authentication */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Authenticated token lacks Axon access */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    cleanup_embed_jobs: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Embed cleanup result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Missing or invalid authentication */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Authenticated token lacks Axon access */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    recover_embed_jobs: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Embed recovery result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Missing or invalid authentication */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Authenticated token lacks Axon access */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    embed_job_status: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Embed job ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Embed job status */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["JobStatusResponse"];
-                };
-            };
-            /** @description Missing or invalid authentication */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Authenticated token lacks Axon access */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Job not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    cancel_embed_job: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Embed job ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Embed cancellation result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Missing or invalid authentication */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Authenticated token lacks Axon access */
-            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2888,7 +2250,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -2897,7 +2259,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Upstream fetch or verification service unavailable */
@@ -2948,7 +2310,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -2957,7 +2319,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Upstream LLM or vector service unavailable */
@@ -2998,7 +2360,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -3007,7 +2369,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -3049,7 +2411,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -3058,7 +2420,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Upstream extract service unavailable */
@@ -3096,7 +2458,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -3105,7 +2467,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -3134,7 +2496,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -3143,7 +2505,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -3172,7 +2534,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -3181,7 +2543,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -3213,7 +2575,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -3222,7 +2584,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Job not found */
@@ -3263,7 +2625,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -3272,373 +2634,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    list_ingest_jobs: {
-        parameters: {
-            query?: {
-                limit?: number;
-                offset?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Ingest jobs */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Missing or invalid authentication */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Authenticated token lacks Axon access */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    start_ingest: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RestIngestRequest"];
-            };
-        };
-        responses: {
-            /** @description Ingest job accepted */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AcceptedJob"];
-                };
-            };
-            /** @description Invalid ingest request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Missing or invalid authentication */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Authenticated token lacks Axon access */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Upstream ingest service unavailable */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    clear_ingest_jobs: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Ingest clear result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Missing or invalid authentication */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Authenticated token lacks Axon access */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    cleanup_ingest_jobs: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Ingest cleanup result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Missing or invalid authentication */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Authenticated token lacks Axon access */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    recover_ingest_jobs: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Ingest recovery result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Missing or invalid authentication */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Authenticated token lacks Axon access */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    start_prepared_sessions_ingest: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["IngestSessionsPreparedRequest"];
-            };
-        };
-        responses: {
-            /** @description Prepared sessions ingest job accepted */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AcceptedJob"];
-                };
-            };
-            /** @description Invalid prepared sessions request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Missing or invalid authentication */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Authenticated token lacks Axon access */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Upstream ingest service unavailable */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    ingest_job_status: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Ingest job ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Ingest job status */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["JobStatusResponse"];
-                };
-            };
-            /** @description Missing or invalid authentication */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Authenticated token lacks Axon access */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Job not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    cancel_ingest_job: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Ingest job ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Ingest cancellation result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Missing or invalid authentication */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Authenticated token lacks Axon access */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -3680,7 +2676,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -3689,7 +2685,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Upstream crawl service unavailable */
@@ -3740,7 +2736,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -3749,7 +2745,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Upstream vector or embedding service unavailable */
@@ -3787,7 +2783,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -3796,7 +2792,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Session store error */
@@ -3837,7 +2833,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -3846,7 +2842,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Session not found */
@@ -3900,7 +2896,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -3909,7 +2905,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Stale mobile session update */
@@ -3950,7 +2946,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -3959,7 +2955,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Session store error */
@@ -4010,7 +3006,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -4019,7 +3015,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Upstream vector service unavailable */
@@ -4070,7 +3066,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -4079,7 +3075,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Upstream vector service unavailable */
@@ -4130,7 +3126,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -4139,7 +3135,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Research request timed out */
@@ -4190,7 +3186,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -4199,7 +3195,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -4241,7 +3237,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -4250,70 +3246,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Upstream vector service unavailable */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    scrape: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RestScrapeRequest"];
-            };
-        };
-        responses: {
-            /** @description Scraped document or batch scrape results */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Invalid scrape request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Missing or invalid authentication */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Authenticated token lacks Axon access */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Upstream crawl or render service unavailable */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -4361,7 +3297,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -4370,7 +3306,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Chrome screenshot service unavailable */
@@ -4421,7 +3357,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -4430,7 +3366,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Upstream search service unavailable */
@@ -4473,7 +3409,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -4482,10 +3418,70 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Upstream vector service unavailable */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    index_source: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceRequest"];
+            };
+        };
+        responses: {
+            /** @description Source indexing result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceResult"];
+                };
+            };
+            /** @description Invalid source request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Missing or invalid authentication */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Source not authorized for caller scopes */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Upstream service unavailable */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -4520,7 +3516,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -4529,7 +3525,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Upstream vector service unavailable */
@@ -4567,7 +3563,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -4576,7 +3572,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Job storage unavailable */
@@ -4618,7 +3614,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -4627,7 +3623,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Upstream LLM or search provider rate limited */
@@ -4687,7 +3683,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -4696,7 +3692,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Upstream crawl, render, or LLM service unavailable */
@@ -4747,7 +3743,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -4756,7 +3752,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -4787,7 +3783,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -4796,7 +3792,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Watch storage unavailable */
@@ -4847,7 +3843,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -4856,7 +3852,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Watch storage unavailable */
@@ -4897,7 +3893,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Authenticated token lacks Axon access */
@@ -4906,7 +3902,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Watch not found */
