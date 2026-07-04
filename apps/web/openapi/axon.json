@@ -2904,11 +2904,11 @@
             }
           },
           "403": {
-            "description": "Source not authorized for caller scopes",
+            "description": "Authenticated token lacks Axon access",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
