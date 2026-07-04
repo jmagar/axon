@@ -117,9 +117,7 @@ fn render_source_result(cfg: &Config, result: &SourceResult) {
         "  {}",
         muted(&format!(
             "Graph: {} nodes  {} edges  {} evidence",
-            result.graph.nodes_upserted,
-            result.graph.edges_upserted,
-            result.graph.evidence_records,
+            result.graph.nodes_upserted, result.graph.edges_upserted, result.graph.evidence_records,
         ))
     );
     for warning in &result.warnings {
