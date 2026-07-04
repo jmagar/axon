@@ -621,7 +621,10 @@ name = "axon-document"
 version = "6.2.1"
 dependencies = [
  "axon-api",
+ "axon-parse",
  "serde_json",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
