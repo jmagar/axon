@@ -1046,6 +1046,7 @@ dependencies = [
  "axon-api",
  "axon-authz",
  "axon-core",
+ "axon-error",
  "axon-ingest",
  "axon-jobs",
  "axon-services",
