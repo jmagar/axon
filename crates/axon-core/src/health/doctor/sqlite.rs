@@ -193,7 +193,14 @@ fn assemble_services_map(inputs: ServicesMapInputs<'_>) -> Map<String, Value> {
     services.insert("sqlite".to_string(), sqlite);
     services.insert(
         "tei".to_string(),
-        tei_service_json(cfg, tei.ok, tei.detail, tei_model, tei_summary, tei.latency_ms),
+        tei_service_json(
+            cfg,
+            tei.ok,
+            tei.detail,
+            tei_model,
+            tei_summary,
+            tei.latency_ms,
+        ),
     );
     services.insert(
         "qdrant".to_string(),
