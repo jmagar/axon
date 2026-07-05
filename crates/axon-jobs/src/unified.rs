@@ -17,6 +17,10 @@ mod heartbeat;
 mod observe;
 #[path = "unified/ops.rs"]
 mod ops;
+#[path = "unified/pagination.rs"]
+mod pagination;
+#[path = "unified/schema.rs"]
+mod schema;
 
 #[derive(Clone)]
 pub struct SqliteUnifiedJobStore {

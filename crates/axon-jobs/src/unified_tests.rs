@@ -78,6 +78,27 @@ async fn migration_creates_canonical_job_tables() {
 }
 
 #[tokio::test]
+async fn unified_job_tables_have_contract_indexes() {
+    let pool = open_sqlite_pool(":memory:").await.expect("open sqlite");
+    let indexes: Vec<String> = sqlx::query_scalar(
+        "SELECT name FROM sqlite_master
+         WHERE type='index' AND name LIKE 'idx_axon_jobs_%'
+            OR type='index' AND name LIKE 'idx_axon_job_%'
+         ORDER BY name",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("list indexes");
+
+    for required in super::schema::CONTRACT_INDEXES {
+        assert!(
+            indexes.iter().any(|name| name == required),
+            "missing {required}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn create_is_idempotent_and_get_returns_summary() {
     let store = store().await;
     let first = store.create(create_request()).await.expect("create job");
@@ -118,6 +139,37 @@ async fn create_is_idempotent_and_get_returns_summary() {
         .expect("list jobs");
     assert_eq!(page.items.len(), 1);
     assert_eq!(page.total, Some(2));
+}
+
+#[tokio::test]
+async fn job_events_page_after_sequence_reads_only_next_page() {
+    let store = store().await;
+    let job = store.create(create_request()).await.expect("create job");
+    for sequence in 1..=25 {
+        store
+            .append_event(progress_event(job.job_id, sequence, Visibility::Public))
+            .await
+            .expect("append event");
+    }
+
+    let page = store
+        .events(JobEventListRequest {
+            job_id: job.job_id,
+            after_sequence: Some(10),
+            limit: Some(5),
+            severity: None,
+            visibility: None,
+            phase: None,
+            since_sequence: None,
+            cursor: None,
+        })
+        .await
+        .expect("event page");
+
+    assert_eq!(page.events.len(), 5);
+    assert_eq!(page.events[0].sequence, 11);
+    assert_eq!(page.events[4].sequence, 15);
+    assert!(page.next_cursor.is_some());
 }
 
 #[tokio::test]
