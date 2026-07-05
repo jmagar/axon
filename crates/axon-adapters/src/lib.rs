@@ -49,6 +49,10 @@ mod manifest_tests;
 mod family_matrix_tests;
 
 #[cfg(test)]
+#[path = "fixture_tests.rs"]
+mod fixture_tests;
+
+#[cfg(test)]
 #[path = "onboarding_tests.rs"]
 mod onboarding_tests;
 
