@@ -188,7 +188,7 @@ async fn target_code_search_fails_refresh_but_can_query_last_committed_generatio
     .expect("first target refresh");
     std::fs::write(repo.path().join("bad.rs"), [0xff, 0xfe, 0xfd]).expect("bad file");
 
-    let err = code_search(
+    let searched = code_search(
         &ctx,
         "answer",
         CodeSearchOptions {
@@ -201,29 +201,17 @@ async fn target_code_search_fails_refresh_but_can_query_last_committed_generatio
         },
     )
     .await
-    .expect_err("ensure_fresh target search should fail after refresh failure");
+    .expect("target search should fall back to last committed generation");
+
+    assert_eq!(searched.freshness.status, "stale");
     assert!(
-        err.to_string().contains("valid UTF-8"),
-        "unexpected error: {err:#}"
+        searched
+            .freshness
+            .warning
+            .as_deref()
+            .is_some_and(|warning| warning.contains("valid UTF-8")),
+        "refresh failure warning should mention the indexing failure: {searched:#?}"
     );
-
-    let searched = code_search(
-        &ctx,
-        "answer",
-        CodeSearchOptions {
-            limit: 10,
-            offset: 0,
-            cwd: Some(repo.path().to_path_buf()),
-            path_prefix: None,
-            ensure_fresh: false,
-            caller: CodeSearchCaller::Cli,
-        },
-    )
-    .await
-    .expect("target search without refresh");
-
-    assert_eq!(searched.freshness.status, "skipped");
-    assert!(searched.freshness.warning.is_none());
     assert!(
         searched
             .results
