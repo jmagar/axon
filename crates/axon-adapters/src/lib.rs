@@ -57,6 +57,10 @@ mod fixture_tests;
 mod onboarding_tests;
 
 #[cfg(test)]
+#[path = "tool_tests.rs"]
+mod tool_tests;
+
+#[cfg(test)]
 #[path = "local_tests.rs"]
 mod local_tests;
 
