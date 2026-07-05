@@ -310,12 +310,12 @@ async fn unchanged_items_are_carried_forward_without_mutating_previous_generatio
         .collect::<Vec<_>>();
     assert_eq!(carried.len(), 2);
     assert!(carried.iter().any(|point| {
-        point.payload["source_generation"].as_str() == Some("7")
-            && point.payload["committed_generation"].as_str() == Some("7")
+        point.payload["source_generation"] == json!(7)
+            && point.payload["committed_generation"] == json!(7)
     }));
     assert!(carried.iter().any(|point| {
-        point.payload["source_generation"].as_str() == Some("9")
-            && point.payload["committed_generation"].as_str() == Some("9")
+        point.payload["source_generation"] == json!(9)
+            && point.payload["committed_generation"] == json!(9)
     }));
 }
 
@@ -471,7 +471,7 @@ async fn mark_generation_committed_updates_visibility_and_document_status() {
         .await
         .unwrap();
     assert_eq!(result.results.len(), 1);
-    assert_eq!(result.results[0].payload["committed_generation"], "7");
+    assert_eq!(result.results[0].payload["committed_generation"], json!(7));
     assert_eq!(result.results[0].payload["document_status"], "published");
 }
 
@@ -750,7 +750,7 @@ async fn cleanup_debt_generation_delete_cannot_delete_unrelated_generations() {
         .unwrap();
     assert_eq!(result.results.len(), 1);
     assert_eq!(result.results[0].point_id, VectorPointId::new("point-b"));
-    assert_eq!(result.results[0].payload["source_generation"], "8");
+    assert_eq!(result.results[0].payload["source_generation"], json!(8));
 }
 
 #[tokio::test]
