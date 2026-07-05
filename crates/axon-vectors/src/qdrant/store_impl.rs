@@ -19,8 +19,6 @@ use crate::payload::generation_payload_i64;
 use crate::store::{Result, VectorStore};
 use crate::store_helpers::{delete_result, stage_header};
 
-const DELETE_SCROLL_PAGE_LIMIT: usize = 256;
-
 impl QdrantVectorStore {
     /// Build (or reuse) the redaction-safe reqwest transport.
     pub(super) fn http(&self) -> Result<QdrantHttp> {
@@ -153,7 +151,8 @@ impl VectorStore for QdrantVectorStore {
         self.require_collection_spec(&http, &collection, stage)
             .await?;
         if let VectorDeleteSelector::Generation { .. } = &selector {
-            return delete_generation_points(&http, &collection, &selector, stage).await;
+            return delete_generation_points_server_side(&http, &collection, &selector, stage)
+                .await;
         }
         let body = delete_body(&selector)?;
         let url = http
@@ -218,24 +217,17 @@ struct DeleteResponse {
 }
 
 #[derive(serde::Deserialize)]
-struct DeleteScrollPoint {
-    id: serde_json::Value,
+struct CountResult {
+    #[serde(default)]
+    count: u64,
 }
 
 #[derive(serde::Deserialize)]
-struct DeleteScrollResult {
-    #[serde(default)]
-    points: Vec<DeleteScrollPoint>,
-    #[serde(default)]
-    next_page_offset: Option<serde_json::Value>,
+struct CountResponse {
+    result: CountResult,
 }
 
-#[derive(serde::Deserialize)]
-struct DeleteScrollResponse {
-    result: DeleteScrollResult,
-}
-
-async fn delete_generation_points(
+async fn delete_generation_points_server_side(
     http: &QdrantHttp,
     collection: &str,
     selector: &VectorDeleteSelector,
@@ -251,62 +243,29 @@ async fn delete_generation_points(
     };
 
     let filter = generation_delete_filter(source_id, generation)?;
-    let scroll_url = http.endpoint().collection_path(collection, "points/scroll");
+    let count_url = http.endpoint().collection_path(collection, "points/count");
     let delete_url = http
         .endpoint()
         .collection_path(collection, "points/delete?wait=true");
-    let mut offset = None;
-    let mut points_deleted = 0;
-
-    loop {
-        let body = generation_scroll_body(&filter, offset.as_ref());
-        let response: DeleteScrollResponse = http
-            .post_json(stage, &scroll_url, &body, "qdrant_delete_scroll")
-            .await?;
-        let point_ids = response
-            .result
-            .points
-            .into_iter()
-            .map(|point| point.id)
-            .collect::<Vec<_>>();
-        if !point_ids.is_empty() {
-            let body = serde_json::json!({ "points": point_ids });
-            let count = body["points"].as_array().map_or(0, |points| points.len()) as u64;
-            let _ack: DeleteResponse = http
-                .post_json(stage, &delete_url, &body, "qdrant_delete_generation_page")
-                .await?;
-            points_deleted += count;
-        }
-        match next_delete_scroll_offset(response.result.next_page_offset) {
-            Some(next) => offset = Some(next),
-            None => break,
-        }
-    }
-
-    Ok(delete_result(collection.to_string(), points_deleted))
-}
-
-fn generation_scroll_body(
-    filter: &serde_json::Value,
-    offset: Option<&serde_json::Value>,
-) -> serde_json::Value {
-    let mut body = serde_json::json!({
+    let count_body = serde_json::json!({
         "filter": filter,
-        "limit": DELETE_SCROLL_PAGE_LIMIT,
-        "with_payload": false,
-        "with_vector": false,
+        "exact": true,
     });
-    if let Some(offset) = offset {
-        body["offset"] = offset.clone();
-    }
-    body
-}
+    let count: CountResponse = http
+        .post_json(
+            stage,
+            &count_url,
+            &count_body,
+            "qdrant_delete_generation_count",
+        )
+        .await?;
 
-fn next_delete_scroll_offset(next: Option<serde_json::Value>) -> Option<serde_json::Value> {
-    match next {
-        Some(next) if !next.is_null() => Some(next),
-        _ => None,
-    }
+    let body = serde_json::json!({ "filter": filter });
+    let _ack: DeleteResponse = http
+        .post_json(stage, &delete_url, &body, "qdrant_delete_generation_filter")
+        .await?;
+
+    Ok(delete_result(collection.to_string(), count.result.count))
 }
 
 fn generation_delete_filter(

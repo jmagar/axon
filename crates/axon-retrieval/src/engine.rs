@@ -8,7 +8,6 @@ use axon_api::source::{
 };
 use axon_embedding::provider::EmbeddingProvider;
 use axon_error::{ApiError, ErrorStage};
-use axon_vectors::payload::generation_payload_i64;
 use axon_vectors::store::VectorStore;
 use uuid::Uuid;
 
@@ -228,14 +227,12 @@ pub(crate) fn search_filters(plan: &RetrievalPlan) -> Result<MetadataMap, ApiErr
         ),
     );
     filters.insert("redaction_status".to_string(), serde_json::json!("clean"));
+    filters.insert(
+        "document_status".to_string(),
+        serde_json::json!("published"),
+    );
     if let Some(source_id) = &plan.source_id {
         filters.insert("source_id".to_string(), serde_json::json!(source_id.0));
-    }
-    if let Some(generation) = &plan.generation {
-        filters.insert(
-            "committed_generation".to_string(),
-            serde_json::json!(generation_payload_i64(generation, "committed_generation")?),
-        );
     }
     if !plan.namespace_filters.is_empty() {
         filters.insert(

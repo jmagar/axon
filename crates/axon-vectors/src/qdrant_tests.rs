@@ -165,7 +165,7 @@ fn source_generation_and_document_filters_convert_to_qdrant_filters() {
 }
 
 #[test]
-fn qdrant_filter_rejects_path_prefix_until_live_prefix_wiring_exists() {
+fn qdrant_filter_converts_path_prefix_to_source_path_should_filter() {
     let request = VectorSearchRequest {
         collection: "axon-test".to_string(),
         query: "docs".to_string(),
@@ -183,12 +183,19 @@ fn qdrant_filter_rejects_path_prefix_until_live_prefix_wiring_exists() {
         metadata: MetadataMap::new(),
     };
 
-    let err = qdrant_filter(&request).unwrap_err();
+    let filter = qdrant_filter(&request)
+        .expect("path prefix filter")
+        .unwrap();
+    let nested = filter
+        .must
+        .iter()
+        .find_map(|condition| match condition.condition_one_of.as_ref()? {
+            qdrant_client::qdrant::condition::ConditionOneOf::Filter(filter) => Some(filter),
+            _ => None,
+        })
+        .expect("nested path-prefix filter");
 
-    assert_eq!(
-        err.code.to_string(),
-        "vector.qdrant.path_prefix_unsupported"
-    );
+    assert_eq!(nested.should.len(), 2);
 }
 
 #[test]

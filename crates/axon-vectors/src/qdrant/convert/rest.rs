@@ -125,11 +125,8 @@ pub fn search_filter_json(request: &VectorSearchRequest) -> Result<Option<serde_
     let mut must = Vec::new();
     for (field, value) in request.filters.iter() {
         if field == PATH_PREFIX {
-            return Err(ApiError::new(
-                "vector.qdrant.path_prefix_unsupported",
-                axon_error::ErrorStage::Retrieving,
-                "target Qdrant path-prefix filters require live prefix-query wiring",
-            ));
+            must.push(path_prefix_filter_json(value));
+            continue;
         }
         must.push(condition_json(field, value));
     }
@@ -140,6 +137,20 @@ pub fn search_filter_json(request: &VectorSearchRequest) -> Result<Option<serde_
         ));
     }
     Ok((!must.is_empty()).then(|| json!({ "must": must })))
+}
+
+fn path_prefix_filter_json(value: &serde_json::Value) -> serde_json::Value {
+    let prefix = match value {
+        serde_json::Value::String(value) => value.clone(),
+        other => other.to_string(),
+    };
+    let matcher = json!({ "text": prefix });
+    json!({
+        "should": [
+            { "key": "source_item_key", "match": matcher.clone() },
+            { "key": "chunk_locator.path", "match": matcher },
+        ],
+    })
 }
 
 /// Equality filter over a single payload field (used by delete/commit paths).
