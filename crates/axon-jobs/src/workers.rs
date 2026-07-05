@@ -3,6 +3,7 @@ mod panic_guard;
 mod progress;
 mod runners;
 mod starvation;
+mod unified;
 mod watch_scheduler;
 mod watchdog;
 
@@ -33,6 +34,7 @@ pub struct WorkerHandles {
     pub(crate) embed: Arc<Notify>,
     pub(crate) extract: Arc<Notify>,
     pub(crate) ingest: Arc<Notify>,
+    pub(crate) unified: Arc<Notify>,
     shutdown: CancellationToken,
     /// Actual worker loops. Dropping WorkerHandles requests graceful shutdown;
     /// tasks observe it before polling and between jobs/batches.
@@ -50,6 +52,11 @@ impl WorkerHandles {
             JobKind::Ingest => self.ingest.notify_one(),
         }
     }
+
+    /// Notify the unified durable-job worker that a job-backed operation was queued.
+    pub fn notify_unified(&self) {
+        self.unified.notify_one();
+    }
 }
 
 impl Drop for WorkerHandles {
@@ -59,6 +66,7 @@ impl Drop for WorkerHandles {
         self.embed.notify_waiters();
         self.extract.notify_waiters();
         self.ingest.notify_waiters();
+        self.unified.notify_waiters();
     }
 }
 
@@ -77,6 +85,7 @@ pub fn spawn_workers(
     let embed_notify = Arc::new(Notify::new());
     let extract_notify = Arc::new(Notify::new());
     let ingest_notify = Arc::new(Notify::new());
+    let unified_notify = Arc::new(Notify::new());
     let shutdown = CancellationToken::new();
 
     let embed_lanes = cfg.embed_lanes.clamp(1, 32);
@@ -91,6 +100,13 @@ pub fn spawn_workers(
         ingest_lanes,
         "jobs: spawning in-process job workers"
     );
+
+    tracing::info!(worker = "unified", lanes = 1, "jobs: spawning worker");
+    worker_handles.push(tokio::spawn(unified::unified_worker_loop(
+        Arc::clone(&pool),
+        Arc::clone(&unified_notify),
+        shutdown.clone(),
+    )));
 
     // Crawl: single lane (spider futures are !Send — must stay single-task)
     tracing::info!(worker = "crawl", lanes = 1, "jobs: spawning worker");
@@ -175,6 +191,7 @@ pub fn spawn_workers(
         embed: embed_notify,
         extract: extract_notify,
         ingest: ingest_notify,
+        unified: unified_notify,
         shutdown,
         worker_handles,
     }

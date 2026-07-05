@@ -10,9 +10,11 @@ use crate::types::ServiceJob;
 use axon_core::config::Config;
 use axon_jobs::SqliteJobBackend;
 use axon_jobs::backend::{BackendResult, JobBackend, JobKind, JobPayload, JobSidecarPayload};
+use axon_jobs::boundary::JobStore;
 use axon_jobs::query as job_query;
 use axon_jobs::status::JobStatus;
 use axon_jobs::store::reclaim_stale_running_jobs_for_table;
+use axon_jobs::unified::SqliteUnifiedJobStore;
 
 pub struct SqliteServiceRuntime {
     pub(crate) cfg: Arc<Config>,
@@ -36,6 +38,12 @@ impl ServiceJobRuntime for SqliteServiceRuntime {
 
     fn sqlite_pool(&self) -> Option<Arc<SqlitePool>> {
         Some(Arc::clone(self.backend.pool()))
+    }
+
+    fn unified_job_store(&self) -> Option<Arc<dyn JobStore>> {
+        Some(Arc::new(SqliteUnifiedJobStore::new(
+            self.backend.pool().as_ref().clone(),
+        )))
     }
 
     async fn enqueue(&self, payload: JobPayload) -> BackendResult<Uuid> {

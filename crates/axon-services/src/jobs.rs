@@ -6,6 +6,13 @@ use uuid::Uuid;
 use crate::context::ServiceContext;
 pub use crate::runtime::WorkerMode;
 use crate::types::ServiceJob;
+use axon_api::source::{
+    AuthSnapshot, ConfigSnapshotId, JobCancelRequest, JobCancelResult, JobCleanupRequest,
+    JobCleanupResult, JobCreateRequest, JobDescriptor, JobEventListRequest, JobEventPage,
+    JobExecutionMode, JobIntent, JobListRequest, JobPolicy, JobPriority, JobRecoveryRequest,
+    JobRecoveryResult, JobRetryRequest, JobRetryResult, JobStagePlan, MetadataMap, OperationKind,
+    Page, PipelinePhase, job_policy_for_operation,
+};
 use axon_jobs::backend::JobKind;
 
 // Helper: downgrade Send+Sync error to plain Box<dyn Error> for callers that don't need Send+Sync.
@@ -158,6 +165,199 @@ pub async fn drain_jobs(
         .drain_jobs(kind)
         .await
         .map_err(downgrade)
+}
+
+pub async fn enqueue_operation(
+    service_context: &ServiceContext,
+    operation: OperationKind,
+    mode: JobExecutionMode,
+    request: serde_json::Value,
+) -> Result<Option<JobDescriptor>, Box<dyn Error>> {
+    if job_policy_for_operation(operation, mode) == JobPolicy::Synchronous {
+        return Ok(None);
+    }
+    let store = service_context.job_store().ok_or_else(|| {
+        Box::<dyn Error>::from("unified job store is not available for this runtime")
+    })?;
+    let descriptor = store
+        .create(JobCreateRequest {
+            request_id: None,
+            job_kind: job_kind_for_operation(operation),
+            job_intent: job_intent_for_operation(operation),
+            source_id: None,
+            watch_id: None,
+            parent_job_id: None,
+            root_job_id: None,
+            attempt: 1,
+            priority: JobPriority::Normal,
+            idempotency_key: request
+                .get("idempotency_key")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string),
+            stage_plan: stage_plan_for_operation(operation),
+            request: Some(request),
+            auth_snapshot: AuthSnapshot::default(),
+            config_snapshot_id: Some(ConfigSnapshotId::new("runtime")),
+            requirements: MetadataMap::new(),
+            result_schema: Some(result_schema_for_operation(operation).to_string()),
+            warnings: Vec::new(),
+            error: None,
+            metadata: MetadataMap::new(),
+        })
+        .await
+        .map_err(|error| Box::<dyn Error>::from(error.message))?;
+    Ok(Some(descriptor))
+}
+
+pub async fn list_unified_jobs(
+    service_context: &ServiceContext,
+    request: JobListRequest,
+) -> Result<Page<axon_api::source::JobSummary>, Box<dyn Error>> {
+    service_context
+        .job_store()
+        .ok_or_else(|| Box::<dyn Error>::from("unified job store is not available"))?
+        .list(request)
+        .await
+        .map_err(|error| Box::<dyn Error>::from(error.message))
+}
+
+pub async fn unified_job_status(
+    service_context: &ServiceContext,
+    job_id: axon_api::source::JobId,
+) -> Result<Option<axon_api::source::JobSummary>, Box<dyn Error>> {
+    service_context
+        .job_store()
+        .ok_or_else(|| Box::<dyn Error>::from("unified job store is not available"))?
+        .get(job_id)
+        .await
+        .map_err(|error| Box::<dyn Error>::from(error.message))
+}
+
+pub async fn unified_job_events(
+    service_context: &ServiceContext,
+    request: JobEventListRequest,
+) -> Result<JobEventPage, Box<dyn Error>> {
+    service_context
+        .job_store()
+        .ok_or_else(|| Box::<dyn Error>::from("unified job store is not available"))?
+        .events(request)
+        .await
+        .map_err(|error| Box::<dyn Error>::from(error.message))
+}
+
+pub async fn cancel_unified_job(
+    service_context: &ServiceContext,
+    job_id: axon_api::source::JobId,
+    request: JobCancelRequest,
+) -> Result<JobCancelResult, Box<dyn Error>> {
+    service_context
+        .job_store()
+        .ok_or_else(|| Box::<dyn Error>::from("unified job store is not available"))?
+        .cancel(job_id, request)
+        .await
+        .map_err(|error| Box::<dyn Error>::from(error.message))
+}
+
+pub async fn retry_unified_job(
+    service_context: &ServiceContext,
+    job_id: axon_api::source::JobId,
+    request: JobRetryRequest,
+) -> Result<JobRetryResult, Box<dyn Error>> {
+    service_context
+        .job_store()
+        .ok_or_else(|| Box::<dyn Error>::from("unified job store is not available"))?
+        .retry(job_id, request)
+        .await
+        .map_err(|error| Box::<dyn Error>::from(error.message))
+}
+
+pub async fn recover_unified_jobs(
+    service_context: &ServiceContext,
+    request: JobRecoveryRequest,
+) -> Result<JobRecoveryResult, Box<dyn Error>> {
+    service_context
+        .job_store()
+        .ok_or_else(|| Box::<dyn Error>::from("unified job store is not available"))?
+        .recover(request)
+        .await
+        .map_err(|error| Box::<dyn Error>::from(error.message))
+}
+
+pub async fn cleanup_unified_jobs(
+    service_context: &ServiceContext,
+    request: JobCleanupRequest,
+) -> Result<JobCleanupResult, Box<dyn Error>> {
+    service_context
+        .job_store()
+        .ok_or_else(|| Box::<dyn Error>::from("unified job store is not available"))?
+        .cleanup(request)
+        .await
+        .map_err(|error| Box::<dyn Error>::from(error.message))
+}
+
+fn job_kind_for_operation(operation: OperationKind) -> axon_api::source::JobKind {
+    match operation {
+        OperationKind::Source => axon_api::source::JobKind::Source,
+        OperationKind::Watch => axon_api::source::JobKind::Watch,
+        OperationKind::Extract => axon_api::source::JobKind::Extract,
+        OperationKind::Research => axon_api::source::JobKind::Research,
+        OperationKind::MemoryCompaction | OperationKind::MemoryImport => {
+            axon_api::source::JobKind::Memory
+        }
+        OperationKind::GraphMutation => axon_api::source::JobKind::Graph,
+        OperationKind::Prune => axon_api::source::JobKind::Prune,
+        OperationKind::ProviderProbe => axon_api::source::JobKind::ProviderProbe,
+        OperationKind::Reset => axon_api::source::JobKind::Reset,
+        OperationKind::Query => axon_api::source::JobKind::Query,
+        OperationKind::Retrieve => axon_api::source::JobKind::Retrieve,
+    }
+}
+
+fn job_intent_for_operation(operation: OperationKind) -> JobIntent {
+    match operation {
+        OperationKind::Watch => JobIntent::Watch,
+        OperationKind::ProviderProbe => JobIntent::Probe,
+        OperationKind::Reset => JobIntent::Reset,
+        OperationKind::Prune => JobIntent::Cleanup,
+        _ => JobIntent::Run,
+    }
+}
+
+fn stage_plan_for_operation(operation: OperationKind) -> Vec<JobStagePlan> {
+    let phase = match operation {
+        OperationKind::Source => PipelinePhase::Fetching,
+        OperationKind::Watch => PipelinePhase::Diffing,
+        OperationKind::Extract => PipelinePhase::Parsing,
+        OperationKind::Research => PipelinePhase::Synthesizing,
+        OperationKind::MemoryCompaction | OperationKind::MemoryImport => PipelinePhase::Preparing,
+        OperationKind::GraphMutation => PipelinePhase::Graphing,
+        OperationKind::Prune => PipelinePhase::Cleaning,
+        OperationKind::ProviderProbe => PipelinePhase::Evaluating,
+        OperationKind::Reset => PipelinePhase::Cleaning,
+        OperationKind::Query | OperationKind::Retrieve => PipelinePhase::Retrieving,
+    };
+    vec![JobStagePlan {
+        phase,
+        required: true,
+        provider_requirements: Vec::new(),
+        estimated_items: None,
+    }]
+}
+
+fn result_schema_for_operation(operation: OperationKind) -> &'static str {
+    match operation {
+        OperationKind::Source => "source_result",
+        OperationKind::Watch => "watch_result",
+        OperationKind::Extract => "extract_result",
+        OperationKind::Research => "research_result",
+        OperationKind::MemoryCompaction | OperationKind::MemoryImport => "memory_result",
+        OperationKind::GraphMutation => "graph_result",
+        OperationKind::Prune => "prune_result",
+        OperationKind::ProviderProbe => "provider_probe_result",
+        OperationKind::Reset => "reset_result",
+        OperationKind::Query => "query_result",
+        OperationKind::Retrieve => "retrieve_result",
+    }
 }
 
 #[cfg(test)]
