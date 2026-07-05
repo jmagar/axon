@@ -1,7 +1,9 @@
 use axon_api::source::{
-    JobCancelRequest, JobCleanupRequest, JobEventListRequest, JobId, JobKind, JobListRequest,
-    JobRecoveryRequest, JobRetryMode, JobRetryRequest, LifecycleStatus, MetadataMap,
+    JobCancelRequest, JobCleanupRequest, JobEventListRequest, JobId, JobListRequest,
+    JobRecoveryRequest, JobRetryMode, JobRetryRequest, MetadataMap,
 };
+#[cfg(test)]
+use axon_api::source::{JobKind, LifecycleStatus};
 use axon_core::config::Config;
 use axon_core::ui::{accent, muted, primary, status_text, symbol_for_status};
 use axon_services::context::ServiceContext;
