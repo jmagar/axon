@@ -216,19 +216,22 @@ impl SqliteUnifiedJobStore {
         Ok(())
     }
 
-    pub(crate) async fn append_job_event(&self, event: SourceProgressEvent) -> Result<()> {
+    pub(crate) async fn append_job_event(&self, mut event: SourceProgressEvent) -> Result<()> {
         let mut tx = self.pool.begin().await.map_err(sql_error)?;
         ensure_job(&mut tx, event.job_id).await?;
-        let max_sequence = sqlx::query_scalar::<_, Option<i64>>(
-            "SELECT MAX(sequence) FROM job_events WHERE job_id = ?",
-        )
-        .bind(event.job_id.0.to_string())
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(sql_error)?
-        .unwrap_or(0) as u64;
-        let expected = max_sequence + 1;
-        if event.sequence != expected {
+        let last_sequence =
+            sqlx::query_scalar::<_, i64>("SELECT last_event_sequence FROM jobs WHERE job_id = ?")
+                .bind(event.job_id.0.to_string())
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(sql_error)? as u64;
+        let expected = last_sequence + 1;
+        let sequence = if event.sequence == 0 {
+            expected
+        } else {
+            event.sequence
+        };
+        if sequence != expected {
             if let Some(dedupe_key) = event.dedupe_key.as_deref() {
                 let duplicate_sequence = sqlx::query_scalar::<_, Option<i64>>(
                     "SELECT sequence FROM job_events WHERE job_id = ? AND dedupe_key = ?",
@@ -238,7 +241,7 @@ impl SqliteUnifiedJobStore {
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(sql_error)?;
-                if duplicate_sequence == Some(event.sequence as i64) {
+                if duplicate_sequence == Some(sequence as i64) {
                     tx.commit().await.map_err(sql_error)?;
                     return Ok(());
                 }
@@ -248,10 +251,11 @@ impl SqliteUnifiedJobStore {
                 ErrorStage::Publishing,
                 format!(
                     "expected event sequence {} for job {}, got {}",
-                    expected, event.job_id.0, event.sequence
+                    expected, event.job_id.0, sequence
                 ),
             ));
         }
+        event.sequence = sequence;
         let duplicate_dedupe = if let Some(dedupe_key) = event.dedupe_key.as_deref() {
             sqlx::query_scalar::<_, i64>(
                 "SELECT COUNT(*) FROM job_events WHERE job_id = ? AND dedupe_key = ?",

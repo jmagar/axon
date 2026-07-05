@@ -268,6 +268,87 @@ async fn status_update_enforces_state_machine_and_persists_progress() {
 }
 
 #[tokio::test]
+async fn invalid_transition_fails_without_mutating_job() {
+    let store = store().await;
+    let job = store.create(create_request()).await.expect("create job");
+    store
+        .update_status(JobStatusUpdate {
+            job_id: job.job_id,
+            source_id: None,
+            status: LifecycleStatus::Running,
+            phase: PipelinePhase::Fetching,
+            stage_id: None,
+            counts: None,
+            current: None,
+            message: None,
+            error: None,
+        })
+        .await
+        .expect("queued -> running");
+
+    let err = store
+        .update_status(JobStatusUpdate {
+            job_id: job.job_id,
+            source_id: None,
+            status: LifecycleStatus::Queued,
+            phase: PipelinePhase::Resolving,
+            stage_id: None,
+            counts: None,
+            current: None,
+            message: None,
+            error: None,
+        })
+        .await
+        .expect_err("running -> queued invalid");
+    assert_eq!(err.code.to_string(), "job.invalid_transition");
+    assert_eq!(
+        store
+            .get(job.job_id)
+            .await
+            .expect("get job")
+            .expect("job exists")
+            .status,
+        LifecycleStatus::Running
+    );
+}
+
+#[tokio::test]
+async fn append_events_assigns_monotonic_per_job_sequence() {
+    let store = store().await;
+    let job = store.create(create_request()).await.expect("create job");
+
+    for idx in 0..3 {
+        let mut event = progress_event(job.job_id, 0, Visibility::Public);
+        event.event_id = format!("assigned-event-{idx}");
+        store
+            .append_event(event)
+            .await
+            .unwrap_or_else(|error| panic!("append event {idx}: {error:?}"));
+    }
+
+    let page = store
+        .events(JobEventListRequest {
+            job_id: job.job_id,
+            after_sequence: None,
+            limit: Some(10),
+            severity: None,
+            visibility: Some(Visibility::Public),
+            phase: None,
+            since_sequence: None,
+            cursor: None,
+        })
+        .await
+        .expect("event page");
+    assert_eq!(
+        page.events
+            .iter()
+            .map(|event| event.sequence)
+            .collect::<Vec<_>>(),
+        vec![1, 2, 3]
+    );
+}
+
+#[tokio::test]
 async fn append_event_requires_monotonic_sequences_and_filters_events() {
     let store = store().await;
     let job = store.create(create_request()).await.expect("create job");
