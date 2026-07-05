@@ -50,6 +50,12 @@ pub(super) const MCP_ACTION_SPECS: &[McpActionSpec] = &[
         cost: "cheap",
     },
     McpActionSpec {
+        name: "jobs",
+        scope: ActionScope::Write,
+        description: "List, inspect, page events, cancel, retry, recover, cleanup, or clear unified durable jobs",
+        cost: "write",
+    },
+    McpActionSpec {
         name: "doctor",
         scope: ActionScope::Read,
         description: "Diagnose Axon service connectivity",

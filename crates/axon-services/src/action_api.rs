@@ -25,7 +25,7 @@ use crate::context::ServiceContext;
 use crate::system;
 use crate::types::ClientActionError;
 use axon_api::mcp_schema::{
-    AxonRequest, CrawlSubaction, EmbedSubaction, ExtractSubaction, IngestSubaction,
+    AxonRequest, CrawlSubaction, EmbedSubaction, ExtractSubaction, IngestSubaction, JobsSubaction,
     MemorySubaction, SetupMode, WatchSubaction,
 };
 
@@ -86,6 +86,18 @@ pub fn required_scope(action: &AxonRequest) -> Option<&'static str> {
             | MemorySubaction::Search
             | MemorySubaction::Show
             | MemorySubaction::Context => Some("axon:read"),
+        },
+        AxonRequest::Jobs(req) => match req.subaction.unwrap_or(JobsSubaction::List) {
+            JobsSubaction::List
+            | JobsSubaction::Get
+            | JobsSubaction::Status
+            | JobsSubaction::Events
+            | JobsSubaction::Stream => Some("axon:read"),
+            JobsSubaction::Cancel
+            | JobsSubaction::Retry
+            | JobsSubaction::Recover
+            | JobsSubaction::Cleanup
+            | JobsSubaction::Clear => Some("axon:write"),
         },
         // Read-only ops: pure data reads, no external process, no side-effects.
         AxonRequest::Query(_)
@@ -154,6 +166,7 @@ fn internal_error(err: Box<dyn Error>) -> ClientActionError {
 fn action_name(action: &AxonRequest) -> &'static str {
     match action {
         AxonRequest::Status(_) => "status",
+        AxonRequest::Jobs(_) => "jobs",
         AxonRequest::Crawl(_) => "crawl",
         AxonRequest::Extract(_) => "extract",
         AxonRequest::Embed(_) => "embed",

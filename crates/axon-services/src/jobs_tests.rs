@@ -2,8 +2,9 @@ use super::*;
 use crate::runtime::ServiceJobRuntime;
 use async_trait::async_trait;
 use axon_api::source::{
-    JobExecutionMode, JobListRequest, JobPolicy, LifecycleStatus, OperationKind,
-    job_policy_for_operation,
+    JobEventListRequest, JobExecutionMode, JobListRequest, JobPolicy, LifecycleStatus,
+    OperationKind, PipelinePhase, Severity, SourceProgressEvent, StageCounts, Timestamp,
+    Visibility, job_policy_for_operation,
 };
 use axon_jobs::backend::{BackendResult, JobKind, JobPayload};
 use axon_jobs::boundary::JobStore;
@@ -206,6 +207,53 @@ async fn normal_query_and_retrieve_do_not_create_jobs() {
     assert!(page.items.is_empty());
 }
 
+#[tokio::test]
+async fn unified_job_events_after_sequence_uses_service_event_page() {
+    let ctx = test_context_with_unified_jobs().await;
+    let descriptor = enqueue_operation(
+        &ctx,
+        OperationKind::Source,
+        JobExecutionMode::Detached,
+        serde_json::json!({"operation": "source"}),
+    )
+    .await
+    .expect("enqueue")
+    .expect("job descriptor");
+    let store = ctx.job_store().expect("job store");
+
+    for sequence in 1..=3 {
+        store
+            .append_event(progress_event(descriptor.job_id, sequence))
+            .await
+            .expect("append event");
+    }
+
+    let page = unified_job_events(
+        &ctx,
+        JobEventListRequest {
+            job_id: descriptor.job_id,
+            after_sequence: Some(1),
+            limit: Some(2),
+            severity: None,
+            visibility: None,
+            phase: None,
+            since_sequence: None,
+            cursor: None,
+        },
+    )
+    .await
+    .expect("event page");
+
+    assert_eq!(
+        page.events
+            .iter()
+            .map(|event| event.sequence)
+            .collect::<Vec<_>>(),
+        vec![2, 3]
+    );
+    assert_eq!(page.last_sequence, 3);
+}
+
 async fn test_context_with_unified_jobs() -> ServiceContext {
     let pool = open_sqlite_pool(":memory:").await.expect("open sqlite");
     let store: Arc<dyn JobStore> = Arc::new(SqliteUnifiedJobStore::new(pool));
@@ -224,5 +272,46 @@ fn empty_job_list_request() -> JobListRequest {
         watch_id: None,
         limit: None,
         cursor: None,
+    }
+}
+
+fn progress_event(job_id: axon_api::source::JobId, sequence: u64) -> SourceProgressEvent {
+    SourceProgressEvent {
+        event_id: format!("event-{sequence}"),
+        sequence,
+        job_id,
+        attempt: 1,
+        stage_id: None,
+        batch_id: None,
+        reservation_id: None,
+        checkpoint_id: None,
+        dedupe_key: None,
+        phase: PipelinePhase::Fetching,
+        status: LifecycleStatus::Running,
+        severity: Severity::Info,
+        visibility: Visibility::Public,
+        message: format!("event {sequence}"),
+        timestamp: Timestamp("2026-07-05T00:00:00Z".to_string()),
+        source_id: None,
+        canonical_uri: None,
+        adapter: None,
+        scope: None,
+        generation: None,
+        counts: StageCounts {
+            items_total: Some(3),
+            items_done: sequence,
+            documents_total: None,
+            documents_done: 0,
+            chunks_total: None,
+            chunks_done: 0,
+            bytes_total: None,
+            bytes_done: 0,
+        },
+        timing: None,
+        current: None,
+        throughput: None,
+        retry: None,
+        warning: None,
+        error: None,
     }
 }
