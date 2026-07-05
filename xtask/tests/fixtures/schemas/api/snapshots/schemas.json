@@ -5960,11 +5960,17 @@
           ]
         },
         "status": {
-          "$ref": "#/$defs/JobClearRequest_LifecycleStatus"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JobClearRequest_LifecycleStatus"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
-        "status",
         "confirm"
       ],
       "title": "JobClearRequest",
@@ -6015,7 +6021,14 @@
           "type": "integer"
         },
         "status": {
-          "$ref": "#/$defs/JobClearResult_LifecycleStatus"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JobClearResult_LifecycleStatus"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "warnings": {
           "items": {
@@ -6026,7 +6039,6 @@
       },
       "required": [
         "deleted",
-        "status",
         "warnings"
       ],
       "title": "JobClearResult",
@@ -27441,7 +27453,7 @@
         "path": "crates/axon-api/src/source/ids.rs"
       },
       {
-        "checksum": "sha256:00b60a0fa32cc038d8cd15136f12d8ab9cd5bcd9ac98b0b10eeeffb972992f61",
+        "checksum": "sha256:e1aa5096c2118bc25aae5da4772308ae3162831c278bc215e108435783cd6b45",
         "kind": "rust_module",
         "path": "crates/axon-api/src/source/job.rs"
       },

@@ -44,6 +44,7 @@ pub async fn dispatch_action(
         AxonRequest::Extract(req) => commands::dispatch_extract(service_context, req).await,
         AxonRequest::Embed(req) => commands::dispatch_embed(service_context, req).await,
         AxonRequest::Ingest(req) => commands::dispatch_ingest(service_context, req).await,
+        AxonRequest::Jobs(req) => commands::dispatch_jobs(service_context, req).await,
         AxonRequest::Memory(req) => crate::memory::dispatch(service_context, req).await,
         AxonRequest::Endpoints(req) => commands::dispatch_endpoints(service_context, req).await,
         AxonRequest::Scrape(req) => commands::dispatch_scrape(service_context, req).await,
@@ -93,11 +94,10 @@ pub fn required_scope(action: &AxonRequest) -> Option<&'static str> {
             | JobsSubaction::Status
             | JobsSubaction::Events
             | JobsSubaction::Stream => Some("axon:read"),
-            JobsSubaction::Cancel
-            | JobsSubaction::Retry
-            | JobsSubaction::Recover
-            | JobsSubaction::Cleanup
-            | JobsSubaction::Clear => Some("axon:write"),
+            JobsSubaction::Cancel | JobsSubaction::Retry => Some("axon:write"),
+            JobsSubaction::Recover | JobsSubaction::Cleanup | JobsSubaction::Clear => {
+                Some("axon:admin")
+            }
         },
         // Read-only ops: pure data reads, no external process, no side-effects.
         AxonRequest::Query(_)

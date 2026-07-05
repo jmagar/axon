@@ -2,9 +2,9 @@ use super::*;
 use crate::runtime::ServiceJobRuntime;
 use async_trait::async_trait;
 use axon_api::source::{
-    JobEventListRequest, JobExecutionMode, JobListRequest, JobPolicy, LifecycleStatus,
-    OperationKind, PipelinePhase, Severity, SourceProgressEvent, StageCounts, Timestamp,
-    Visibility, job_policy_for_operation,
+    JobClearRequest, JobEventListRequest, JobExecutionMode, JobListRequest, JobPolicy,
+    JobStatusUpdate, LifecycleStatus, OperationKind, PipelinePhase, Severity, SourceProgressEvent,
+    StageCounts, Timestamp, Visibility, job_policy_for_operation,
 };
 use axon_jobs::backend::{BackendResult, JobKind, JobPayload};
 use axon_jobs::boundary::JobStore;
@@ -252,6 +252,92 @@ async fn unified_job_events_after_sequence_uses_service_event_page() {
         vec![2, 3]
     );
     assert_eq!(page.last_sequence, 3);
+}
+
+#[tokio::test]
+async fn clear_unified_jobs_requires_confirm_and_drains_terminal_batches() {
+    let ctx = test_context_with_unified_jobs().await;
+    let store = ctx.job_store().expect("job store");
+
+    let denied = clear_unified_jobs(
+        &ctx,
+        JobClearRequest {
+            status: None,
+            confirm: false,
+            kind: None,
+            older_than: None,
+        },
+    )
+    .await;
+    assert!(denied.is_err());
+
+    for index in 0..105 {
+        let descriptor = enqueue_operation(
+            &ctx,
+            OperationKind::Source,
+            JobExecutionMode::Detached,
+            serde_json::json!({"operation": "source", "index": index}),
+        )
+        .await
+        .expect("enqueue")
+        .expect("job descriptor");
+        store
+            .update_status(JobStatusUpdate {
+                source_id: None,
+                job_id: descriptor.job_id,
+                status: LifecycleStatus::Running,
+                phase: PipelinePhase::Planning,
+                stage_id: None,
+                counts: None,
+                current: None,
+                message: None,
+                error: None,
+            })
+            .await
+            .expect("run job");
+        store
+            .update_status(JobStatusUpdate {
+                source_id: None,
+                job_id: descriptor.job_id,
+                status: LifecycleStatus::Completed,
+                phase: PipelinePhase::Complete,
+                stage_id: None,
+                counts: None,
+                current: None,
+                message: None,
+                error: None,
+            })
+            .await
+            .expect("complete job");
+    }
+    let active = enqueue_operation(
+        &ctx,
+        OperationKind::Source,
+        JobExecutionMode::Detached,
+        serde_json::json!({"operation": "source", "active": true}),
+    )
+    .await
+    .expect("enqueue active")
+    .expect("active job descriptor");
+
+    let cleared = clear_unified_jobs(
+        &ctx,
+        JobClearRequest {
+            status: None,
+            confirm: true,
+            kind: None,
+            older_than: None,
+        },
+    )
+    .await
+    .expect("clear");
+    assert_eq!(cleared.deleted, 105);
+
+    let remaining = unified_job_status(&ctx, active.job_id)
+        .await
+        .expect("status")
+        .expect("active remains");
+    assert_eq!(remaining.status, LifecycleStatus::Queued);
 }
 
 async fn test_context_with_unified_jobs() -> ServiceContext {

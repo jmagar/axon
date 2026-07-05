@@ -101,7 +101,7 @@ fn job_create_request(input: &RedditSourceIndexInput, _source_id: SourceId) -> J
             "source_kind": "reddit",
             "target": input.target,
         })),
-        auth_snapshot: AuthSnapshot::default(),
+        auth_snapshot: AuthSnapshot::trusted_system("runtime"),
         config_snapshot_id: Some(ConfigSnapshotId::new("cfg_reddit_source")),
         requirements: MetadataMap::new(),
         result_schema: Some("source_result".to_string()),

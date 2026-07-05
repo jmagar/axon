@@ -113,7 +113,7 @@ fn job_create_request(input: &LocalSourceIndexInput, _source_id: SourceId) -> Jo
             "source_kind": "local",
             "root_hint": public_path_hint(&input.root),
         })),
-        auth_snapshot: AuthSnapshot::default(),
+        auth_snapshot: AuthSnapshot::trusted_system("runtime"),
         config_snapshot_id: Some(ConfigSnapshotId::new("cfg_local_source")),
         requirements: MetadataMap::new(),
         result_schema: Some("source_result".to_string()),

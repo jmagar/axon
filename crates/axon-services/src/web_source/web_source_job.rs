@@ -95,7 +95,7 @@ fn job_create_request(input: &WebSourceIndexInput) -> JobCreateRequest {
             "source": input.source,
             "scope": format!("{:?}", input.scope).to_ascii_lowercase(),
         })),
-        auth_snapshot: AuthSnapshot::default(),
+        auth_snapshot: AuthSnapshot::trusted_system("runtime"),
         config_snapshot_id: Some(ConfigSnapshotId::new("cfg_web_source")),
         requirements: MetadataMap::new(),
         result_schema: Some("source_result".to_string()),

@@ -49,6 +49,11 @@ pub(super) fn router(
         large_write_routes(&service_context),
         &auth_policy,
         ScopeRequirement::Write,
+    ))
+    .merge(protect_routes(
+        admin_routes(&service_context),
+        &auth_policy,
+        ScopeRequirement::Admin,
     ));
     Router::new()
         .route("/healthz", get(super::super::health::healthz))
@@ -148,6 +153,15 @@ fn write_routes(cfg: Arc<Config>, service_context: &Arc<ServiceContext>) -> Rout
         )
         .route("/v1/watch/{id}/run", post(handlers::admin::run_watch))
         .layer(DefaultBodyLimit::max(128 * 1024))
+}
+
+/// Routes requiring the explicit `axon:admin` scope. Broad write tokens do not
+/// satisfy this scope.
+fn admin_routes(service_context: &Arc<ServiceContext>) -> Router<ServeState> {
+    Router::new().nest(
+        "/v1/jobs",
+        handlers::jobs::unified_jobs_admin_router(Arc::clone(service_context)),
+    )
 }
 
 /// Write-scoped routes whose payloads exceed the standard REST body cap
@@ -259,6 +273,7 @@ where
 pub(super) enum ScopeRequirement {
     Read,
     Write,
+    Admin,
 }
 
 pub(super) fn protect_routes<S>(
@@ -278,12 +293,16 @@ where
             (AuthPolicy::LoopbackDev, ScopeRequirement::Write) => {
                 router.route_layer(middleware::from_fn(block_loopback_destructive_request))
             }
+            (AuthPolicy::LoopbackDev, ScopeRequirement::Admin) => {
+                router.route_layer(middleware::from_fn(block_loopback_destructive_request))
+            }
             _ => router,
         };
     };
     let router = match scope {
         ScopeRequirement::Read => router.route_layer(middleware::from_fn(require_read_scope)),
         ScopeRequirement::Write => router.route_layer(middleware::from_fn(require_write_scope)),
+        ScopeRequirement::Admin => router.route_layer(middleware::from_fn(require_admin_scope)),
     };
     router
         .route_layer(layer)
@@ -391,6 +410,14 @@ async fn require_write_scope(
     next: middleware::Next,
 ) -> Response {
     require_scope(auth, "axon:write", request, next).await
+}
+
+async fn require_admin_scope(
+    auth: Option<Extension<AuthContext>>,
+    request: Request<Body>,
+    next: middleware::Next,
+) -> Response {
+    require_scope(auth, "axon:admin", request, next).await
 }
 
 async fn require_scope(

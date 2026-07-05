@@ -114,7 +114,7 @@ async fn unified_worker_claims_queued_job_from_durable_rows() {
 }
 
 #[tokio::test]
-async fn unified_worker_marks_unsupported_stage_completed_degraded() {
+async fn unified_worker_marks_unsupported_stage_failed() {
     let pool = open_sqlite_pool(":memory:").await.unwrap();
     seed_source(&pool).await;
     let store = SqliteUnifiedJobStore::new(pool.clone());
@@ -130,7 +130,7 @@ async fn unified_worker_marks_unsupported_stage_completed_degraded() {
     unified::run_unified_claimed(&pool, &claimed, &CancellationToken::new()).await;
 
     let summary = store.get(job.job_id).await.unwrap().unwrap();
-    assert_eq!(summary.status, LifecycleStatus::CompletedDegraded);
+    assert_eq!(summary.status, LifecycleStatus::Failed);
     assert!(summary.last_error.is_some());
     let events = store
         .events(axon_api::source::JobEventListRequest {
@@ -186,6 +186,50 @@ async fn stale_recovery_does_not_double_publish_when_original_attempt_is_alive()
     assert!(recovered.job_ids.is_empty());
     let summary = store.get(job.job_id).await.unwrap().unwrap();
     assert_eq!(summary.status, LifecycleStatus::Running);
+}
+
+#[tokio::test]
+async fn stale_claimed_attempt_cannot_terminalize_recovered_job() {
+    let pool = open_sqlite_pool(":memory:").await.unwrap();
+    seed_source(&pool).await;
+    let store = SqliteUnifiedJobStore::new(pool.clone());
+    let job = store
+        .create(unified_job_request(UnifiedJobKind::Source))
+        .await
+        .unwrap();
+    let claimed = unified::claim_next_unified_job(&pool)
+        .await
+        .unwrap()
+        .expect("claim job");
+
+    let recovered = store
+        .recover(JobRecoveryRequest {
+            kind: Some(UnifiedJobKind::Source),
+            stale_before: Some(axon_api::source::Timestamp::from(
+                chrono::Utc::now() + chrono::Duration::seconds(60),
+            )),
+            limit: Some(10),
+            older_than_seconds: None,
+            dry_run: false,
+            allow_without_cutoff: false,
+        })
+        .await
+        .unwrap();
+    assert_eq!(recovered.recovered, 1);
+
+    unified::run_unified_claimed(&pool, &claimed, &CancellationToken::new()).await;
+
+    let summary = store.get(job.job_id).await.unwrap().unwrap();
+    assert_eq!(summary.status, LifecycleStatus::Queued);
+    assert_eq!(summary.attempt, 2);
+    assert!(
+        store
+            .stages(job.job_id)
+            .await
+            .unwrap()
+            .iter()
+            .all(|stage| stage.status == LifecycleStatus::Queued)
+    );
 }
 
 async fn seed_source(pool: &SqlitePool) {

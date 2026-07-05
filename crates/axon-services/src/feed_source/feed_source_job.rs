@@ -111,7 +111,7 @@ fn job_create_request(input: &FeedSourceIndexInput, _source_id: SourceId) -> Job
             "source_kind": "feed",
             "feed_path_hint": public_path_hint(&input.feed_path),
         })),
-        auth_snapshot: AuthSnapshot::default(),
+        auth_snapshot: AuthSnapshot::trusted_system("runtime"),
         config_snapshot_id: Some(ConfigSnapshotId::new("cfg_feed_source")),
         requirements: MetadataMap::new(),
         result_schema: Some("source_result".to_string()),

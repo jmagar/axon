@@ -219,42 +219,53 @@ impl SqliteUnifiedJobStore {
     pub(crate) async fn append_job_event(&self, mut event: SourceProgressEvent) -> Result<()> {
         let mut tx = self.pool.begin().await.map_err(sql_error)?;
         ensure_job(&mut tx, event.job_id).await?;
-        let last_sequence =
-            sqlx::query_scalar::<_, i64>("SELECT last_event_sequence FROM jobs WHERE job_id = ?")
-                .bind(event.job_id.0.to_string())
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(sql_error)? as u64;
-        let expected = last_sequence + 1;
-        let sequence = if event.sequence == 0 {
-            expected
+        let auto_sequence = event.sequence == 0;
+        let sequence = if auto_sequence {
+            sqlx::query_scalar::<_, i64>(
+                "UPDATE jobs
+                 SET last_event_sequence = last_event_sequence + 1
+                 WHERE job_id = ?
+                 RETURNING last_event_sequence",
+            )
+            .bind(event.job_id.0.to_string())
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(sql_error)? as u64
         } else {
+            let last_sequence = sqlx::query_scalar::<_, i64>(
+                "SELECT last_event_sequence FROM jobs WHERE job_id = ?",
+            )
+            .bind(event.job_id.0.to_string())
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(sql_error)? as u64;
+            let expected = last_sequence + 1;
+            if event.sequence != expected {
+                if let Some(dedupe_key) = event.dedupe_key.as_deref() {
+                    let duplicate_sequence = sqlx::query_scalar::<_, Option<i64>>(
+                        "SELECT sequence FROM job_events WHERE job_id = ? AND dedupe_key = ?",
+                    )
+                    .bind(event.job_id.0.to_string())
+                    .bind(dedupe_key)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .map_err(sql_error)?;
+                    if duplicate_sequence == Some(event.sequence as i64) {
+                        tx.commit().await.map_err(sql_error)?;
+                        return Ok(());
+                    }
+                }
+                return Err(ApiError::new(
+                    "job_event.sequence_invalid",
+                    ErrorStage::Publishing,
+                    format!(
+                        "expected event sequence {} for job {}, got {}",
+                        expected, event.job_id.0, event.sequence
+                    ),
+                ));
+            }
             event.sequence
         };
-        if sequence != expected {
-            if let Some(dedupe_key) = event.dedupe_key.as_deref() {
-                let duplicate_sequence = sqlx::query_scalar::<_, Option<i64>>(
-                    "SELECT sequence FROM job_events WHERE job_id = ? AND dedupe_key = ?",
-                )
-                .bind(event.job_id.0.to_string())
-                .bind(dedupe_key)
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(sql_error)?;
-                if duplicate_sequence == Some(sequence as i64) {
-                    tx.commit().await.map_err(sql_error)?;
-                    return Ok(());
-                }
-            }
-            return Err(ApiError::new(
-                "job_event.sequence_invalid",
-                ErrorStage::Publishing,
-                format!(
-                    "expected event sequence {} for job {}, got {}",
-                    expected, event.job_id.0, sequence
-                ),
-            ));
-        }
         event.sequence = sequence;
         let duplicate_dedupe = if let Some(dedupe_key) = event.dedupe_key.as_deref() {
             sqlx::query_scalar::<_, i64>(
@@ -300,12 +311,14 @@ impl SqliteUnifiedJobStore {
         if let Err(error) = result {
             return Err(sql_error(error));
         }
-        sqlx::query("UPDATE jobs SET last_event_sequence = ? WHERE job_id = ?")
-            .bind(event.sequence as i64)
-            .bind(event.job_id.0.to_string())
-            .execute(&mut *tx)
-            .await
-            .map_err(sql_error)?;
+        if !auto_sequence {
+            sqlx::query("UPDATE jobs SET last_event_sequence = ? WHERE job_id = ?")
+                .bind(event.sequence as i64)
+                .bind(event.job_id.0.to_string())
+                .execute(&mut *tx)
+                .await
+                .map_err(sql_error)?;
+        }
         tx.commit().await.map_err(sql_error)
     }
 

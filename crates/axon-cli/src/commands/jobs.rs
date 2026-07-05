@@ -1,6 +1,6 @@
 use axon_api::source::{
-    JobCancelRequest, JobCleanupRequest, JobEventListRequest, JobId, JobListRequest,
-    JobRecoveryRequest, JobRetryMode, JobRetryRequest, MetadataMap,
+    JobCancelRequest, JobCleanupRequest, JobClearRequest, JobEventListRequest, JobId,
+    JobListRequest, JobRecoveryRequest, JobRetryMode, JobRetryRequest, MetadataMap,
 };
 #[cfg(test)]
 use axon_api::source::{JobKind, LifecycleStatus};
@@ -231,17 +231,18 @@ async fn clear_jobs(cfg: &Config, service_context: &ServiceContext) -> Result<()
     if !flag_present(cfg, "--confirm") {
         return Err("jobs clear requires --confirm".into());
     }
-    service_context
-        .job_store()
-        .ok_or_else(|| Box::<dyn Error>::from("unified job store is not available"))?
-        .reset()
-        .await
-        .map_err(|error| Box::<dyn Error>::from(error.message))?;
-    render_value_or_line(
-        cfg,
-        &serde_json::json!({"cleared": true}),
-        "cleared unified jobs",
+    let result = axon_services::jobs::clear_unified_jobs(
+        service_context,
+        JobClearRequest {
+            status: parse_opt_flag(cfg, "--status")?,
+            confirm: true,
+            kind: parse_opt_flag(cfg, "--kind")?,
+            older_than: None,
+        },
     )
+    .await
+    .map_err(|error| Box::<dyn Error>::from(error.to_string()))?;
+    render_value_or_line(cfg, &result, "cleared unified terminal jobs")
 }
 
 fn render_value_or_line<T: serde::Serialize>(

@@ -8,10 +8,11 @@ pub use crate::runtime::WorkerMode;
 use crate::types::ServiceJob;
 use axon_api::source::{
     AuthSnapshot, ConfigSnapshotId, JobCancelRequest, JobCancelResult, JobCleanupRequest,
-    JobCleanupResult, JobCreateRequest, JobDescriptor, JobEventListRequest, JobEventPage,
-    JobExecutionMode, JobIntent, JobListRequest, JobPolicy, JobPriority, JobRecoveryRequest,
-    JobRecoveryResult, JobRetryRequest, JobRetryResult, JobStagePlan, MetadataMap, OperationKind,
-    Page, PipelinePhase, job_policy_for_operation,
+    JobCleanupResult, JobClearRequest, JobClearResult, JobCreateRequest, JobDescriptor,
+    JobEventListRequest, JobEventPage, JobExecutionMode, JobIntent, JobListRequest, JobPolicy,
+    JobPriority, JobRecoveryRequest, JobRecoveryResult, JobRetryRequest, JobRetryResult,
+    JobStagePlan, MetadataMap, OperationKind, Page, PipelinePhase, SourceWarning,
+    job_policy_for_operation,
 };
 use axon_jobs::backend::JobKind;
 
@@ -196,7 +197,7 @@ pub async fn enqueue_operation(
                 .map(str::to_string),
             stage_plan: stage_plan_for_operation(operation),
             request: Some(request),
-            auth_snapshot: AuthSnapshot::default(),
+            auth_snapshot: AuthSnapshot::trusted_system("runtime"),
             config_snapshot_id: Some(ConfigSnapshotId::new("runtime")),
             requirements: MetadataMap::new(),
             result_schema: Some(result_schema_for_operation(operation).to_string()),
@@ -293,6 +294,51 @@ pub async fn cleanup_unified_jobs(
         .cleanup(request)
         .await
         .map_err(|error| box_send_sync(error.message))
+}
+
+pub async fn clear_unified_jobs(
+    service_context: &ServiceContext,
+    request: JobClearRequest,
+) -> Result<JobClearResult, Box<dyn Error + Send + Sync>> {
+    if !request.confirm {
+        return Err(box_send_sync(
+            "job clear requires confirm=true and admin authorization",
+        ));
+    }
+    let store = service_context
+        .job_store()
+        .ok_or_else(|| box_send_sync("unified job store is not available"))?;
+    let mut deleted = 0_u64;
+    loop {
+        let result = store
+            .cleanup(JobCleanupRequest {
+                dry_run: false,
+                kind: request.kind,
+                older_than: request.older_than.clone(),
+                status: request.status,
+                limit: Some(500),
+                older_than_seconds: None,
+                confirm_all_terminal: true,
+            })
+            .await
+            .map_err(|error| box_send_sync(error.message))?;
+        deleted += result.deleted;
+        if result.deleted == 0 || result.deleted < 500 {
+            break;
+        }
+    }
+    Ok(JobClearResult {
+        deleted,
+        status: request.status,
+        warnings: vec![SourceWarning {
+            code: "jobs.clear_terminal_only".to_string(),
+            severity: axon_api::source::Severity::Info,
+            message: "clear pruned terminal jobs only; active jobs require cancel/recover first"
+                .to_string(),
+            source_item_key: None,
+            retryable: false,
+        }],
+    })
 }
 
 fn box_send_sync(message: impl Into<String>) -> Box<dyn Error + Send + Sync> {

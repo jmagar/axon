@@ -229,7 +229,8 @@ pub struct JobCleanupResult {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct JobClearRequest {
-    pub status: LifecycleStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<LifecycleStatus>,
     pub confirm: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<JobKind>,
@@ -241,7 +242,8 @@ pub struct JobClearRequest {
 #[serde(deny_unknown_fields)]
 pub struct JobClearResult {
     pub deleted: u64,
-    pub status: LifecycleStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<LifecycleStatus>,
     pub warnings: Vec<SourceWarning>,
 }
 

@@ -815,22 +815,25 @@ async fn control_operations_cancel_retry_recover_cleanup_and_list_artifacts() {
         .await
         .expect("recover");
     assert_eq!(recovery.jobs_scanned, 1);
-    assert_eq!(recovery.jobs_failed, 1);
+    assert_eq!(recovery.jobs_requeued, 1);
+    assert_eq!(recovery.jobs_failed, 0);
     let attempts = store.attempts(running.job_id).await.expect("attempts");
     assert_eq!(attempts[0].status, LifecycleStatus::Failed);
     assert!(attempts[0].finished_at.is_some());
+    assert_eq!(attempts[1].status, LifecycleStatus::Queued);
     let recovered = store
         .get(running.job_id)
         .await
         .expect("get recovered")
         .expect("recovered job");
-    assert_eq!(recovered.status, LifecycleStatus::Failed);
+    assert_eq!(recovered.status, LifecycleStatus::Queued);
+    assert_eq!(recovered.attempt, 2);
     assert_eq!(
         recovered
             .heartbeat
             .as_ref()
             .map(|heartbeat| heartbeat.status),
-        Some(LifecycleStatus::Failed)
+        None
     );
     assert!(
         store
@@ -838,8 +841,18 @@ async fn control_operations_cancel_retry_recover_cleanup_and_list_artifacts() {
             .await
             .expect("recovered stages")
             .iter()
-            .all(|stage| stage.status == LifecycleStatus::Failed)
+            .all(|stage| stage.status == LifecycleStatus::Queued)
     );
+    store
+        .cancel(
+            running.job_id,
+            JobCancelRequest {
+                reason: Some("cleanup fixture".to_string()),
+                force_after_ms: Some(0),
+            },
+        )
+        .await
+        .expect("terminalize recovered job for cleanup");
     sqlx::query(
         "INSERT INTO job_artifacts (
             artifact_id, job_id, artifact_kind, uri, size_bytes, content_hash, created_at

@@ -11,9 +11,12 @@ pub(super) enum ActionScope {
 }
 
 impl ActionScope {
-    pub(super) fn as_scope(self, _subaction: &str) -> Option<&'static str> {
+    pub(super) fn as_scope(self, subaction: &str) -> Option<&'static str> {
         match self {
             Self::Read => Some("axon:read"),
+            Self::Write if matches!(subaction, "recover" | "cleanup" | "clear") => {
+                Some("axon:admin")
+            }
             Self::Write => Some("axon:write"),
             Self::InfoOnly => None,
         }

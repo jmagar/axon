@@ -157,7 +157,7 @@ pub(crate) async fn run_unified_claimed(
 ) {
     let store = SqliteUnifiedJobStore::new(pool.clone());
     if shutdown.is_cancelled() {
-        mark_canceled(&store, claimed).await;
+        mark_canceled(pool, &store, claimed).await;
         return;
     }
 
@@ -185,8 +185,8 @@ pub(crate) async fn run_unified_claimed(
             checkpoint_id: None,
             dedupe_key: Some(format!("unsupported-stage:{}", claimed.job_id.0)),
             phase: PipelinePhase::Complete,
-            status: LifecycleStatus::CompletedDegraded,
-            severity: Severity::Degraded,
+            status: LifecycleStatus::Failed,
+            severity: Severity::Failed,
             visibility: Visibility::Public,
             message: error.message.clone(),
             timestamp: Timestamp::from(chrono::Utc::now()),
@@ -208,7 +208,7 @@ pub(crate) async fn run_unified_claimed(
     if let Err(mark_error) = mark_terminal(
         pool,
         claimed,
-        LifecycleStatus::CompletedDegraded,
+        LifecycleStatus::Failed,
         PipelinePhase::Complete,
         Some(error),
     )
@@ -243,7 +243,11 @@ async fn heartbeat(
         .await
 }
 
-async fn mark_canceled(store: &SqliteUnifiedJobStore, claimed: &UnifiedClaimedJob) {
+async fn mark_canceled(
+    pool: &SqlitePool,
+    store: &SqliteUnifiedJobStore,
+    claimed: &UnifiedClaimedJob,
+) {
     if let Err(error) = store
         .append_event(SourceProgressEvent {
             event_id: uuid::Uuid::new_v4().to_string(),
@@ -278,6 +282,17 @@ async fn mark_canceled(store: &SqliteUnifiedJobStore, claimed: &UnifiedClaimedJo
     {
         tracing::warn!(job_id = %claimed.job_id.0, error = %error.message, "unified worker cancel event failed");
     }
+    if let Err(error) = mark_terminal(
+        pool,
+        claimed,
+        LifecycleStatus::Canceled,
+        PipelinePhase::Canceled,
+        None,
+    )
+    .await
+    {
+        tracing::warn!(job_id = %claimed.job_id.0, error = %error.message, "unified worker failed to mark shutdown claim canceled");
+    }
 }
 
 async fn mark_terminal(
@@ -303,7 +318,7 @@ async fn mark_terminal(
         .transpose()
         .map_err(json_error)?;
     let mut tx = pool.begin().await.map_err(sql_error)?;
-    sqlx::query(
+    let job_result = sqlx::query(
         "UPDATE jobs SET
             status = ?,
             phase = ?,
@@ -322,6 +337,17 @@ async fn mark_terminal(
     .execute(&mut *tx)
     .await
     .map_err(sql_error)?;
+    if job_result.rows_affected() == 0 {
+        tx.commit().await.map_err(sql_error)?;
+        return Err(ApiError::new(
+            "job_terminal.stale_attempt",
+            ErrorStage::Publishing,
+            format!(
+                "job {} attempt {} is no longer current; terminal update skipped",
+                claimed.job_id.0, claimed.attempt
+            ),
+        ));
+    }
     sqlx::query(
         "UPDATE job_attempts SET
             status = ?,

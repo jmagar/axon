@@ -44,6 +44,20 @@ pub struct AuthSnapshot {
 }
 
 impl AuthSnapshot {
+    pub fn trusted_system(policy_version: impl Into<String>) -> Self {
+        Self {
+            caller_id: Some("axon-system".to_string()),
+            transport: TransportKind::System,
+            granted_scopes: vec![AuthScope::Read, AuthScope::Write, AuthScope::Admin],
+            visibility_ceiling: Visibility::Internal,
+            request_time: Timestamp::from(Utc::now()),
+            policy_version: policy_version.into(),
+            auth_mode: AuthMode::TrustedLocal,
+            token_id: None,
+            display_name: Some("Axon system".to_string()),
+        }
+    }
+
     pub fn from_caller(
         caller: &CallerContext,
         visibility_ceiling: Visibility,

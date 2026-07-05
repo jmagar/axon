@@ -2,8 +2,8 @@ use super::AxonMcpServer;
 use super::common::{InlineHint, invalid_params, logged_internal_error, respond_with_mode};
 use crate::schema::{AxonToolResponse, JobsRequest, JobsSubaction};
 use axon_api::source::{
-    JobCancelRequest, JobCleanupRequest, JobEventListRequest, JobId, JobListRequest,
-    JobRecoveryRequest, JobRetryMode, JobRetryRequest, MetadataMap,
+    JobCancelRequest, JobCleanupRequest, JobClearRequest, JobEventListRequest, JobId,
+    JobListRequest, JobRecoveryRequest, JobRetryMode, JobRetryRequest,
 };
 use axon_services::context::ServiceContext;
 use rmcp::ErrorData;
@@ -29,7 +29,7 @@ impl AxonMcpServer {
             JobsSubaction::Retry => jobs_retry(&ctx, req).await?,
             JobsSubaction::Recover => jobs_recover(&ctx, req).await?,
             JobsSubaction::Cleanup => jobs_cleanup(&ctx, req).await?,
-            JobsSubaction::Clear => jobs_clear(&ctx).await?,
+            JobsSubaction::Clear => jobs_clear(&ctx, req).await?,
         };
 
         respond_with_mode(
@@ -50,8 +50,8 @@ async fn jobs_list(ctx: &ServiceContext, req: JobsRequest) -> Result<serde_json:
         JobListRequest {
             status: req.status,
             kind: req.kind,
-            source_id: None,
-            watch_id: None,
+            source_id: req.source_id,
+            watch_id: req.watch_id,
             limit: req.limit,
             cursor: req.cursor,
         },
@@ -120,9 +120,9 @@ async fn jobs_retry(
         job_id,
         JobRetryRequest {
             mode: req.retry_mode.unwrap_or(JobRetryMode::SameConfig),
-            from_phase: None,
-            idempotency_key: None,
-            overrides: MetadataMap::new(),
+            from_phase: req.from_phase,
+            idempotency_key: req.idempotency_key,
+            overrides: req.overrides,
         },
     )
     .await
@@ -138,7 +138,7 @@ async fn jobs_recover(
         ctx,
         JobRecoveryRequest {
             kind: req.kind,
-            stale_before: None,
+            stale_before: req.stale_before,
             limit: req.limit,
             older_than_seconds: None,
             dry_run: req.dry_run.unwrap_or(false),
@@ -159,7 +159,7 @@ async fn jobs_cleanup(
         JobCleanupRequest {
             dry_run: req.dry_run.unwrap_or(false),
             kind: req.kind,
-            older_than: None,
+            older_than: req.older_than,
             status: req.status,
             limit: req.limit,
             older_than_seconds: None,
@@ -171,13 +171,22 @@ async fn jobs_cleanup(
     serde_json::to_value(result).map_err(|e| logged_internal_error("jobs.cleanup", &e))
 }
 
-async fn jobs_clear(ctx: &ServiceContext) -> Result<serde_json::Value, ErrorData> {
-    ctx.job_store()
-        .ok_or_else(|| invalid_params("unified job store is not available"))?
-        .reset()
-        .await
-        .map_err(|e| logged_internal_error("jobs.clear", &std::io::Error::other(e.message)))?;
-    Ok(serde_json::json!({ "cleared": true }))
+async fn jobs_clear(
+    ctx: &ServiceContext,
+    req: JobsRequest,
+) -> Result<serde_json::Value, ErrorData> {
+    let result = axon_services::jobs::clear_unified_jobs(
+        ctx,
+        JobClearRequest {
+            status: req.status,
+            confirm: req.confirm.unwrap_or(false),
+            kind: req.kind,
+            older_than: req.older_than,
+        },
+    )
+    .await
+    .map_err(|e| logged_internal_error("jobs.clear", e.as_ref()))?;
+    serde_json::to_value(result).map_err(|e| logged_internal_error("jobs.clear", &e))
 }
 
 fn parse_unified_job_id(raw: Option<&str>) -> Result<JobId, ErrorData> {
