@@ -56,11 +56,10 @@ async fn target_code_search_keeps_unchanged_previous_generation_results_visible(
             8,
         ));
 
-    let first = refresh_code_search_index_with_backend(
+    let first = refresh_code_search_index_with_progress(
         &ctx,
         Some(repo.path()),
         CodeSearchCaller::Cli,
-        CodeSearchRefreshBackend::TargetLocalSource,
         None,
     )
     .await
@@ -70,11 +69,10 @@ async fn target_code_search_keeps_unchanged_previous_generation_results_visible(
         "pub fn changed() -> i32 { 2 }\n",
     )
     .expect("modified file");
-    let second = refresh_code_search_index_with_backend(
+    let second = refresh_code_search_index_with_progress(
         &ctx,
         Some(repo.path()),
         CodeSearchCaller::Cli,
-        CodeSearchRefreshBackend::TargetLocalSource,
         None,
     )
     .await
@@ -115,11 +113,10 @@ async fn target_code_search_keeps_unchanged_previous_generation_results_visible(
             && point.payload["committed_generation"] == serde_json::json!(second_payload_generation)
     }));
 
-    let third = refresh_code_search_index_with_backend(
+    let third = refresh_code_search_index_with_progress(
         &ctx,
         Some(repo.path()),
         CodeSearchCaller::Cli,
-        CodeSearchRefreshBackend::TargetLocalSource,
         None,
     )
     .await
@@ -186,11 +183,10 @@ async fn target_code_search_excludes_uncommitted_and_redacted_vectors() {
             8,
         ));
 
-    let refreshed = refresh_code_search_index_with_backend(
+    let refreshed = refresh_code_search_index_with_progress(
         &ctx,
         Some(repo.path()),
         CodeSearchCaller::Cli,
-        CodeSearchRefreshBackend::TargetLocalSource,
         None,
     )
     .await
@@ -405,15 +401,9 @@ async fn target_code_search_fails_refresh_but_can_query_last_committed_generatio
         ),
     );
 
-    refresh_code_search_index_with_backend(
-        &ctx,
-        Some(repo.path()),
-        CodeSearchCaller::Cli,
-        CodeSearchRefreshBackend::TargetLocalSource,
-        None,
-    )
-    .await
-    .expect("first target refresh");
+    refresh_code_search_index_with_progress(&ctx, Some(repo.path()), CodeSearchCaller::Cli, None)
+        .await
+        .expect("first target refresh");
     std::fs::write(repo.path().join("bad.rs"), [0xff, 0xfe, 0xfd]).expect("bad file");
 
     let searched = code_search(
