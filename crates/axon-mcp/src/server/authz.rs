@@ -255,6 +255,14 @@ pub(super) fn check_scope(
 
 /// Map an axon tool action and subaction to the minimum required scope.
 pub fn required_scope_for(action: &str, subaction: &str) -> Option<&'static str> {
+    if action == "jobs" {
+        return match subaction {
+            "list" | "get" | "status" | "events" | "stream" | "artifacts" => Some("axon:read"),
+            "cancel" | "retry" => Some("axon:write"),
+            "recover" | "cleanup" | "clear" => Some("axon:admin"),
+            _ => Some("__deny__"),
+        };
+    }
     MCP_ACTION_SPECS
         .iter()
         .find(|spec| spec.name == action)

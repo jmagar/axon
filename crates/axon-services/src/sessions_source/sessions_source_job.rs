@@ -103,7 +103,10 @@ fn job_create_request(input: &SessionsSourceIndexInput, _source_id: SourceId) ->
             "provider": input.provider,
             "session_id": input.session_id,
         })),
-        auth_snapshot: AuthSnapshot::trusted_system("runtime"),
+        auth_snapshot: input
+            .auth_snapshot
+            .clone()
+            .unwrap_or_else(|| AuthSnapshot::trusted_system("runtime")),
         config_snapshot_id: Some(ConfigSnapshotId::new("cfg_sessions_source")),
         requirements: MetadataMap::new(),
         result_schema: Some("source_result".to_string()),

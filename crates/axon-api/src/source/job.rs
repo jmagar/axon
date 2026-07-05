@@ -216,13 +216,12 @@ pub struct JobCleanupResult {
     pub deleted: u64,
     pub dry_run: bool,
     pub warnings: Vec<SourceWarning>,
-    #[serde(skip)]
     pub jobs_pruned: u64,
-    #[serde(skip)]
     pub events_pruned: u64,
-    #[serde(skip)]
     pub heartbeats_pruned: u64,
-    #[serde(skip)]
+    pub attempts_pruned: u64,
+    pub stages_pruned: u64,
+    pub reservations_pruned: u64,
     pub artifacts_pruned: u64,
 }
 

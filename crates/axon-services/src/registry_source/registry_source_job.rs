@@ -104,7 +104,10 @@ fn job_create_request(input: &RegistrySourceIndexInput, _source_id: SourceId) ->
             "source_kind": "registry",
             "dump_path_hint": public_path_hint(&input.registry_dump_path),
         })),
-        auth_snapshot: AuthSnapshot::trusted_system("runtime"),
+        auth_snapshot: input
+            .auth_snapshot
+            .clone()
+            .unwrap_or_else(|| AuthSnapshot::trusted_system("runtime")),
         config_snapshot_id: Some(ConfigSnapshotId::new("cfg_registry_source")),
         requirements: MetadataMap::new(),
         result_schema: Some("source_result".to_string()),

@@ -142,7 +142,7 @@ async fn jobs_recover(
             limit: req.limit,
             older_than_seconds: None,
             dry_run: req.dry_run.unwrap_or(false),
-            allow_without_cutoff: true,
+            allow_without_cutoff: false,
         },
     )
     .await

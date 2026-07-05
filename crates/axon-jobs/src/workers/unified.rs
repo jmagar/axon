@@ -141,6 +141,24 @@ pub(crate) async fn claim_next_unified_job(
         return Ok(None);
     }
 
+    sqlx::query(
+        "INSERT INTO job_attempts (
+            attempt_id, job_id, attempt, status, worker_id, started_at, heartbeat_at
+         ) VALUES (?, ?, ?, 'running', NULL, ?, ?)
+         ON CONFLICT(job_id, attempt) DO UPDATE SET
+            status = 'running',
+            started_at = COALESCE(job_attempts.started_at, excluded.started_at),
+            heartbeat_at = excluded.heartbeat_at",
+    )
+    .bind(format!("{}:{}", job_id.0, attempt))
+    .bind(job_id.0.to_string())
+    .bind(attempt as i64)
+    .bind(now.0.as_str())
+    .bind(now.0.as_str())
+    .execute(&mut *tx)
+    .await
+    .map_err(sql_error)?;
+
     tx.commit().await.map_err(sql_error)?;
     Ok(Some(UnifiedClaimedJob {
         job_id,

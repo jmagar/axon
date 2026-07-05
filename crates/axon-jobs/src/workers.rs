@@ -3,6 +3,7 @@ mod panic_guard;
 mod progress;
 mod runners;
 mod starvation;
+#[allow(dead_code)]
 mod unified;
 mod watch_scheduler;
 mod watchdog;
@@ -101,12 +102,11 @@ pub fn spawn_workers(
         "jobs: spawning in-process job workers"
     );
 
-    tracing::info!(worker = "unified", lanes = 1, "jobs: spawning worker");
-    worker_handles.push(tokio::spawn(unified::unified_worker_loop(
-        Arc::clone(&pool),
-        Arc::clone(&unified_notify),
-        shutdown.clone(),
-    )));
+    tracing::info!(
+        worker = "unified",
+        lanes = 0,
+        "jobs: unified worker disabled until executable runners are wired"
+    );
 
     // Crawl: single lane (spider futures are !Send — must stay single-task)
     tracing::info!(worker = "crawl", lanes = 1, "jobs: spawning worker");

@@ -427,9 +427,14 @@ fn apply_jobs(out: &mut DispatchOutput, action: Option<JobsSubcommand>) {
         JobsSubcommand::Retry { job_id, mode } => {
             positional = vec!["retry".to_string(), job_id, "--mode".to_string(), mode];
         }
-        JobsSubcommand::Recover { kind, limit } => {
+        JobsSubcommand::Recover {
+            kind,
+            stale_before,
+            limit,
+        } => {
             positional.push("recover".to_string());
             push_opt(&mut positional, "--kind", kind);
+            push_opt(&mut positional, "--stale-before", stale_before);
             push_usize(&mut positional, "--limit", limit);
         }
         JobsSubcommand::Cleanup {

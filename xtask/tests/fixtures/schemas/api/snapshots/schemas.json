@@ -5859,6 +5859,16 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "properties": {
+        "artifacts_pruned": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "attempts_pruned": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
         "deleted": {
           "format": "uint64",
           "minimum": 0,
@@ -5867,7 +5877,32 @@
         "dry_run": {
           "type": "boolean"
         },
+        "events_pruned": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "heartbeats_pruned": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "jobs_pruned": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
         "matched": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reservations_pruned": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "stages_pruned": {
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
@@ -5883,7 +5918,14 @@
         "matched",
         "deleted",
         "dry_run",
-        "warnings"
+        "warnings",
+        "jobs_pruned",
+        "events_pruned",
+        "heartbeats_pruned",
+        "attempts_pruned",
+        "stages_pruned",
+        "reservations_pruned",
+        "artifacts_pruned"
       ],
       "title": "JobCleanupResult",
       "type": "object"
@@ -27453,7 +27495,7 @@
         "path": "crates/axon-api/src/source/ids.rs"
       },
       {
-        "checksum": "sha256:e1aa5096c2118bc25aae5da4772308ae3162831c278bc215e108435783cd6b45",
+        "checksum": "sha256:819cc30c3ef16d34581c838b775ac5eab8cc5e3aa622df40bdd1989662c7236d",
         "kind": "rust_module",
         "path": "crates/axon-api/src/source/job.rs"
       },

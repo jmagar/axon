@@ -240,6 +240,9 @@ fn target_job_management_dtos_round_trip() {
         jobs_pruned: 3,
         events_pruned: 0,
         heartbeats_pruned: 0,
+        attempts_pruned: 0,
+        stages_pruned: 0,
+        reservations_pruned: 0,
         artifacts_pruned: 0,
     };
 

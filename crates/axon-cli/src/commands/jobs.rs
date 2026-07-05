@@ -1,6 +1,6 @@
 use axon_api::source::{
     JobCancelRequest, JobCleanupRequest, JobClearRequest, JobEventListRequest, JobId,
-    JobListRequest, JobRecoveryRequest, JobRetryMode, JobRetryRequest, MetadataMap,
+    JobListRequest, JobRecoveryRequest, JobRetryMode, JobRetryRequest, MetadataMap, Timestamp,
 };
 #[cfg(test)]
 use axon_api::source::{JobKind, LifecycleStatus};
@@ -194,16 +194,25 @@ async fn recover_jobs(
         service_context,
         JobRecoveryRequest {
             kind: parse_opt_flag(cfg, "--kind")?,
-            stale_before: None,
+            stale_before: parse_timestamp_flag(cfg, "--stale-before")?,
             limit: parse_u32_flag(cfg, "--limit")?,
             older_than_seconds: None,
             dry_run: false,
-            allow_without_cutoff: true,
+            allow_without_cutoff: false,
         },
     )
     .await
     .map_err(|error| Box::<dyn Error>::from(error.to_string()))?;
     render_value_or_line(cfg, &result, "recovery complete")
+}
+
+fn parse_timestamp_flag(cfg: &Config, name: &str) -> Result<Option<Timestamp>, Box<dyn Error>> {
+    let Some(value) = flag_value(cfg, name) else {
+        return Ok(None);
+    };
+    let parsed = chrono::DateTime::parse_from_rfc3339(&value)
+        .map_err(|error| format!("{name} must be RFC3339 timestamp: {error}"))?;
+    Ok(Some(Timestamp::from(parsed.with_timezone(&chrono::Utc))))
 }
 
 async fn cleanup_jobs(

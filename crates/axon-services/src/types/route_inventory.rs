@@ -7,6 +7,9 @@ pub enum RestRouteAuth {
     /// Protected active-operation bucket. Runtime OAuth accepts any Axon
     /// scope (`axon:read` or `axon:write`) for protected Axon REST routes.
     Write,
+    /// Protected administrative/destructive bucket. Runtime requires explicit
+    /// `axon:admin`; broad write tokens are insufficient.
+    Admin,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -267,7 +270,7 @@ const REST_ROUTE_INVENTORY: &[RestRouteInfo] = &[
     RestRouteInfo {
         method: "DELETE",
         path: "/v1/jobs",
-        auth: RestRouteAuth::Write,
+        auth: RestRouteAuth::Admin,
         openapi: true,
     },
     RestRouteInfo {
@@ -285,13 +288,13 @@ const REST_ROUTE_INVENTORY: &[RestRouteInfo] = &[
     RestRouteInfo {
         method: "POST",
         path: "/v1/jobs/recover",
-        auth: RestRouteAuth::Write,
+        auth: RestRouteAuth::Admin,
         openapi: true,
     },
     RestRouteInfo {
         method: "POST",
         path: "/v1/jobs/cleanup",
-        auth: RestRouteAuth::Write,
+        auth: RestRouteAuth::Admin,
         openapi: true,
     },
     RestRouteInfo {

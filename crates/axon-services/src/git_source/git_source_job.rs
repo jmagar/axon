@@ -104,7 +104,10 @@ fn job_create_request(input: &GitSourceIndexInput, _source_id: SourceId) -> JobC
             "source_kind": "git",
             "target_url": input.target_url,
         })),
-        auth_snapshot: AuthSnapshot::trusted_system("runtime"),
+        auth_snapshot: input
+            .auth_snapshot
+            .clone()
+            .unwrap_or_else(|| AuthSnapshot::trusted_system("runtime")),
         config_snapshot_id: Some(ConfigSnapshotId::new("cfg_git_source")),
         requirements: MetadataMap::new(),
         result_schema: Some("source_result".to_string()),

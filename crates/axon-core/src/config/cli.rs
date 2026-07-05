@@ -869,6 +869,8 @@ pub(super) enum JobsSubcommand {
     Recover {
         #[arg(long)]
         kind: Option<String>,
+        #[arg(long = "stale-before")]
+        stale_before: Option<String>,
         #[arg(long)]
         limit: Option<usize>,
     },

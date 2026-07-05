@@ -285,6 +285,10 @@ impl SqliteUnifiedJobStore {
         let events_pruned = count_children_by_job_ids(&self.pool, "job_events", &ids).await?;
         let heartbeats_pruned =
             count_children_by_job_ids(&self.pool, "job_heartbeats", &ids).await?;
+        let attempts_pruned = count_children_by_job_ids(&self.pool, "job_attempts", &ids).await?;
+        let stages_pruned = count_children_by_job_ids(&self.pool, "job_stages", &ids).await?;
+        let reservations_pruned =
+            count_children_by_job_ids(&self.pool, "provider_reservations", &ids).await?;
         let artifacts_pruned = count_children_by_job_ids(&self.pool, "job_artifacts", &ids).await?;
 
         let deleted = if !request.dry_run && jobs_pruned > 0 {
@@ -309,6 +313,9 @@ impl SqliteUnifiedJobStore {
             jobs_pruned: deleted,
             events_pruned,
             heartbeats_pruned,
+            attempts_pruned,
+            stages_pruned,
+            reservations_pruned,
             artifacts_pruned,
         })
     }
