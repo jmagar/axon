@@ -717,7 +717,7 @@
         "500",
         "502"
       ],
-      "result_dto": "JobEventPage",
+      "result_dto": "StreamEvent",
       "streaming": true
     },
     {
@@ -1088,7 +1088,7 @@
     "removed": [],
     "source_inputs": [
       {
-        "checksum": "sha256:4833c2476173649be63abcbb820b30d5bb81a05a4294f4ce4865766855da8372",
+        "checksum": "sha256:3ee650190465380695d49c6a15ba21ca529b1933d6174e47d5241aa92ffeb8f3",
         "kind": "rust_module",
         "path": "crates/axon-web/src/schema_registry.rs"
       },

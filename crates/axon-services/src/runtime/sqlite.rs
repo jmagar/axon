@@ -15,6 +15,7 @@ use axon_jobs::query as job_query;
 use axon_jobs::status::JobStatus;
 use axon_jobs::store::reclaim_stale_running_jobs_for_table;
 use axon_jobs::unified::SqliteUnifiedJobStore;
+use axon_observe::sink::SqliteObservabilitySink;
 
 pub struct SqliteServiceRuntime {
     pub(crate) cfg: Arc<Config>,
@@ -41,8 +42,11 @@ impl ServiceJobRuntime for SqliteServiceRuntime {
     }
 
     fn unified_job_store(&self) -> Option<Arc<dyn JobStore>> {
-        Some(Arc::new(SqliteUnifiedJobStore::new(
+        Some(Arc::new(SqliteUnifiedJobStore::with_observe_sink(
             self.backend.pool().as_ref().clone(),
+            Arc::new(SqliteObservabilitySink::from_migrated_pool(
+                self.backend.pool().as_ref().clone(),
+            )),
         )))
     }
 

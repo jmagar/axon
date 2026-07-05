@@ -27,6 +27,14 @@ pub(crate) async fn unified_worker_loop(
     notify: Arc<Notify>,
     shutdown: CancellationToken,
 ) {
+    if let Err(error) = ensure_no_incompatible_legacy_jobs(&pool).await {
+        tracing::error!(
+            error = %error.message,
+            code = %error.code,
+            "unified worker startup blocked"
+        );
+        return;
+    }
     let mut wake_count: u64 = 0;
     loop {
         tokio::select! {
@@ -40,7 +48,7 @@ pub(crate) async fn unified_worker_loop(
         loop {
             let mut processed = 0usize;
             while processed < WORKER_BATCH_LIMIT && !shutdown.is_cancelled() {
-                match claim_next_unified_job(&pool).await {
+                match claim_next_unified_job_unchecked(&pool).await {
                     Ok(Some(claimed)) => {
                         run_unified_claimed(&pool, &claimed, &shutdown).await;
                         processed += 1;
@@ -75,6 +83,11 @@ pub(crate) async fn unified_worker_loop(
 pub(crate) async fn claim_next_unified_job(
     pool: &SqlitePool,
 ) -> Result<Option<UnifiedClaimedJob>, ApiError> {
+    ensure_no_incompatible_legacy_jobs(pool).await?;
+    claim_next_unified_job_unchecked(pool).await
+}
+
+async fn ensure_no_incompatible_legacy_jobs(pool: &SqlitePool) -> Result<(), ApiError> {
     if let Some(blocker) = detect_incompatible_legacy_jobs(pool).await? {
         return Err(ApiError::new(
             "job_store.incompatible_legacy_jobs",
@@ -82,7 +95,12 @@ pub(crate) async fn claim_next_unified_job(
             blocker.message,
         ));
     }
+    Ok(())
+}
 
+async fn claim_next_unified_job_unchecked(
+    pool: &SqlitePool,
+) -> Result<Option<UnifiedClaimedJob>, ApiError> {
     let mut tx = pool.begin().await.map_err(sql_error)?;
     let row = sqlx::query(
         "SELECT job_id, kind, attempt, request_json
@@ -321,11 +339,16 @@ async fn mark_terminal(
     error: Option<ApiError>,
 ) -> Result<(), ApiError> {
     let now = Timestamp::from(chrono::Utc::now());
+    let terminal_severity = match status {
+        LifecycleStatus::CompletedDegraded => Severity::Degraded,
+        LifecycleStatus::Canceled => Severity::Warning,
+        _ => Severity::Failed,
+    };
     let status = enum_name(status)?;
     let phase = enum_name(phase)?;
     let source_error_json = error
         .as_ref()
-        .map(source_error_from_api)
+        .map(|error| source_error_from_api(error, terminal_severity))
         .as_ref()
         .map(serde_json::to_string)
         .transpose()
@@ -431,10 +454,10 @@ fn sql_error(error: sqlx::Error) -> ApiError {
     )
 }
 
-fn source_error_from_api(error: &ApiError) -> SourceError {
+fn source_error_from_api(error: &ApiError, severity: Severity) -> SourceError {
     SourceError {
         code: error.code.to_string(),
-        severity: Severity::Failed,
+        severity,
         message: error.message.clone(),
         source_item_key: None,
         retryable: error.retryable,

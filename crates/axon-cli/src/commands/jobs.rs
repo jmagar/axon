@@ -224,7 +224,7 @@ async fn cleanup_jobs(
         JobCleanupRequest {
             dry_run: flag_present(cfg, "--dry-run"),
             kind: parse_opt_flag(cfg, "--kind")?,
-            older_than: None,
+            older_than: parse_timestamp_flag(cfg, "--older-than")?,
             status: parse_opt_flag(cfg, "--status")?,
             limit: parse_u32_flag(cfg, "--limit")?,
             older_than_seconds: None,

@@ -238,7 +238,7 @@ static REST_ROUTES: &[RestRouteSpec] = &[
         path: "/v1/jobs/{id}/stream",
         operation_id: "jobs_stream",
         request_dto: None,
-        result_dto: "JobEventPage",
+        result_dto: "StreamEvent",
         required_scope: "read",
         mutates: false,
         streaming: true,

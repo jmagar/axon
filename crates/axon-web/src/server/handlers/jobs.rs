@@ -53,7 +53,7 @@ pub(crate) struct UnifiedJobEventsQuery {
 
 #[derive(Clone)]
 pub(crate) struct UnifiedJobsState {
-    service_context: Arc<ServiceContext>,
+    pub(super) service_context: Arc<ServiceContext>,
 }
 
 pub(crate) fn unified_jobs_read_router<S>(service_context: Arc<ServiceContext>) -> Router<S>
@@ -64,7 +64,7 @@ where
         .route("/", get(list_unified_jobs))
         .route("/{id}", get(unified_job_status))
         .route("/{id}/events", get(unified_job_events))
-        .route("/{id}/stream", get(unified_job_events))
+        .route("/{id}/stream", get(super::jobs_stream::unified_job_stream))
         .route("/{id}/artifacts", get(unified_job_artifacts))
         .layer(Extension(UnifiedJobsState { service_context }))
 }
@@ -355,24 +355,17 @@ pub(crate) async fn unified_job_artifacts(
     Extension(state): Extension<UnifiedJobsState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, HttpError> {
-    let result = state
-        .service_context
-        .job_store()
-        .ok_or_else(|| {
-            HttpError::new(
-                axum::http::StatusCode::SERVICE_UNAVAILABLE,
-                "unavailable",
-                "unified job store is not available",
-            )
-        })?
-        .artifacts(axon_api::source::JobArtifactListRequest {
+    let result = services::jobs::unified_job_artifacts(
+        &state.service_context,
+        axon_api::source::JobArtifactListRequest {
             job_id: axon_api::source::JobId::new(id),
             kind: None,
             limit: None,
             cursor: None,
-        })
-        .await
-        .map_err(|error| HttpError::from_error(&std::io::Error::other(error.message)))?;
+        },
+    )
+    .await
+    .map_err(HttpError::from_box_send_sync)?;
     Ok(Json(json_value(result)?))
 }
 

@@ -154,6 +154,29 @@ async fn unified_worker_marks_unsupported_stage_failed() {
 }
 
 #[tokio::test]
+async fn unified_worker_shutdown_claim_marks_job_canceled() {
+    let pool = open_sqlite_pool(":memory:").await.unwrap();
+    seed_source(&pool).await;
+    let store = SqliteUnifiedJobStore::new(pool.clone());
+    let job = store
+        .create(unified_job_request(UnifiedJobKind::Source))
+        .await
+        .unwrap();
+    let claimed = unified::claim_next_unified_job(&pool)
+        .await
+        .unwrap()
+        .expect("claim job");
+    let shutdown = CancellationToken::new();
+    shutdown.cancel();
+
+    unified::run_unified_claimed(&pool, &claimed, &shutdown).await;
+
+    let summary = store.get(job.job_id).await.unwrap().unwrap();
+    assert_eq!(summary.status, LifecycleStatus::Canceled);
+    assert_eq!(summary.phase, PipelinePhase::Canceled);
+}
+
+#[tokio::test]
 async fn stale_recovery_does_not_double_publish_when_original_attempt_is_alive() {
     let pool = open_sqlite_pool(":memory:").await.unwrap();
     seed_source(&pool).await;

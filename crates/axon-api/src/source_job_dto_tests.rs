@@ -1,7 +1,4 @@
-use crate::source::{
-    AuthSnapshot, ConfigSnapshotId, JobCreateRequest, JobIntent, JobKind, JobPriority,
-    JobStagePlan, MetadataMap, PipelinePhase,
-};
+use super::*;
 
 #[test]
 fn job_create_request_serializes_required_contract_fields() {

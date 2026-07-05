@@ -222,6 +222,8 @@ fn parse_jobs_controls_into_config() {
             "cleanup",
             "--status",
             "completed_degraded",
+            "--older-than",
+            "2026-07-05T00:00:00Z",
             "--dry-run",
         ],
         vec!["jobs", "clear", "--confirm"],
@@ -230,6 +232,10 @@ fn parse_jobs_controls_into_config() {
         let cfg = super::build_config::into_config(cli).expect("jobs control should parse");
         assert!(matches!(cfg.command, CommandKind::Jobs));
         assert!(!cfg.positional.is_empty());
+        if cfg.positional.first().map(String::as_str) == Some("cleanup") {
+            assert!(cfg.positional.contains(&"--older-than".to_string()));
+            assert!(cfg.positional.contains(&"2026-07-05T00:00:00Z".to_string()));
+        }
     }
 }
 

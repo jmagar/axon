@@ -1,7 +1,8 @@
+use super::*;
 use axon_api::source::{JobId, LifecycleStatus};
 use uuid::Uuid;
 
-use crate::state_machine::validate_transition;
+use state_machine::validate_transition;
 
 #[test]
 fn job_state_machine_accepts_only_contract_transitions() {

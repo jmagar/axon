@@ -242,12 +242,12 @@ impl SqliteUnifiedJobStore {
             let expected = last_sequence + 1;
             if event.sequence != expected {
                 if let Some(dedupe_key) = event.dedupe_key.as_deref() {
-                    let duplicate_sequence = sqlx::query_scalar::<_, Option<i64>>(
+                    let duplicate_sequence = sqlx::query_scalar::<_, i64>(
                         "SELECT sequence FROM job_events WHERE job_id = ? AND dedupe_key = ?",
                     )
                     .bind(event.job_id.0.to_string())
                     .bind(dedupe_key)
-                    .fetch_one(&mut *tx)
+                    .fetch_optional(&mut *tx)
                     .await
                     .map_err(sql_error)?;
                     if duplicate_sequence == Some(event.sequence as i64) {

@@ -440,12 +440,14 @@ fn apply_jobs(out: &mut DispatchOutput, action: Option<JobsSubcommand>) {
         JobsSubcommand::Cleanup {
             status,
             kind,
+            older_than,
             limit,
             dry_run,
         } => {
             positional.push("cleanup".to_string());
             push_opt(&mut positional, "--status", status);
             push_opt(&mut positional, "--kind", kind);
+            push_opt(&mut positional, "--older-than", older_than);
             push_usize(&mut positional, "--limit", limit);
             if dry_run {
                 positional.push("--dry-run".to_string());

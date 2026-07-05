@@ -162,7 +162,8 @@ pub(crate) async fn dispatch_jobs(
                     allow_without_cutoff: false,
                 },
             )
-            .await?,
+            .await
+            .map_err(ClientActionError::from_job_control_error)?,
         ),
         JobsSubaction::Cleanup => json(
             job_svc::cleanup_unified_jobs(
@@ -189,7 +190,8 @@ pub(crate) async fn dispatch_jobs(
                     older_than: req.older_than,
                 },
             )
-            .await?,
+            .await
+            .map_err(ClientActionError::from_job_control_error)?,
         ),
     }
 }
@@ -216,5 +218,19 @@ fn json<T: serde::Serialize>(value: T) -> Result<serde_json::Value, ClientAction
 impl From<Box<dyn std::error::Error + Send + Sync>> for ClientActionError {
     fn from(err: Box<dyn std::error::Error + Send + Sync>) -> Self {
         ClientActionError::new("internal", err.to_string(), true, None)
+    }
+}
+
+impl ClientActionError {
+    fn from_job_control_error(err: Box<dyn std::error::Error + Send + Sync>) -> Self {
+        let message = err.to_string();
+        if message.contains("requires")
+            || message.contains("confirm=true")
+            || message.contains("staleness cutoff")
+        {
+            Self::new("invalid_request", message, false, None)
+        } else {
+            Self::new("internal", message, true, None)
+        }
     }
 }

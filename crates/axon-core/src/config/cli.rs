@@ -880,6 +880,8 @@ pub(super) enum JobsSubcommand {
         status: Option<String>,
         #[arg(long)]
         kind: Option<String>,
+        #[arg(long = "older-than")]
+        older_than: Option<String>,
         #[arg(long)]
         limit: Option<usize>,
         #[arg(long, action = ArgAction::SetTrue)]
