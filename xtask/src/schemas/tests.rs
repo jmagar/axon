@@ -53,6 +53,7 @@ pub(super) fn fixture_repo() -> TempDir {
         "crates/axon-vectors/src/lib.rs",
         "crates/axon-vectors/src/store.rs",
         "crates/axon-vectors/src/payload.rs",
+        "crates/axon-vectors/src/payload_families.rs",
         "crates/axon-vectors/src/point.rs",
         "xtask/src/schemas/api_defs.rs",
         "xtask/src/schemas/registry.rs",
@@ -190,6 +191,7 @@ fn needs_real_fixture(path: &str) -> bool {
             | "crates/axon-authz/src/policy.rs"
             | "crates/axon-observe/src/reservation.rs"
             | "crates/axon-vectors/src/payload.rs"
+            | "crates/axon-vectors/src/payload_families.rs"
             | "crates/axon-vectors/src/point.rs"
             | "docs/pipeline-unification/runtime/provider-contract.md"
             | "docs/pipeline-unification/sources/metadata-payload.md"

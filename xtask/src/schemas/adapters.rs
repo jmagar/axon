@@ -15,8 +15,13 @@ pub fn adapter_artifacts(root: &Path) -> Result<Vec<SchemaArtifact>> {
         root,
         &[
             "crates/axon-route/src/capability.rs",
+            "crates/axon-adapters/src/family_matrix.rs",
+            "crates/axon-adapters/src/onboarding.rs",
+            "crates/axon-adapters/src/spec.rs",
             "crates/axon-adapters/src/web.rs",
+            "crates/axon-adapters/fixtures/provider-variant-exceptions.json",
             "docs/pipeline-unification/sources/adapter-scopes.md",
+            "docs/pipeline-unification/sources/new-source-contract.md",
         ],
     )?;
     let registry = AdapterRegistry::target_defaults();

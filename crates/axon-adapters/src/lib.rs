@@ -15,6 +15,7 @@ pub mod local;
 mod local_select;
 pub mod manifest;
 pub mod mcp_tool;
+pub mod onboarding;
 pub mod reddit;
 pub mod registry;
 pub mod registry_sources;
@@ -28,6 +29,7 @@ pub use acquisition::{AcquiredItem, AcquisitionManifest, FetchStatus};
 pub use adapter::SourceAdapter;
 pub use capability::{AdapterCapability, AdapterVersion};
 pub use family_matrix::{SourceFamilyMatrix, source_family_matrix};
+pub use onboarding::{OnboardingRow, SourceOnboardingStatus, onboarding_rows, onboarding_status};
 pub use registry::SourceAdapterRegistry;
 pub use spec::{ParserFamily, SourceAdapterSpec, SourceFamily, SourceScopeCapability};
 pub use testing::FakeSourceAdapter;
@@ -45,6 +47,10 @@ mod manifest_tests;
 #[cfg(test)]
 #[path = "family_matrix_tests.rs"]
 mod family_matrix_tests;
+
+#[cfg(test)]
+#[path = "onboarding_tests.rs"]
+mod onboarding_tests;
 
 #[cfg(test)]
 #[path = "local_tests.rs"]
