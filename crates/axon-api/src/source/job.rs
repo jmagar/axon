@@ -1,3 +1,4 @@
+use super::auth::AuthSnapshot;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -6,6 +7,7 @@ use super::enums::*;
 use super::ids::*;
 use super::lifecycle::JobDescriptor;
 use super::stage::StageCounts;
+use super::status::ApiError;
 use super::status::ProgressCurrent;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema)]
@@ -23,20 +25,25 @@ pub struct JobCreateRequest {
     pub parent_job_id: Option<JobId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub root_job_id: Option<JobId>,
+    #[serde(default)]
+    pub attempt: u32,
     pub priority: JobPriority,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub idempotency_key: Option<String>,
     pub stage_plan: Vec<JobStagePlan>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request: Option<serde_json::Value>,
-    #[serde(default, skip_serializing_if = "MetadataMap::is_empty")]
-    pub auth_snapshot: MetadataMap,
+    pub auth_snapshot: AuthSnapshot,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config_snapshot_id: Option<ConfigSnapshotId>,
     #[serde(default, skip_serializing_if = "MetadataMap::is_empty")]
     pub requirements: MetadataMap,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result_schema: Option<String>,
+    #[serde(default)]
+    pub warnings: Vec<SourceWarning>,
+    #[serde(default)]
+    pub error: Option<ApiError>,
     pub metadata: MetadataMap,
 }
 

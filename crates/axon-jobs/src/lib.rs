@@ -27,5 +27,9 @@ pub mod workers;
 pub use runtime::SqliteJobBackend;
 
 #[cfg(test)]
+#[path = "state_machine_tests.rs"]
+mod state_machine_tests;
+
+#[cfg(test)]
 #[path = "freshness_tests.rs"]
 mod freshness_tests;
