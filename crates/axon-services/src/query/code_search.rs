@@ -227,6 +227,8 @@ fn target_code_search_request(
         "committed_generation".to_string(),
         json!(committed_generation.0),
     );
+    filters.insert("visibility".to_string(), json!("public"));
+    filters.insert("redaction_status".to_string(), json!("clean"));
     if let Some(prefix) = path_prefix {
         filters.insert("path_prefix".to_string(), json!(prefix));
     }
