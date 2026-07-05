@@ -212,87 +212,91 @@ pub async fn enqueue_operation(
 pub async fn list_unified_jobs(
     service_context: &ServiceContext,
     request: JobListRequest,
-) -> Result<Page<axon_api::source::JobSummary>, Box<dyn Error>> {
+) -> Result<Page<axon_api::source::JobSummary>, Box<dyn Error + Send + Sync>> {
     service_context
         .job_store()
-        .ok_or_else(|| Box::<dyn Error>::from("unified job store is not available"))?
+        .ok_or_else(|| box_send_sync("unified job store is not available"))?
         .list(request)
         .await
-        .map_err(|error| Box::<dyn Error>::from(error.message))
+        .map_err(|error| box_send_sync(error.message))
 }
 
 pub async fn unified_job_status(
     service_context: &ServiceContext,
     job_id: axon_api::source::JobId,
-) -> Result<Option<axon_api::source::JobSummary>, Box<dyn Error>> {
+) -> Result<Option<axon_api::source::JobSummary>, Box<dyn Error + Send + Sync>> {
     service_context
         .job_store()
-        .ok_or_else(|| Box::<dyn Error>::from("unified job store is not available"))?
+        .ok_or_else(|| box_send_sync("unified job store is not available"))?
         .get(job_id)
         .await
-        .map_err(|error| Box::<dyn Error>::from(error.message))
+        .map_err(|error| box_send_sync(error.message))
 }
 
 pub async fn unified_job_events(
     service_context: &ServiceContext,
     request: JobEventListRequest,
-) -> Result<JobEventPage, Box<dyn Error>> {
+) -> Result<JobEventPage, Box<dyn Error + Send + Sync>> {
     service_context
         .job_store()
-        .ok_or_else(|| Box::<dyn Error>::from("unified job store is not available"))?
+        .ok_or_else(|| box_send_sync("unified job store is not available"))?
         .events(request)
         .await
-        .map_err(|error| Box::<dyn Error>::from(error.message))
+        .map_err(|error| box_send_sync(error.message))
 }
 
 pub async fn cancel_unified_job(
     service_context: &ServiceContext,
     job_id: axon_api::source::JobId,
     request: JobCancelRequest,
-) -> Result<JobCancelResult, Box<dyn Error>> {
+) -> Result<JobCancelResult, Box<dyn Error + Send + Sync>> {
     service_context
         .job_store()
-        .ok_or_else(|| Box::<dyn Error>::from("unified job store is not available"))?
+        .ok_or_else(|| box_send_sync("unified job store is not available"))?
         .cancel(job_id, request)
         .await
-        .map_err(|error| Box::<dyn Error>::from(error.message))
+        .map_err(|error| box_send_sync(error.message))
 }
 
 pub async fn retry_unified_job(
     service_context: &ServiceContext,
     job_id: axon_api::source::JobId,
     request: JobRetryRequest,
-) -> Result<JobRetryResult, Box<dyn Error>> {
+) -> Result<JobRetryResult, Box<dyn Error + Send + Sync>> {
     service_context
         .job_store()
-        .ok_or_else(|| Box::<dyn Error>::from("unified job store is not available"))?
+        .ok_or_else(|| box_send_sync("unified job store is not available"))?
         .retry(job_id, request)
         .await
-        .map_err(|error| Box::<dyn Error>::from(error.message))
+        .map_err(|error| box_send_sync(error.message))
 }
 
 pub async fn recover_unified_jobs(
     service_context: &ServiceContext,
     request: JobRecoveryRequest,
-) -> Result<JobRecoveryResult, Box<dyn Error>> {
+) -> Result<JobRecoveryResult, Box<dyn Error + Send + Sync>> {
     service_context
         .job_store()
-        .ok_or_else(|| Box::<dyn Error>::from("unified job store is not available"))?
+        .ok_or_else(|| box_send_sync("unified job store is not available"))?
         .recover(request)
         .await
-        .map_err(|error| Box::<dyn Error>::from(error.message))
+        .map_err(|error| box_send_sync(error.message))
 }
 
 pub async fn cleanup_unified_jobs(
     service_context: &ServiceContext,
     request: JobCleanupRequest,
-) -> Result<JobCleanupResult, Box<dyn Error>> {
+) -> Result<JobCleanupResult, Box<dyn Error + Send + Sync>> {
     service_context
         .job_store()
-        .ok_or_else(|| Box::<dyn Error>::from("unified job store is not available"))?
+        .ok_or_else(|| box_send_sync("unified job store is not available"))?
         .cleanup(request)
         .await
-        .map_err(|error| Box::<dyn Error>::from(error.message))
+        .map_err(|error| box_send_sync(error.message))
+}
+
+fn box_send_sync(message: impl Into<String>) -> Box<dyn Error + Send + Sync> {
+    std::io::Error::other(message.into()).into()
 }
 
 fn job_kind_for_operation(operation: OperationKind) -> axon_api::source::JobKind {
