@@ -193,7 +193,18 @@ async fn refresh_target_local_code_search_index_with_progress(
                 error = %err,
                 "target local source refresh failed"
             );
-            Err(err.into())
+            let source_id = local_source_id(&project_root);
+            let committed_generation = target
+                .ledger
+                .committed_generation(source_id.clone())
+                .await?;
+            Ok(target_refresh_failed_result(
+                project_root,
+                project_key,
+                Some(source_id),
+                committed_generation,
+                err.to_string(),
+            ))
         }
     }
 }

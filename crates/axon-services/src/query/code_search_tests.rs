@@ -211,6 +211,9 @@ async fn target_code_search_queries_committed_target_vectors_with_path_prefix() 
         .expect("fresh src point");
     stale_point.point_id = VectorPointId::new("stale-src-lib");
     stale_point.chunk_id = ChunkId::new("stale-src-lib");
+    if let Some(sparse_vector) = stale_point.sparse_vector.as_mut() {
+        sparse_vector.chunk_id = stale_point.chunk_id.clone();
+    }
     stale_point.vector = vec![100.0; 8];
     stale_point
         .payload
@@ -325,7 +328,7 @@ async fn target_code_search_errors_on_failed_refresh_but_can_query_committed_sta
     std::fs::write(repo.path().join("bad.rs"), [0xff, 0xfe, 0xfd]).expect("bad source file");
     let progress = RecordingReindexProgress::default();
 
-    let err = code_search_with_progress(
+    let searched = code_search_with_progress(
         &ctx,
         "target_answer",
         CodeSearchOptions {
@@ -339,11 +342,18 @@ async fn target_code_search_errors_on_failed_refresh_but_can_query_committed_sta
         Some(&progress),
     )
     .await
-    .expect_err("ensure_fresh target search should fail on refresh failure");
+    .expect("ensure_fresh target search should fall back after refresh failure");
+    assert_eq!(searched.freshness.status, "stale");
     assert!(
-        err.to_string().contains("valid UTF-8"),
-        "unexpected error: {err:#}"
+        searched
+            .freshness
+            .warning
+            .as_deref()
+            .is_some_and(|warning| warning.contains("valid UTF-8")),
+        "refresh failure warning should mention the indexing failure: {searched:#?}"
     );
+    assert_eq!(searched.results.len(), 1);
+    assert_eq!(searched.results[0].file_path.as_deref(), Some("lib.rs"));
     let progress_events = progress.events.lock().expect("progress lock").clone();
     assert!(matches!(
         progress_events.first(),
