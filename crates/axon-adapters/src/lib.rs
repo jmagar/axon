@@ -8,6 +8,7 @@ pub mod adapter;
 pub mod boundary;
 pub mod capability;
 pub mod cli_tool;
+pub mod family_matrix;
 pub mod feed;
 pub mod git;
 pub mod local;
@@ -18,6 +19,7 @@ pub mod reddit;
 pub mod registry;
 pub mod registry_sources;
 pub mod sessions;
+pub mod spec;
 pub mod testing;
 pub mod web;
 pub mod youtube;
@@ -25,7 +27,9 @@ pub mod youtube;
 pub use acquisition::{AcquiredItem, AcquisitionManifest, FetchStatus};
 pub use adapter::SourceAdapter;
 pub use capability::{AdapterCapability, AdapterVersion};
+pub use family_matrix::{SourceFamilyMatrix, source_family_matrix};
 pub use registry::SourceAdapterRegistry;
+pub use spec::{ParserFamily, SourceAdapterSpec, SourceFamily, SourceScopeCapability};
 pub use testing::FakeSourceAdapter;
 
 pub const CRATE_NAME: &str = "axon-adapters";
@@ -37,6 +41,10 @@ mod adapter_tests;
 #[cfg(test)]
 #[path = "manifest_tests.rs"]
 mod manifest_tests;
+
+#[cfg(test)]
+#[path = "family_matrix_tests.rs"]
+mod family_matrix_tests;
 
 #[cfg(test)]
 #[path = "local_tests.rs"]
