@@ -224,10 +224,10 @@ async fn target_code_search_queries_committed_target_vectors_with_path_prefix() 
     );
     stale_point
         .payload
-        .insert("source_generation".to_string(), serde_json::json!("old"));
+        .insert("source_generation".to_string(), serde_json::json!(0));
     stale_point
         .payload
-        .insert("committed_generation".to_string(), serde_json::json!("old"));
+        .insert("committed_generation".to_string(), serde_json::json!(0));
     let stale_batch_id = stale_point
         .payload
         .get("embedding_batch_id")

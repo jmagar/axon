@@ -14,7 +14,8 @@ fn collection() -> CollectionSpec {
         },
         payload_indexes: vec![
             payload_index("source_id", PayloadFieldSchema::Keyword),
-            payload_index("source_generation", PayloadFieldSchema::Keyword),
+            payload_index("source_generation", PayloadFieldSchema::Integer),
+            payload_index("committed_generation", PayloadFieldSchema::Integer),
             payload_index("document_id", PayloadFieldSchema::Keyword),
             payload_index("chunk_id", PayloadFieldSchema::Keyword),
             payload_index("vector_namespace", PayloadFieldSchema::Keyword),
@@ -48,7 +49,7 @@ fn batch() -> VectorPointBatch {
                 sparse_vector: None,
                 payload: payload(
                     "src-a",
-                    "7",
+                    7,
                     "doc-a",
                     "chunk-a",
                     "dense",
@@ -64,7 +65,7 @@ fn batch() -> VectorPointBatch {
                 sparse_vector: None,
                 payload: payload(
                     "src-a",
-                    "8",
+                    8,
                     "doc-b",
                     "chunk-b",
                     "dense",
@@ -80,7 +81,7 @@ fn batch() -> VectorPointBatch {
                 sparse_vector: None,
                 payload: payload(
                     "src-b",
-                    "7",
+                    7,
                     "doc-c",
                     "chunk-c",
                     "summary",
@@ -100,7 +101,7 @@ fn batch() -> VectorPointBatch {
 #[allow(clippy::too_many_arguments)]
 fn payload(
     source_id: &str,
-    generation: &str,
+    generation: i64,
     document_id: &str,
     chunk_id: &str,
     namespace: &str,
@@ -386,7 +387,7 @@ async fn fake_vector_store_records_payload_indexes_from_collection_spec() {
     assert_eq!(spec.payload_indexes.len(), 9);
     assert!(spec.payload_indexes.iter().any(|index| {
         index.field_name == "source_generation"
-            && index.field_schema == PayloadFieldSchema::Keyword
+            && index.field_schema == PayloadFieldSchema::Integer
             && index.required_for_filters
     }));
 }
@@ -445,7 +446,7 @@ async fn fake_vector_store_filters_searches_by_indexed_payload_fields() {
         result
             .results
             .iter()
-            .all(|result| result.payload["source_generation"] == "7")
+            .all(|result| result.payload["source_generation"] == 7)
     );
 }
 

@@ -15,6 +15,7 @@ use axon_code_index::{
 use axon_core::config::Config;
 use axon_embedding::reservation::ProviderReservationContext;
 use axon_vector::ops::commands::{CodeSearchVectorRequest, code_search_hits};
+use axon_vectors::payload::generation_payload_i64;
 use serde_json::json;
 
 use crate::context::ServiceContext;
@@ -186,7 +187,7 @@ async fn target_code_search(
         &source_id,
         &generation,
         path_prefix,
-    );
+    )?;
     let matches =
         target
             .vector_store
@@ -220,19 +221,22 @@ fn target_code_search_request(
     source_id: &SourceId,
     committed_generation: &SourceGenerationId,
     path_prefix: Option<&str>,
-) -> VectorSearchRequest {
+) -> Result<VectorSearchRequest, Box<dyn Error + Send + Sync>> {
     let mut filters = MetadataMap::new();
     filters.insert("source_id".to_string(), json!(source_id.0));
     filters.insert(
         "committed_generation".to_string(),
-        json!(committed_generation.0),
+        json!(generation_payload_i64(
+            committed_generation,
+            "committed_generation"
+        )?),
     );
     filters.insert("visibility".to_string(), json!("public"));
     filters.insert("redaction_status".to_string(), json!("clean"));
     if let Some(prefix) = path_prefix {
         filters.insert("path_prefix".to_string(), json!(prefix));
     }
-    VectorSearchRequest {
+    Ok(VectorSearchRequest {
         collection,
         query: query.to_string(),
         limit: u32::try_from(limit).unwrap_or(u32::MAX),
@@ -243,7 +247,7 @@ fn target_code_search_request(
         generation: None,
         graph_refs: Vec::new(),
         metadata: MetadataMap::new(),
-    }
+    })
 }
 
 fn target_vector_match_to_query_hit(

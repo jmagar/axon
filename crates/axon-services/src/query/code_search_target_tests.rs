@@ -6,6 +6,7 @@ use axon_core::config::Config;
 use axon_embedding::fake::FakeEmbeddingProvider;
 use axon_jobs::boundary::FakeJobWatchStore;
 use axon_ledger::store::FakeLedgerStore;
+use axon_vectors::payload::generation_payload_i64;
 use axon_vectors::store::FakeVectorStore;
 use axon_vectors::store::VectorStore;
 use axon_vectors::testing::{TestPointSpec, test_clean_point};
@@ -83,10 +84,14 @@ async fn target_code_search_keeps_unchanged_previous_generation_results_visible(
         second.target_source_generation
     );
     let first_generation = first.target_source_generation.as_ref().expect("first gen");
+    let first_payload_generation =
+        generation_payload_i64(first_generation, "source_generation").expect("first payload gen");
     let second_generation = second
         .target_source_generation
         .as_ref()
         .expect("second gen");
+    let second_payload_generation =
+        generation_payload_i64(second_generation, "source_generation").expect("second payload gen");
 
     let stable_points = vectors
         .points(&cfg.collection)
@@ -102,12 +107,12 @@ async fn target_code_search_keeps_unchanged_previous_generation_results_visible(
         .collect::<Vec<_>>();
     assert!(!stable_points.is_empty());
     assert!(stable_points.iter().any(|point| {
-        point.payload["source_generation"].as_str() == Some(first_generation.0.as_str())
-            && point.payload["committed_generation"].as_str() == Some(first_generation.0.as_str())
+        point.payload["source_generation"] == serde_json::json!(first_payload_generation)
+            && point.payload["committed_generation"] == serde_json::json!(first_payload_generation)
     }));
     assert!(stable_points.iter().any(|point| {
-        point.payload["source_generation"].as_str() == Some(second_generation.0.as_str())
-            && point.payload["committed_generation"].as_str() == Some(second_generation.0.as_str())
+        point.payload["source_generation"] == serde_json::json!(second_payload_generation)
+            && point.payload["committed_generation"] == serde_json::json!(second_payload_generation)
     }));
 
     let third = refresh_code_search_index_with_backend(
@@ -194,6 +199,8 @@ async fn target_code_search_excludes_uncommitted_and_redacted_vectors() {
         .target_source_generation
         .as_ref()
         .expect("committed generation");
+    let committed_payload_generation =
+        generation_payload_i64(committed, "committed_generation").expect("numeric generation");
     let source_id = refreshed.target_source_id.as_ref().expect("source id");
     let committed_points = vectors.points(&cfg.collection).await;
     let visible_point = committed_points
@@ -208,7 +215,7 @@ async fn target_code_search_excludes_uncommitted_and_redacted_vectors() {
         .expect("visible point");
     assert_eq!(
         visible_point.payload["committed_generation"],
-        serde_json::json!(committed.0)
+        serde_json::json!(committed_payload_generation)
     );
     assert_eq!(
         visible_point.payload["visibility"],
@@ -226,11 +233,12 @@ async fn target_code_search_excludes_uncommitted_and_redacted_vectors() {
         source_id,
         committed,
         None,
-    );
+    )
+    .expect("target search request");
     assert_eq!(request.filters["source_id"], serde_json::json!(source_id.0));
     assert_eq!(
         request.filters["committed_generation"],
-        serde_json::json!(committed.0)
+        serde_json::json!(committed_payload_generation)
     );
     assert_eq!(request.filters["visibility"], serde_json::json!("public"));
     assert_eq!(
@@ -253,14 +261,12 @@ async fn target_code_search_excludes_uncommitted_and_redacted_vectors() {
     staged
         .payload
         .insert("source_id".to_string(), serde_json::json!(source_id.0));
-    staged.payload.insert(
-        "source_generation".to_string(),
-        serde_json::json!("staged-generation"),
-    );
-    staged.payload.insert(
-        "committed_generation".to_string(),
-        serde_json::json!("staged-generation"),
-    );
+    staged
+        .payload
+        .insert("source_generation".to_string(), serde_json::json!(999));
+    staged
+        .payload
+        .insert("committed_generation".to_string(), serde_json::json!(999));
     staged
         .payload
         .insert("visibility".to_string(), serde_json::json!("public"));
@@ -293,11 +299,11 @@ async fn target_code_search_excludes_uncommitted_and_redacted_vectors() {
         .insert("source_id".to_string(), serde_json::json!(source_id.0));
     redacted.payload.insert(
         "source_generation".to_string(),
-        serde_json::json!(committed.0),
+        serde_json::json!(committed_payload_generation),
     );
     redacted.payload.insert(
         "committed_generation".to_string(),
-        serde_json::json!(committed.0),
+        serde_json::json!(committed_payload_generation),
     );
     redacted
         .payload

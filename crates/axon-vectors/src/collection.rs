@@ -82,8 +82,8 @@ pub fn check_collection_drift(existing: &CollectionSpec, incoming: &CollectionSp
 pub fn required_retrieval_payload_indexes() -> Vec<PayloadIndexSpec> {
     [
         ("source_id", PayloadFieldSchema::Keyword),
-        ("source_generation", PayloadFieldSchema::Keyword),
-        ("committed_generation", PayloadFieldSchema::Keyword),
+        ("source_generation", PayloadFieldSchema::Integer),
+        ("committed_generation", PayloadFieldSchema::Integer),
         ("document_id", PayloadFieldSchema::Keyword),
         ("chunk_id", PayloadFieldSchema::Keyword),
         ("vector_namespace", PayloadFieldSchema::Keyword),

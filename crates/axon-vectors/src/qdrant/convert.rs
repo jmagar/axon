@@ -20,6 +20,7 @@ use qdrant_client::qdrant::{
 
 use crate::collection::{normalize_collection_spec, validate_collection_spec};
 use crate::filter::{PATH_PREFIX, SEARCH_GENERATION_FIELD, validate_search_filters};
+use crate::payload::generation_payload_i64;
 use crate::store::Result;
 use crate::validation::validate_upsert_batch;
 
@@ -160,7 +161,8 @@ pub fn qdrant_filter(request: &VectorSearchRequest) -> Result<Option<Filter>> {
         conditions.extend(qdrant_field_conditions(field, value));
     }
     if let Some(generation) = &request.generation {
-        let value = serde_json::Value::from(generation.0.clone());
+        let value =
+            serde_json::Value::from(generation_payload_i64(generation, SEARCH_GENERATION_FIELD)?);
         conditions.push(field_condition(SEARCH_GENERATION_FIELD, &value));
     }
     Ok((!conditions.is_empty()).then_some(Filter {
