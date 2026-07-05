@@ -61,6 +61,10 @@ mod onboarding_tests;
 mod tool_tests;
 
 #[cfg(test)]
+#[path = "mcp_tests.rs"]
+mod mcp_tests;
+
+#[cfg(test)]
 #[path = "local_tests.rs"]
 mod local_tests;
 
