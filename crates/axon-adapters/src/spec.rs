@@ -46,6 +46,7 @@ pub struct SourceAdapterSpec {
     pub adapter: &'static str,
     pub version: &'static str,
     pub source_kinds: &'static [SourceKind],
+    pub vector_namespace: &'static str,
     pub supported_schemes: &'static [&'static str],
     pub shorthand_patterns: &'static [&'static str],
     pub default_scope: SourceScope,

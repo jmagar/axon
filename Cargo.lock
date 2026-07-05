@@ -846,8 +846,10 @@ name = "axon-memory"
 version = "6.2.2"
 dependencies = [
  "async-trait",
+ "axon-adapters",
  "axon-api",
  "axon-error",
+ "axon-retrieval",
  "rusqlite",
  "serde_json",
  "tokio",
