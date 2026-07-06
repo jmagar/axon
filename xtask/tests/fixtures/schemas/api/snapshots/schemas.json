@@ -27545,7 +27545,7 @@
         "path": "crates/axon-api/src/source/vector.rs"
       },
       {
-        "checksum": "sha256:3f04b3919509ee296cd5badafac5a9dcbc653215827e70f0d8bf98bbb0eb5f7e",
+        "checksum": "sha256:699caa681d276fb828407867ac82386c82d92b5739a7c4cb69d4dfc51eae7f57",
         "kind": "rust_module",
         "path": "crates/axon-error/src/api_error.rs"
       },

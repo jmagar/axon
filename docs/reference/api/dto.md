@@ -33,7 +33,7 @@ See the family contract for declared output paths.
 | `crates/axon-api/src/source/state.rs` | `sha256:9c7d65b7d3a4e163d2f3e8c60806713466909fef2822b79566eda77575faf63b` |
 | `crates/axon-api/src/source/status.rs` | `sha256:75d4a2a43c699a17343689d6d57c0f4e3eb2c254718ae5f31f9b5fe1f5111616` |
 | `crates/axon-api/src/source/vector.rs` | `sha256:97c767a15c9f88a3a7278ac32c6b7b1a4fce722223e9dd3c5f59079fee69b9ac` |
-| `crates/axon-error/src/api_error.rs` | `sha256:3f04b3919509ee296cd5badafac5a9dcbc653215827e70f0d8bf98bbb0eb5f7e` |
+| `crates/axon-error/src/api_error.rs` | `sha256:699caa681d276fb828407867ac82386c82d92b5739a7c4cb69d4dfc51eae7f57` |
 | `docs/pipeline-unification/schemas/api-dto-schema.md` | `sha256:1b30e91ddefd5596315b1a6e90c7f216fc7debbe92b3fff48c39c6525d0f38c4` |
 | `xtask/src/schemas/api_defs.rs` | `sha256:7a2c17290d5d20fd92fdf3d5dd0e12f4dba5a0ccc6637c41d6fcf77d7580b33a` |
 | `xtask/src/schemas/registry.rs` | `sha256:2a71db7eaeb8c352eb999213a9706479f93f358d0b0cbe6d411c6ae58abc80e6` |
