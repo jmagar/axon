@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use axon_api::source::{
-    ApiError, ErrorStage, JobHeartbeat, JobId, JobKind as UnifiedJobKind, LifecycleStatus,
-    PipelinePhase, Severity, SourceError, SourceProgressEvent, StageCounts, Timestamp, Visibility,
+    ApiError, AuthSnapshot, ErrorStage, JobHeartbeat, JobId, JobKind as UnifiedJobKind,
+    LifecycleStatus, PipelinePhase, Severity, SourceError, SourceProgressEvent, StageCounts,
+    Timestamp, Visibility,
 };
 use sqlx::{Row, SqlitePool};
 use tokio::sync::Notify;
@@ -12,6 +13,7 @@ use crate::boundary::JobStore;
 use crate::store_inventory::detect_incompatible_legacy_jobs;
 use crate::unified::SqliteUnifiedJobStore;
 
+use super::auth_enforcement::{require_job_scope, required_scope_for_kind};
 use super::{POLL_INTERVAL, WORKER_BATCH_LIMIT};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -20,6 +22,11 @@ pub(crate) struct UnifiedClaimedJob {
     pub kind: UnifiedJobKind,
     pub attempt: u32,
     pub request_json: Option<serde_json::Value>,
+    /// The auth snapshot recorded at enqueue time — the *only* source of
+    /// truth for what this job is allowed to do. Never re-derive scope from
+    /// the current process/caller: a stale reclaim or retry must run with
+    /// exactly what was granted when the job was created.
+    pub auth_snapshot: AuthSnapshot,
 }
 
 pub(crate) async fn unified_worker_loop(
@@ -103,7 +110,7 @@ async fn claim_next_unified_job_unchecked(
 ) -> Result<Option<UnifiedClaimedJob>, ApiError> {
     let mut tx = pool.begin().await.map_err(sql_error)?;
     let row = sqlx::query(
-        "SELECT job_id, kind, attempt, request_json
+        "SELECT job_id, kind, attempt, request_json, auth_snapshot_json
          FROM jobs
          WHERE status IN ('queued', 'waiting', 'blocked')
          ORDER BY
@@ -135,6 +142,8 @@ async fn claim_next_unified_job_unchecked(
         .get::<Option<String>, _>("request_json")
         .map(|value| serde_json::from_str(&value).map_err(json_error))
         .transpose()?;
+    let auth_snapshot: AuthSnapshot =
+        serde_json::from_str(&row.get::<String, _>("auth_snapshot_json")).map_err(json_error)?;
     let now = Timestamp::from(chrono::Utc::now());
 
     let result = sqlx::query(
@@ -183,6 +192,7 @@ async fn claim_next_unified_job_unchecked(
         kind,
         attempt,
         request_json,
+        auth_snapshot,
     }))
 }
 
@@ -201,6 +211,13 @@ pub(crate) async fn run_unified_claimed(
         tracing::warn!(job_id = %claimed.job_id.0, error = %error.message, "unified worker heartbeat failed");
     }
 
+    if let Some(required) = required_scope_for_kind(claimed.kind)
+        && let Err(error) = require_job_scope(&claimed.auth_snapshot, required)
+    {
+        fail_unified_claimed(pool, &store, claimed, error).await;
+        return;
+    }
+
     let error = ApiError::new(
         "job_runner.unsupported_stage",
         ErrorStage::Planning,
@@ -209,6 +226,18 @@ pub(crate) async fn run_unified_claimed(
             claimed.kind, claimed.job_id.0
         ),
     );
+    fail_unified_claimed(pool, &store, claimed, error).await;
+}
+
+/// Append a failure event and mark the claimed job terminal-failed with
+/// `error`. Shared by every rejection path (auth denial, unsupported stage)
+/// so each one only needs to construct its own `ApiError`.
+async fn fail_unified_claimed(
+    pool: &SqlitePool,
+    store: &SqliteUnifiedJobStore,
+    claimed: &UnifiedClaimedJob,
+    error: ApiError,
+) {
     let _ = store
         .append_event(SourceProgressEvent {
             event_id: uuid::Uuid::new_v4().to_string(),
@@ -219,7 +248,7 @@ pub(crate) async fn run_unified_claimed(
             batch_id: None,
             reservation_id: None,
             checkpoint_id: None,
-            dedupe_key: Some(format!("unsupported-stage:{}", claimed.job_id.0)),
+            dedupe_key: Some(format!("job-failed:{}:{}", error.code, claimed.job_id.0)),
             phase: PipelinePhase::Complete,
             status: LifecycleStatus::Failed,
             severity: Severity::Failed,
@@ -253,7 +282,7 @@ pub(crate) async fn run_unified_claimed(
         tracing::error!(
             job_id = %claimed.job_id.0,
             error = %mark_error.message,
-            "unified worker failed to mark unsupported job terminal"
+            "unified worker failed to mark claimed job terminal"
         );
     }
 }
