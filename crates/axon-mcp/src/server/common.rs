@@ -2,6 +2,7 @@ use crate::schema::{ExtractRequest, McpRenderMode, SearchTimeRange};
 use axon_core::config::Config;
 use axon_core::config::RenderMode;
 use axon_core::error::taxonomy_from_error;
+use axon_core::redact::{DefaultRedactor, RedactionContext, Redactor};
 use axon_services::transport;
 use axon_services::types::ServiceTimeRange;
 use rmcp::ErrorData;
@@ -62,7 +63,16 @@ pub(super) fn logged_internal_error(
     }
     tracing::error!("{context}: {chain}");
     let data = taxonomy_from_error(e).map(|taxonomy| taxonomy.to_mcp_envelope());
-    ErrorData::internal_error(format!("{context} failed: {e}"), data)
+    // Fail-closed redaction boundary: callers are asked to pass a
+    // client-safe `Display`, but this is the last-mile MCP transport
+    // boundary — scrub before the write, not trust alone, in case a caller
+    // slips a raw transport error (URL, connection string) through.
+    let redactor = DefaultRedactor::new();
+    let message = redactor.redact_text(
+        &format!("{context} failed: {e}"),
+        &RedactionContext::transport_response(),
+    );
+    ErrorData::internal_error(message, data)
 }
 
 // --- URL validation wrappers ---
