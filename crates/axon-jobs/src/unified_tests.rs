@@ -434,6 +434,43 @@ async fn job_event_preserves_structured_provider_cooling_fields() {
 }
 
 #[tokio::test]
+async fn append_event_redacts_secrets_from_message_and_details_before_persisting() {
+    let store = store().await;
+    let job = store.create(create_request()).await.expect("create job");
+
+    let mut event = progress_event(job.job_id, 1, Visibility::Public);
+    event.message = "failed: Authorization: Bearer abcdef0123456789abcdef".to_string();
+    store.append_event(event).await.expect("append event");
+
+    let page = store
+        .events(JobEventListRequest {
+            job_id: job.job_id,
+            after_sequence: None,
+            limit: Some(10),
+            severity: None,
+            visibility: Some(Visibility::Public),
+            phase: None,
+            since_sequence: None,
+            cursor: None,
+        })
+        .await
+        .expect("event page");
+
+    let stored = page.events.last().unwrap();
+    assert!(!stored.message.contains("abcdef0123456789abcdef"));
+    let stored_event_detail = stored
+        .details
+        .get("source_progress_event")
+        .expect("source_progress_event detail present");
+    assert!(
+        !stored_event_detail["message"]
+            .as_str()
+            .unwrap()
+            .contains("abcdef0123456789abcdef")
+    );
+}
+
+#[tokio::test]
 async fn append_event_requires_monotonic_sequences_and_filters_events() {
     let store = store().await;
     let job = store.create(create_request()).await.expect("create job");
