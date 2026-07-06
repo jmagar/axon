@@ -14,7 +14,7 @@ See the family contract for declared output paths.
 
 | Path | SHA-256 |
 |---|---|
-| `crates/axon-core/src/config/schema_registry.rs` | `sha256:cf133557d1be1a4549756c82b260a4e17c15501c4d32ae900e2816c03d71f528` |
+| `crates/axon-core/src/config/schema_registry.rs` | `sha256:700f019a8fade722a1c7c34d93ee5fa61192bd4637c60a82832888c08674dbc3` |
 | `docs/pipeline-unification/schemas/config-schema.md` | `sha256:fcec11271050d626b8a4a42f1714c45bfcff2bd66b75ad4a3962e51d0ef84c24` |
 
 ## Root Shape

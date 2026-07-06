@@ -129,19 +129,11 @@ pub(crate) fn documented_rest_paths_for_tests() -> Vec<String> {
 fn family_4_admin(read: ScopeGuard, write: ScopeGuard) -> Router<RestState> {
     Router::new()
         .route(
-            "/v1/dedupe",
-            guarded(post(admin::v1_dedupe), ScopeGuard::admin_write()),
-        )
-        .route(
             "/v1/watch",
             guarded(get(admin::v1_watch_list), read)
                 .merge(guarded(post(admin::v1_watch_create), write)),
         )
         .route("/v1/watch/{id}", guarded(get(admin::v1_watch_get), read))
-        .route(
-            "/v1/watch/{id}/run",
-            guarded(post(admin::v1_watch_run_now), write),
-        )
 }
 
 // ── Public router ────────────────────────────────────────────────────────

@@ -103,7 +103,17 @@
       "axon-mcp",
       "axon-api"
     ],
-    "removed": [],
+    "removed": [
+      "embed",
+      "ingest",
+      "scrape",
+      "crawl",
+      "code_search",
+      "code_search_watch",
+      "vertical_scrape",
+      "purge",
+      "dedupe"
+    ],
     "source_inputs": [
       {
         "checksum": "sha256:f41acd92c675cb7fb16f0615f7280f51a4c70242c9621570c0f15cc6a649593d",

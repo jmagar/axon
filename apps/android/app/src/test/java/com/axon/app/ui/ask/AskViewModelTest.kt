@@ -45,7 +45,7 @@ class FollowUpQueryBuilderTest {
                 opLabel = "Crawl",
                 target = "https://example.com",
                 status = "Completed",
-                endpoint = "POST /v1/crawl",
+                endpoint = "POST /v1/sources",
                 jobId = "job-123",
                 summary = "12 pages crawled",
                 detail = "Crawl completed from mobile.",

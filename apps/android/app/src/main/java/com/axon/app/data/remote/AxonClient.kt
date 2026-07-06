@@ -41,11 +41,17 @@ import com.axon.app.data.remote.models.SavePanelEnvRequest
 import com.axon.app.data.remote.models.SearchWebRequest
 import com.axon.app.data.remote.models.SearchWebResponse
 import com.axon.app.data.remote.models.ServiceJob
+import com.axon.app.data.remote.models.SourceLimits
+import com.axon.app.data.remote.models.SourceRequest
+import com.axon.app.data.remote.models.SourceResult
 import com.axon.app.data.remote.models.StatusSummary
 import com.axon.app.data.remote.models.SuggestRequest
 import com.axon.app.data.remote.models.SuggestResponse
 import com.axon.app.data.remote.models.SummarizeRequest
 import com.axon.app.data.remote.models.SummarizeResponse
+import com.axon.app.data.remote.models.UnifiedJobCancelResult
+import com.axon.app.data.remote.models.UnifiedJobListPage
+import com.axon.app.data.remote.models.UnifiedJobSummary
 import com.axon.app.data.remote.models.WatchDef
 import com.axon.app.data.remote.models.WatchListResponse
 import okhttp3.MediaType.Companion.toMediaType
@@ -239,7 +245,16 @@ class AxonClient(
     }
 
     suspend fun scrape(request: ScrapeRequest): Result<ScrapeResponse> = withContext(Dispatchers.IO) {
-        post(openApiRoute("POST", "/v1/scrape"), request)
+        post<SourceRequest, SourceResult>(
+            openApiRoute("POST", "/v1/sources"),
+            request.toSourceRequest(scope = "page"),
+        ).map {
+            ScrapeResponse(
+                url = it.canonicalUri.ifBlank { request.url },
+                markdown = "",
+                output = "",
+            )
+        }
     }
 
     suspend fun map(request: MapRequest): Result<MapResponse> = withContext(Dispatchers.IO) {
@@ -251,14 +266,16 @@ class AxonClient(
     }
 
     suspend fun crawlSubmit(request: CrawlRequest): Result<CrawlJobResponse> = withContext(Dispatchers.IO) {
-        post(openApiRoute("POST", "/v1/crawl"), request)
+        post<SourceRequest, SourceResult>(
+            openApiRoute("POST", "/v1/sources"),
+            request.toSourceRequest(scope = "site"),
+        ).map { CrawlJobResponse(jobId = it.jobId, url = request.urls.firstOrNull().orEmpty()) }
     }
 
     suspend fun crawlStatus(jobId: String): Result<CrawlStatusResponse> = withContext(Dispatchers.IO) {
-        // The server wraps the job in {"job": {...}}; decode the envelope and unwrap.
-        get<CrawlStatusWrapper>(
-            openApiRoute("GET", "/v1/crawl/{id}", "/v1/crawl/${encodePathSegment(jobId)}"),
-        ).map { it.job }
+        get<UnifiedJobSummary>(
+            openApiRoute("GET", "/v1/jobs/{id}", "/v1/jobs/${encodePathSegment(jobId)}"),
+        ).map { it.toCrawlStatusResponse() }
     }
 
     // ── Phase 2 endpoints ──────────────────────────────────────────────────────
@@ -266,6 +283,12 @@ class AxonClient(
     enum class JobKind(val path: String) {
         Crawl("crawl"), Embed("embed"), Extract("extract"), Ingest("ingest")
     }
+
+    private val JobKind.unifiedKind: String
+        get() = when (this) {
+            JobKind.Crawl, JobKind.Embed, JobKind.Ingest -> "source"
+            JobKind.Extract -> "extract"
+        }
 
     /** /v1/summarize — Gemini-backed, can take minutes. Use httpLong. */
     suspend fun summarize(req: SummarizeRequest): Result<SummarizeResponse> = withContext(Dispatchers.IO) {
@@ -277,9 +300,16 @@ class AxonClient(
         post(openApiRoute("POST", "/v1/search"), req)
     }
 
-    /** POST /v1/ingest — submits an async ingest job. */
+    /** POST /v1/sources — submits an async ingest source job. */
     suspend fun ingestStart(req: IngestRequest): Result<AcceptedJob> = withContext(Dispatchers.IO) {
-        post(openApiRoute("POST", "/v1/ingest"), req)
+        post<SourceRequest, SourceResult>(
+            openApiRoute("POST", "/v1/sources"),
+            SourceRequest(
+                source = req.target ?: req.sourceType,
+                adapter = req.sourceType,
+                scope = "repo",
+            ),
+        ).map { AcceptedJob(jobId = it.jobId, status = it.status, statusUrl = "/v1/jobs/${it.jobId}") }
     }
 
     /** POST /v1/extract — submits an async structured extraction job. */
@@ -287,37 +317,44 @@ class AxonClient(
         post(openApiRoute("POST", "/v1/extract"), req)
     }
 
-    /** POST /v1/embed — submits an async embedding job. */
+    /** POST /v1/sources — submits an async embedding source job. */
     suspend fun embedStart(req: EmbedRequest): Result<AcceptedJob> = withContext(Dispatchers.IO) {
-        post(openApiRoute("POST", "/v1/embed"), req)
+        post<SourceRequest, SourceResult>(
+            openApiRoute("POST", "/v1/sources"),
+            SourceRequest(
+                source = req.input,
+                collection = req.collection,
+                adapter = req.sourceType,
+            ),
+        ).map { AcceptedJob(jobId = it.jobId, status = it.status, statusUrl = "/v1/jobs/${it.jobId}") }
     }
 
-    /** GET /v1/{kind}/{id} — job detail. Long-poll-friendly via httpLong. */
+    /** GET /v1/jobs/{id} — unified job detail. Long-poll-friendly via httpLong. */
     suspend fun getJob(kind: JobKind, id: String): Result<ServiceJob> = withContext(Dispatchers.IO) {
-        getWith<JobDetailResponse>(
+        getWith<UnifiedJobSummary>(
             httpLong,
-            openApiRoute("GET", "/v1/{kind}/{id}", "/v1/${kind.path}/${encodePathSegment(id)}"),
-        ).map { it.job }
+            openApiRoute("GET", "/v1/jobs/{id}", "/v1/jobs/${encodePathSegment(id)}"),
+        ).map { it.toServiceJob() }
     }
 
-    /** GET /v1/{kind} — list jobs of one kind. Server wraps in {"jobs":[...],"limit":N,"offset":N}. */
+    /** GET /v1/jobs?kind=... — list unified jobs of one kind. */
     suspend fun listJobs(kind: JobKind, limit: Int = 25, offset: Int = 0): Result<List<ServiceJob>> = withContext(Dispatchers.IO) {
-        get<JobListResponse>(
-            openApiRoute("GET", "/v1/{kind}", "/v1/${kind.path}?limit=$limit&offset=$offset"),
-        ).map { it.jobs }
+        get<UnifiedJobListPage>(
+            openApiRoute("GET", "/v1/jobs", "/v1/jobs?kind=${kind.unifiedKind}&limit=$limit"),
+        ).map { page -> page.items.map { it.toServiceJob() } }
     }
 
-    /** POST /v1/{kind}/{id}/cancel. */
+    /** POST /v1/jobs/{id}/cancel. */
     suspend fun cancelJob(kind: JobKind, id: String): Result<CancelResponse> = withContext(Dispatchers.IO) {
         val body = "{}".toRequestBody(JSON_MEDIA_TYPE)
         val builder = runCatching {
             authRequest(
                 Request.Builder()
-                    .url("${baseUrl()}${openApiRoute("POST", "/v1/{kind}/{id}/cancel", "/v1/${kind.path}/${encodePathSegment(id)}/cancel")}")
+                    .url("${baseUrl()}${openApiRoute("POST", "/v1/jobs/{id}/cancel", "/v1/jobs/${encodePathSegment(id)}/cancel")}")
                     .post(body),
             )
         }.getOrElse { return@withContext Result.failure(it) }
-        execute(http, builder)
+        execute<UnifiedJobCancelResult>(http, builder).map { CancelResponse(canceled = it.status == "canceled") }
     }
 
     suspend fun status(): Result<StatusSummary> = withContext(Dispatchers.IO) { get(openApiRoute("GET", "/v1/status")) }
@@ -504,6 +541,40 @@ class AxonClient(
             Log.w(TAG, "${built.method} ${built.url.encodedPath} failed: ${t.message}")
         }
     }
+
+    private fun ScrapeRequest.toSourceRequest(scope: String): SourceRequest =
+        SourceRequest(
+            source = url,
+            embed = embed ?: true,
+            scope = scope,
+            collection = collection,
+        )
+
+    private fun CrawlRequest.toSourceRequest(scope: String): SourceRequest =
+        SourceRequest(
+            source = urls.firstOrNull().orEmpty(),
+            embed = true,
+            scope = scope,
+            collection = collection,
+            limits = SourceLimits(maxDepth = maxDepth, maxPages = maxPages),
+        )
+
+    private fun UnifiedJobSummary.toCrawlStatusResponse(): CrawlStatusResponse =
+        CrawlStatusResponse(
+            id = jobId,
+            status = status,
+            url = "",
+            error = null,
+            resultJson = null,
+        )
+
+    private fun UnifiedJobSummary.toServiceJob(): ServiceJob =
+        ServiceJob(
+            id = jobId,
+            status = status,
+            createdAt = createdAt,
+            updatedAt = updatedAt,
+        )
 
     /**
      * Parses a single SSE data payload into an [AskStreamEvent].

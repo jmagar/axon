@@ -40,6 +40,15 @@ pub(crate) struct UnifiedJobListQuery {
     cursor: Option<String>,
 }
 
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub(crate) struct JobListPage {
+    pub items: Vec<axon_api::source::JobSummary>,
+    pub next_cursor: Option<String>,
+    pub limit: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total: Option<u64>,
+}
+
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
 #[into_params(parameter_in = Query)]
 pub(crate) struct UnifiedJobEventsQuery {
@@ -266,7 +275,7 @@ pub(crate) async fn recover_jobs(
     get,
     path = "/v1/jobs",
     params(UnifiedJobListQuery),
-    responses((status = 200, description = "Unified jobs", body = axon_api::source::JobSummary)),
+    responses((status = 200, description = "Unified jobs", body = JobListPage)),
     tag = "jobs"
 )]
 pub(crate) async fn list_unified_jobs(

@@ -96,10 +96,28 @@
     "owner_crates": [
       "axon-core"
     ],
-    "removed": [],
+    "removed": [
+      "AXON_MCP_HTTP_HOST",
+      "AXON_MCP_HTTP_PORT",
+      "AXON_MCP_HTTP_TOKEN",
+      "AXON_MCP_AUTH_MODE",
+      "AXON_MCP_PUBLIC_URL",
+      "AXON_MCP_GOOGLE_CLIENT_ID",
+      "AXON_MCP_GOOGLE_CLIENT_SECRET",
+      "AXON_MCP_AUTH_ADMIN_EMAIL",
+      "AXON_MCP_AUTH_ALLOWED_REDIRECT_URIS",
+      "AXON_MCP_ALLOWED_ORIGINS",
+      "AXON_COLLECTION",
+      "AXON_HYBRID_CANDIDATES",
+      "AXON_ASK_HYBRID_CANDIDATES",
+      "AXON_INGEST_LANES",
+      "AXON_EMBED_DOC_TIMEOUT_SECS",
+      "AXON_WATCH_TICK_SECS",
+      "AXON_WATCH_LEASE_SECS"
+    ],
     "source_inputs": [
       {
-        "checksum": "sha256:cf133557d1be1a4549756c82b260a4e17c15501c4d32ae900e2816c03d71f528",
+        "checksum": "sha256:700f019a8fade722a1c7c34d93ee5fa61192bd4637c60a82832888c08674dbc3",
         "kind": "rust_module",
         "path": "crates/axon-core/src/config/schema_registry.rs"
       },

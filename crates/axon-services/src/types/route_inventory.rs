@@ -364,18 +364,6 @@ const REST_ROUTE_INVENTORY: &[RestRouteInfo] = &[
         openapi: true,
     },
     RestRouteInfo {
-        method: "POST",
-        path: "/v1/dedupe",
-        auth: RestRouteAuth::Write,
-        openapi: true,
-    },
-    RestRouteInfo {
-        method: "POST",
-        path: "/v1/purge",
-        auth: RestRouteAuth::Write,
-        openapi: true,
-    },
-    RestRouteInfo {
         method: "GET",
         path: "/v1/watch",
         auth: RestRouteAuth::Write,
@@ -384,12 +372,6 @@ const REST_ROUTE_INVENTORY: &[RestRouteInfo] = &[
     RestRouteInfo {
         method: "POST",
         path: "/v1/watch",
-        auth: RestRouteAuth::Write,
-        openapi: true,
-    },
-    RestRouteInfo {
-        method: "POST",
-        path: "/v1/watch/{id}/run",
         auth: RestRouteAuth::Write,
         openapi: true,
     },

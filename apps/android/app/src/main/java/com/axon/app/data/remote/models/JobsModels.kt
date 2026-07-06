@@ -15,7 +15,7 @@ data class ExtractRequest(
     val headers: List<String> = emptyList(),
 )
 
-/** POST /v1/embed request body. */
+/** Legacy embed request body, adapted to the unified source endpoint by AxonClient. */
 @Serializable
 data class EmbedRequest(
     val input: String,
@@ -23,7 +23,56 @@ data class EmbedRequest(
     @SerialName("source_type") val sourceType: String? = null,
 )
 
-/** ServiceJob — common shape across /v1/{crawl,embed,extract,ingest}/list and /{id}. */
+/** POST /v1/sources request body for the clean-break source pipeline. */
+@Serializable
+data class SourceRequest(
+    val source: String,
+    val intent: String = "acquire",
+    val embed: Boolean = true,
+    val limits: SourceLimits = SourceLimits(),
+    val scope: String? = null,
+    val collection: String? = null,
+    val adapter: String? = null,
+)
+
+@Serializable
+data class SourceLimits(
+    @SerialName("max_depth") val maxDepth: Int? = null,
+    @SerialName("max_pages") val maxPages: Int? = null,
+)
+
+@Serializable
+data class SourceResult(
+    @SerialName("job_id") val jobId: String,
+    @SerialName("canonical_uri") val canonicalUri: String = "",
+    val status: String = "",
+)
+
+@Serializable
+data class UnifiedJobSummary(
+    @SerialName("job_id") val jobId: String,
+    val kind: String = "",
+    val status: String = "",
+    val phase: String = "",
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
+)
+
+@Serializable
+data class UnifiedJobListPage(
+    val items: List<UnifiedJobSummary> = emptyList(),
+    @SerialName("next_cursor") val nextCursor: String? = null,
+    val limit: Int = 0,
+    val total: Long? = null,
+)
+
+@Serializable
+data class UnifiedJobCancelResult(
+    @SerialName("job_id") val jobId: String = "",
+    val status: String = "",
+)
+
+/** ServiceJob — common app shape adapted from the unified jobs endpoint. */
 @Serializable
 data class ServiceJob(
     val id: String = "",
@@ -41,7 +90,7 @@ data class ServiceJob(
     @SerialName("config_json") val configJson: JsonElement? = null,
 )
 
-/** GET /v1/{kind} response — paginated job list. */
+/** Legacy paginated job list shape retained for older tests/data. */
 @Serializable
 data class JobListResponse(
     val jobs: List<ServiceJob> = emptyList(),
@@ -49,7 +98,7 @@ data class JobListResponse(
     val offset: Int = 0,
 )
 
-/** GET /v1/{crawl,embed,extract,ingest}/{id} response envelope. */
+/** Legacy job detail envelope retained for older tests/data. */
 @Serializable
 data class JobDetailResponse(
     val job: ServiceJob,
@@ -61,7 +110,7 @@ data class StatusSummary(
     val payload: JsonElement,
 )
 
-/** POST /v1/{kind}/{id}/cancel response. */
+/** Legacy cancel response adapted from the unified cancel endpoint. */
 @Serializable
 data class CancelResponse(
     val canceled: Boolean = false,

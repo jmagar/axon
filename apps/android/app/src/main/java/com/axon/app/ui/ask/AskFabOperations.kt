@@ -20,7 +20,7 @@ internal fun AskViewModel.submitFabOperation(op: FabOp, input: String) {
                                 op = op,
                                 target = r.url.ifBlank { input },
                                 status = "200 OK",
-                                endpoint = "POST /v1/scrape",
+                                endpoint = "POST /v1/sources",
                                 summary = summary,
                                 body = previewText(humanMarkdownPreview(r.markdown), limit = 900),
                             ),
@@ -29,7 +29,7 @@ internal fun AskViewModel.submitFabOperation(op: FabOp, input: String) {
                             op = op,
                             target = r.url.ifBlank { input },
                             status = "200 OK",
-                            endpoint = "POST /v1/scrape",
+                            endpoint = "POST /v1/sources",
                             summary = summary,
                             detail = "Scraped markdown is now available in this conversation. Use the Axon skill when reasoning over scraped or indexed content.",
                         )
@@ -74,7 +74,7 @@ internal fun AskViewModel.submitFabOperation(op: FabOp, input: String) {
                                 op = FabOp.Embed,
                                 target = input,
                                 jobId = jobId,
-                                endpoint = "POST /v1/embed",
+                                endpoint = "POST /v1/sources",
                                 detail = "Embed is queued. Chunks, document count, and errors are tracked in Jobs.",
                             ),
                         )
@@ -82,7 +82,7 @@ internal fun AskViewModel.submitFabOperation(op: FabOp, input: String) {
                             op = FabOp.Embed,
                             target = input,
                             status = "Queued",
-                            endpoint = "POST /v1/embed",
+                            endpoint = "POST /v1/sources",
                             jobId = jobId,
                             detail = "Embedding was submitted from Axon mobile.",
                         )
@@ -180,7 +180,7 @@ internal fun AskViewModel.submitFabOperation(op: FabOp, input: String) {
                                 op = FabOp.Crawl,
                                 target = input,
                                 jobId = jobId,
-                                endpoint = "POST /v1/crawl",
+                                endpoint = "POST /v1/sources",
                                 detail = "Crawl queued. Pages, errors, and completion state are pulled from the job endpoint.",
                             ),
                         )
@@ -188,7 +188,7 @@ internal fun AskViewModel.submitFabOperation(op: FabOp, input: String) {
                             op = FabOp.Crawl,
                             target = input,
                             status = "Queued",
-                            endpoint = "POST /v1/crawl",
+                            endpoint = "POST /v1/sources",
                             jobId = jobId,
                             detail = "Crawl was submitted from Axon mobile. Job status and indexed pages are available from Jobs.",
                         )
@@ -201,7 +201,7 @@ internal fun AskViewModel.submitFabOperation(op: FabOp, input: String) {
                                 target = input,
                                 jobId = null,
                                 status = "FAILED",
-                                endpoint = "POST /v1/crawl",
+                                endpoint = "POST /v1/sources",
                                 detail = "Crawl failed: ${e.message ?: "unknown server error"}",
                             ),
                         )
@@ -209,7 +209,7 @@ internal fun AskViewModel.submitFabOperation(op: FabOp, input: String) {
                             op = FabOp.Crawl,
                             target = input,
                             status = "FAILED",
-                            endpoint = "POST /v1/crawl",
+                            endpoint = "POST /v1/sources",
                             detail = "Crawl failed: ${e.message ?: "unknown server error"}",
                         )
                     },
@@ -232,7 +232,7 @@ internal fun AskViewModel.submitFabOperation(op: FabOp, input: String) {
                                 op = FabOp.Ingest,
                                 target = input,
                                 jobId = jobId,
-                                endpoint = "POST /v1/ingest",
+                                endpoint = "POST /v1/sources",
                                 detail = "Ingest queued. Discovery, source processing, and metadata progress are tracked in Jobs.",
                             ),
                         )
@@ -240,7 +240,7 @@ internal fun AskViewModel.submitFabOperation(op: FabOp, input: String) {
                             op = FabOp.Ingest,
                             target = input,
                             status = "Queued",
-                            endpoint = "POST /v1/ingest",
+                            endpoint = "POST /v1/sources",
                             jobId = jobId,
                             detail = "Ingest was submitted from Axon mobile.",
                         )

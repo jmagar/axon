@@ -5,7 +5,7 @@
 <!-- Run `cargo xtask gen-api-parity` to regenerate; `cargo xtask check-api-parity` (in `xtask check`) fails on drift. -->
 
 Factual matrix of which operations are exposed on each control surface.
-`✓` = exposed, `—` = not. 54 operations: 46 CLI, 29 MCP, 32 REST, 25 on all three.
+`✓` = exposed, `—` = not. 57 operations: 44 CLI, 31 MCP, 27 REST, 21 on all three.
 
 | Operation | CLI | MCP | REST |
 |---|:--:|:--:|:--:|
@@ -14,25 +14,26 @@ Factual matrix of which operations are exposed on each control surface.
 | `brand` | ✓ | ✓ | ✓ |
 | `capabilities` | — | — | ✓ |
 | `chat` | — | — | ✓ |
-| `code_search` | ✓ | ✓ | — |
+| `code_search` | — | ✓ | — |
 | `collections` | — | — | ✓ |
 | `completions` | ✓ | — | — |
 | `compose` | ✓ | — | — |
 | `config` | ✓ | — | — |
-| `crawl` | ✓ | ✓ | ✓ |
+| `crawl` | — | ✓ | — |
 | `debug` | ✓ | — | — |
-| `dedupe` | ✓ | — | ✓ |
+| `dedupe` | ✓ | — | — |
 | `diff` | ✓ | ✓ | ✓ |
 | `doctor` | ✓ | ✓ | ✓ |
 | `domains` | ✓ | ✓ | ✓ |
 | `elicit_demo` | — | ✓ | — |
-| `embed` | ✓ | ✓ | ✓ |
+| `embed` | — | ✓ | — |
 | `endpoints` | ✓ | ✓ | ✓ |
 | `evaluate` | ✓ | ✓ | ✓ |
 | `extract` | ✓ | ✓ | ✓ |
 | `fresh` | ✓ | — | — |
 | `help` | — | ✓ | — |
-| `ingest` | ✓ | ✓ | ✓ |
+| `ingest` | — | ✓ | — |
+| `jobs` | ✓ | ✓ | ✓ |
 | `map` | ✓ | ✓ | ✓ |
 | `mcp` | ✓ | — | — |
 | `memory` | ✓ | ✓ | ✓ |
@@ -41,18 +42,20 @@ Factual matrix of which operations are exposed on each control surface.
 | `monitor` | ✓ | — | — |
 | `palette` | ✓ | — | — |
 | `preflight` | ✓ | — | — |
-| `purge` | ✓ | ✓ | ✓ |
+| `purge` | ✓ | ✓ | — |
 | `query` | ✓ | ✓ | ✓ |
 | `refresh` | ✓ | — | — |
 | `research` | ✓ | ✓ | ✓ |
+| `reset` | ✓ | — | — |
 | `retrieve` | ✓ | ✓ | ✓ |
-| `scrape` | ✓ | ✓ | ✓ |
+| `scrape` | — | ✓ | — |
 | `screenshot` | ✓ | ✓ | ✓ |
 | `search` | ✓ | ✓ | ✓ |
 | `serve` | ✓ | — | — |
 | `sessions` | ✓ | — | — |
 | `setup` | ✓ | — | — |
 | `smoke` | ✓ | — | — |
+| `source` | ✓ | ✓ | — |
 | `sources` | ✓ | ✓ | ✓ |
 | `stats` | ✓ | ✓ | ✓ |
 | `status` | ✓ | ✓ | ✓ |

@@ -146,7 +146,7 @@ data class StatsResponse(
 
 // ── Scrape ────────────────────────────────────────────────────────────────────
 
-/** Request body for POST /v1/scrape. Mirrors `RestScrapeRequest`. */
+/** Legacy scrape request body, adapted to the unified source endpoint by AxonClient. */
 @Serializable
 data class ScrapeRequest(
     val url: String,
@@ -156,7 +156,7 @@ data class ScrapeRequest(
     val collection: String? = null,
 )
 
-/** Response body from POST /v1/scrape. */
+/** App-level scrape response adapted from the unified source result. */
 @Serializable
 data class ScrapeResponse(
     val url: String = "",
@@ -238,7 +238,7 @@ sealed interface AskStreamEvent {
 
 // ── Crawl ─────────────────────────────────────────────────────────────────────
 
-/** Request body for POST /v1/crawl. Mirrors `RestCrawlRequest`. */
+/** Legacy crawl request body, adapted to the unified source endpoint by AxonClient. */
 @Serializable
 data class CrawlRequest(
     val urls: List<String>,
@@ -250,7 +250,7 @@ data class CrawlRequest(
     val headers: List<String> = emptyList(),
 )
 
-/** Response body from POST /v1/crawl (job submission). */
+/** App-level crawl submission response adapted from the unified source result. */
 @Serializable
 data class CrawlJobResponse(
     @SerialName("job_id") val jobId: String = "",
@@ -258,7 +258,7 @@ data class CrawlJobResponse(
 )
 
 /**
- * Top-level envelope from GET /v1/crawl/{job_id}.
+ * Legacy top-level crawl envelope retained for older data/tests.
  *
  * The server wraps the job detail in a `{"job": {...}}` envelope — this class is the
  * deserialisation target. [AxonClient.crawlStatus] extracts [job] and returns
@@ -276,7 +276,7 @@ data class CrawlResultJson(
 )
 
 /**
- * Inner job detail returned by GET /v1/crawl/{job_id} (inside the [CrawlStatusWrapper] envelope).
+ * App-level crawl status adapted from the unified job summary.
  *
  * Key differences from the previously assumed flat shape:
  * - Primary key is `id`, not `job_id` — exposed via [jobId] for backward-compatible access.

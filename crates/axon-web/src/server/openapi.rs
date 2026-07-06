@@ -72,11 +72,8 @@ use super::{handlers, openapi_jobs, routing};
         openapi_jobs::cleanup_extract_jobs,
         openapi_jobs::clear_extract_jobs,
         openapi_jobs::recover_extract_jobs,
-        handlers::admin::dedupe,
-        handlers::admin::purge,
         handlers::admin::list_watch,
         handlers::admin::create_watch,
-        handlers::admin::run_watch,
         handlers::artifacts::serve_artifact_query
     ),
     components(schemas(
@@ -139,9 +136,6 @@ use super::{handlers, openapi_jobs, routing};
         axon_services::types::EndpointSourceKind,
         axon_services::client_contract::RestExtractRequest,
         handlers::async_jobs::AcceptedJob,
-        handlers::admin::DedupeRequest,
-        axon_api::mcp_schema::PurgeRequest,
-        axon_api::PurgeResult,
         handlers::admin::WatchCreateRequest,
         handlers::jobs::JobStatusResponse,
         axon_api::source::JobCancelRequest,

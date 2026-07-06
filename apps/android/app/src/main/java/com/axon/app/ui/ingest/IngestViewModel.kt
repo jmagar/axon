@@ -77,7 +77,7 @@ sealed interface IngestUi {
 }
 
 /**
- * Drives the Ingest mode screen. Submits an async ingest job via `/v1/ingest`, persists
+ * Drives the Ingest mode screen. Submits an async ingest job via `/v1/sources`, persists
  * the returned `jobId` to [com.axon.app.data.repository.RecentJobsRepository], and offers
  * one-shot status / cancel actions on the resulting Submitted card.
  */

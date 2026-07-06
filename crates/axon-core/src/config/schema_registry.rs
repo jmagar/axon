@@ -81,9 +81,22 @@ pub fn config_key_registry() -> &'static [ConfigKeySpec] {
 
 pub fn removed_env_keys() -> &'static [&'static str] {
     &[
+        "AXON_MCP_HTTP_HOST",
+        "AXON_MCP_HTTP_PORT",
         "AXON_MCP_HTTP_TOKEN",
         "AXON_MCP_AUTH_MODE",
+        "AXON_MCP_PUBLIC_URL",
+        "AXON_MCP_GOOGLE_CLIENT_ID",
         "AXON_MCP_GOOGLE_CLIENT_SECRET",
+        "AXON_MCP_AUTH_ADMIN_EMAIL",
+        "AXON_MCP_AUTH_ALLOWED_REDIRECT_URIS",
         "AXON_MCP_ALLOWED_ORIGINS",
+        "AXON_COLLECTION",
+        "AXON_HYBRID_CANDIDATES",
+        "AXON_ASK_HYBRID_CANDIDATES",
+        "AXON_INGEST_LANES",
+        "AXON_EMBED_DOC_TIMEOUT_SECS",
+        "AXON_WATCH_TICK_SECS",
+        "AXON_WATCH_LEASE_SECS",
     ]
 }

@@ -145,13 +145,10 @@ fn write_routes(cfg: Arc<Config>, service_context: &Arc<ServiceContext>) -> Rout
             "/v1/extract",
             handlers::async_jobs::extract_router(Arc::clone(service_context)),
         )
-        .route("/v1/dedupe", post(handlers::admin::dedupe))
-        .route("/v1/purge", post(handlers::admin::purge))
         .route(
             "/v1/watch",
             get(handlers::admin::list_watch).post(handlers::admin::create_watch),
         )
-        .route("/v1/watch/{id}/run", post(handlers::admin::run_watch))
         .layer(DefaultBodyLimit::max(128 * 1024))
 }
 
@@ -353,13 +350,10 @@ async fn block_loopback_destructive_request(
 
 fn is_loopback_destructive_request(method: &Method, path: &str) -> bool {
     if *method == Method::POST
-        && (path == "/v1/dedupe"
-            || path == "/v1/purge"
-            || path == "/v1/sources"
+        && (path == "/v1/sources"
             || path == "/v1/watch"
             || path == "/v1/jobs/recover"
             || path == "/v1/jobs/cleanup"
-            || path.starts_with("/v1/watch/")
             || path.starts_with("/v1/jobs/"))
     {
         return true;

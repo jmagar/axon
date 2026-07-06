@@ -26,7 +26,6 @@ pub(crate) fn scope_for_rest_route(method: &str, path: &str) -> Option<&'static 
     let scope = match (method, path) {
         ("GET", p) if p.starts_with("/v1/") => axon_authz::http::AxonScope::Read,
         ("POST", "/v1/query" | "/v1/retrieve" | "/v1/map") => axon_authz::http::AxonScope::Read,
-        ("POST", "/v1/dedupe") => axon_authz::http::AxonScope::Write,
         ("POST", p) if p.starts_with("/v1/") => axon_authz::http::AxonScope::Write,
         ("DELETE", p) if p.starts_with("/v1/") => axon_authz::http::AxonScope::Write,
         _ => return None,

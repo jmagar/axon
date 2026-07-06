@@ -327,20 +327,6 @@ static REST_ROUTES: &[RestRouteSpec] = &[
         None,
         "JobCancelResponse",
     ),
-    write(
-        "POST",
-        "/v1/dedupe",
-        "dedupe",
-        Some("DedupeRequest"),
-        "DedupeResponse",
-    ),
-    write(
-        "POST",
-        "/v1/purge",
-        "purge",
-        Some("PurgeRequest"),
-        "PurgeResult",
-    ),
     read("GET", "/v1/watch", "watch_list", "WatchListResponse"),
     write(
         "POST",
@@ -349,24 +335,24 @@ static REST_ROUTES: &[RestRouteSpec] = &[
         Some("WatchRequest"),
         "WatchResponse",
     ),
-    accepted(
-        "POST",
-        "/v1/watch/{id}/run",
-        "watch_run",
-        None,
-        "WatchRunResponse",
-    ),
 ];
 
 pub fn removed_routes() -> &'static [&'static str] {
-    &["/v1/embed", "/v1/ingest", "/v1/scrape", "/v1/crawl"]
+    &[
+        "/v1/embed",
+        "/v1/ingest",
+        "/v1/scrape",
+        "/v1/crawl",
+        "/v1/purge",
+        "/v1/dedupe",
+        "/v1/watch/{id}/run",
+    ]
 }
 
 const READ_RESPONSES: &[&str] = &["200", "400", "401", "403", "404", "500", "502"];
 const ASK_RESPONSES: &[&str] = &["200", "400", "401", "403", "413", "502", "504"];
 const SYNC_WRITE_RESPONSES: &[&str] = &["200", "400", "401", "403", "404", "500", "502", "504"];
 const WRITE_RESPONSES: &[&str] = &["200", "400", "401", "403", "404", "422", "500", "502"];
-const ACCEPTED_RESPONSES: &[&str] = &["202", "400", "401", "403", "404", "500", "502"];
 const STREAM_RESPONSES: &[&str] = &["200", "400", "401", "403", "404", "500", "502"];
 
 const fn read(
@@ -405,26 +391,6 @@ const fn write(
         mutates: true,
         streaming: false,
         responses: WRITE_RESPONSES,
-    }
-}
-
-const fn accepted(
-    method: &'static str,
-    path: &'static str,
-    operation_id: &'static str,
-    request_dto: Option<&'static str>,
-    result_dto: &'static str,
-) -> RestRouteSpec {
-    RestRouteSpec {
-        method,
-        path,
-        operation_id,
-        request_dto,
-        result_dto,
-        required_scope: "write",
-        mutates: true,
-        streaming: false,
-        responses: ACCEPTED_RESPONSES,
     }
 }
 

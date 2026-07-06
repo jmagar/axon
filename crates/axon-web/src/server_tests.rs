@@ -487,15 +487,11 @@ async fn loopback_dev_blocks_destructive_rest_routes_without_auth() {
     let (base, shutdown, handle) = spawn_full_test_server(AuthPolicy::LoopbackDev).await;
     let client = reqwest::Client::new();
     let job_id = Uuid::nil();
-    let watch_run = format!("/v1/watch/{job_id}/run");
     let extract_cancel = format!("/v1/extract/{job_id}/cancel");
     let mobile_session = "/v1/mobile/sessions/test_session";
     let routes = [
-        ("POST", "/v1/dedupe"),
-        ("POST", "/v1/purge"),
         ("POST", "/v1/sources"),
         ("POST", "/v1/watch"),
-        ("POST", watch_run.as_str()),
         ("POST", "/v1/extract"),
         ("POST", extract_cancel.as_str()),
         ("POST", "/v1/extract/cleanup"),

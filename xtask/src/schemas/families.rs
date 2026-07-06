@@ -251,7 +251,7 @@ fn cli_artifacts(root: &Path) -> Result<Vec<SchemaArtifact>> {
         &inputs,
         "commands",
         commands,
-        &[],
+        axon_cli::schema_registry::removed_commands(),
     );
     Ok(vec![
         SchemaArtifact::new(rel(spec.json_path), json_string(&schema)?),
@@ -291,7 +291,7 @@ fn mcp_artifacts(root: &Path) -> Result<Vec<SchemaArtifact>> {
         &inputs,
         "actions",
         actions,
-        &[],
+        axon_mcp::schema_registry::removed_actions(),
     );
     Ok(vec![
         SchemaArtifact::new(rel(spec.json_path), json_string(&schema)?),
@@ -330,7 +330,7 @@ fn openapi_artifacts(root: &Path) -> Result<Vec<SchemaArtifact>> {
         &inputs,
         "routes",
         routes,
-        &[],
+        axon_web::schema_registry::removed_routes(),
     );
     Ok(vec![
         SchemaArtifact::new(rel(spec.json_path), json_string(&schema)?),
@@ -357,7 +357,7 @@ fn config_artifacts(root: &Path) -> Result<Vec<SchemaArtifact>> {
         &inputs,
         "config_keys",
         keys.clone(),
-        &[],
+        axon_core::config::schema_registry::removed_env_keys(),
     );
     let extra = spec.extra_json.unwrap();
     let env_schema = registry_schema_bundle(
@@ -368,7 +368,7 @@ fn config_artifacts(root: &Path) -> Result<Vec<SchemaArtifact>> {
         &inputs,
         "config_keys",
         keys,
-        &[],
+        axon_core::config::schema_registry::removed_env_keys(),
     );
     Ok(vec![
         SchemaArtifact::new(rel(spec.json_path), json_string(&schema)?),

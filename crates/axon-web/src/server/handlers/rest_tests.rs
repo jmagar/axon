@@ -231,7 +231,15 @@ async fn legacy_indexing_routes_are_absent_and_sources_present() {
     let (base, shutdown, handle) = spawn(AuthPolicy::LoopbackDev).await;
     let client = reqwest::Client::new();
 
-    for path in ["/v1/embed", "/v1/ingest", "/v1/scrape", "/v1/crawl"] {
+    for path in [
+        "/v1/embed",
+        "/v1/ingest",
+        "/v1/scrape",
+        "/v1/crawl",
+        "/v1/purge",
+        "/v1/dedupe",
+        "/v1/watch/test/run",
+    ] {
         let response = client
             .post(format!("{base}{path}"))
             .json(&serde_json::json!({}))

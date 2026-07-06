@@ -329,7 +329,7 @@ class AskViewModel(app: Application) : AndroidViewModel(app) {
                                 op = com.axon.app.ui.fab.FabOp.Crawl,
                                 target = injectionTarget(jobId),
                                 status = readableStatus,
-                                endpoint = "GET /v1/crawl/$jobId",
+                                endpoint = "GET /v1/jobs/$jobId",
                                 jobId = jobId,
                                 summary = pages?.let { "%,d pages crawled".format(it) },
                                 detail = status.serverError ?: "Crawl status is ${status.status.lowercase()}. Use Axon query/retrieve/ask over the indexed target for follow-up.",
