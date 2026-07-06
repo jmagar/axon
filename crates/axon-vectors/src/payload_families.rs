@@ -97,7 +97,21 @@ pub const VECTOR_SOURCE_FAMILY_FIELDS: &[(&str, &[&str])] = &[
     ),
     (
         "memory",
-        &["memory_id", "memory_importance", "memory_status"],
+        &[
+            "memory_id",
+            "memory_importance",
+            "memory_status",
+            "memory_recallable",
+            "memory_type",
+            "memory_scope_kind",
+            "memory_scope_value",
+            "memory_confidence",
+            "memory_salience",
+            "redaction_version",
+            "redacted_field_count",
+            "dropped_field_count",
+            "detector_names",
+        ],
     ),
     (
         "local",

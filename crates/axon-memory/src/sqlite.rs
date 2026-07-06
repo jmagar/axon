@@ -151,6 +151,14 @@ impl MemoryStore for SqliteMemoryStore {
         Self::load_record(&conn, &memory_id.0)
     }
 
+    async fn load_many(&self, memory_ids: Vec<MemoryId>) -> Result<Vec<Option<MemoryRecord>>> {
+        let conn = self.conn.lock().await;
+        memory_ids
+            .into_iter()
+            .map(|memory_id| Self::load_record(&conn, &memory_id.0))
+            .collect()
+    }
+
     async fn search(&self, request: MemorySearchRequest) -> Result<MemorySearchResult> {
         recall::search(self, request).await
     }

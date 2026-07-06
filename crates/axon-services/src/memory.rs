@@ -5,12 +5,11 @@
 //! `memory` surface (subactions remember/list/search/show/link/supersede/
 //! context and the `MemoryItem`/`MemoryEdgeItem`/`MemoryContext` output shapes)
 //! and routes every operation through [`axon_memory::sqlite::SqliteMemoryStore`]
-//! rather than the previous Qdrant-backed memory-node/point implementation.
-//!
-//! Memory now lives entirely in SQLite (`memory_records`/`memory_links`/…):
-//! remember writes a `memory_records` row, search is keyword recall over those
-//! rows, and no Qdrant memory points are written or read. Pure DTO/mapping
-//! helpers live in [`mapping`]; this file owns dispatch + store composition.
+//! with vector-backed recall when the target runtime has Qdrant/TEI providers
+//! attached. SQLite remains the metadata source of truth (`memory_records`/
+//! `memory_links`/…), while Qdrant points live in `vector_namespace=memory`.
+//! Pure DTO/mapping helpers live in [`mapping`]; this file owns dispatch +
+//! store composition.
 
 use anyhow::{Context, Result, bail};
 use serde_json::json;
@@ -25,6 +24,7 @@ use axon_api::source::{
 use axon_memory::record::{Clock, SystemClock};
 use axon_memory::sqlite::SqliteMemoryStore;
 use axon_memory::store::MemoryStore;
+use axon_memory::vector::{MemoryVectorConfig, VectorBackedMemoryStore};
 
 mod context_format;
 mod mapping;
@@ -127,7 +127,7 @@ pub async fn remember(ctx: &ServiceContext, req: MemoryRequest) -> Result<Memory
         tags: Vec::new(),
         links: facet_links(&memory),
         decay: None,
-        embed: false,
+        embed: true,
         visibility: None,
     };
     let result = store.remember(request).await.map_err(store_err)?;
@@ -182,8 +182,8 @@ pub async fn link(ctx: &ServiceContext, req: MemoryRequest) -> Result<MemoryEdge
     let target_id = required_text(req.target_id.as_deref(), "target_id")?.to_string();
     let edge_type = edge_type_name(req.edge_type.unwrap_or(MemoryEdgeType::RelatesTo));
     // Attach an evidence-free link on the source memory pointing at the target.
-    ensure_exists(&store, &source_id).await?;
-    ensure_exists(&store, &target_id).await?;
+    ensure_exists(store.as_ref(), &source_id).await?;
+    ensure_exists(store.as_ref(), &target_id).await?;
     store
         .link(axon_api::source::MemoryLinkRequest {
             memory_id: MemoryId::new(source_id.clone()),
@@ -203,8 +203,8 @@ pub async fn supersede(ctx: &ServiceContext, req: MemoryRequest) -> Result<Memor
     let store = memory_store(ctx)?;
     let replacement_id = required_text(req.source_id.as_deref(), "source_id")?.to_string();
     let superseded_id = required_text(req.target_id.as_deref(), "target_id")?.to_string();
-    ensure_exists(&store, &replacement_id).await?;
-    ensure_exists(&store, &superseded_id).await?;
+    ensure_exists(store.as_ref(), &replacement_id).await?;
+    ensure_exists(store.as_ref(), &superseded_id).await?;
     store
         .supersede(MemorySupersedeRequest {
             memory_id: MemoryId::new(superseded_id.clone()),
@@ -254,14 +254,30 @@ pub async fn context(ctx: &ServiceContext, req: MemoryRequest) -> Result<MemoryC
 /// composed cross-crate migration runner on the same DB file at startup;
 /// `SqliteMemoryStore::open` also runs the idempotent in-crate schema, so it is
 /// safe to open here regardless of composition order.
-fn memory_store(ctx: &ServiceContext) -> Result<SqliteMemoryStore> {
+fn memory_store(ctx: &ServiceContext) -> Result<Arc<dyn MemoryStore>> {
     let path = ctx.cfg().sqlite_path.to_string_lossy().to_string();
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
-    SqliteMemoryStore::open(&path, clock)
-        .map_err(|e| anyhow::anyhow!("open memory store at {path}: {}", e.message))
+    let sqlite: Arc<dyn MemoryStore> = Arc::new(
+        SqliteMemoryStore::open(&path, clock)
+            .map_err(|e| anyhow::anyhow!("open memory store at {path}: {}", e.message))?,
+    );
+    let Some(runtime) = ctx.target_local_source_runtime() else {
+        return Ok(sqlite);
+    };
+    Ok(Arc::new(VectorBackedMemoryStore::new(
+        sqlite,
+        Arc::clone(&runtime.embedding_provider),
+        Arc::clone(&runtime.vector_store),
+        MemoryVectorConfig {
+            collection: ctx.cfg().collection.clone(),
+            embedding_provider_id: runtime.embedding_provider_id.clone(),
+            embedding_model: runtime.embedding_model.clone(),
+            embedding_dimensions: runtime.embedding_dimensions,
+        },
+    )))
 }
 
-async fn ensure_exists(store: &SqliteMemoryStore, id: &str) -> Result<()> {
+async fn ensure_exists(store: &dyn MemoryStore, id: &str) -> Result<()> {
     if store
         .get(MemoryId::new(id.to_string()))
         .await

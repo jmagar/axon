@@ -13,6 +13,13 @@ pub type Result<T> = std::result::Result<T, ApiError>;
 pub trait MemoryStore: Send + Sync {
     async fn remember(&self, request: MemoryRequest) -> Result<MemoryResult>;
     async fn get(&self, memory_id: MemoryId) -> Result<Option<MemoryRecord>>;
+    async fn load_many(&self, memory_ids: Vec<MemoryId>) -> Result<Vec<Option<MemoryRecord>>> {
+        let mut records = Vec::with_capacity(memory_ids.len());
+        for memory_id in memory_ids {
+            records.push(self.get(memory_id).await?);
+        }
+        Ok(records)
+    }
     async fn search(&self, request: MemorySearchRequest) -> Result<MemorySearchResult>;
     async fn context(&self, request: MemoryContextRequest) -> Result<MemoryContextResult>;
     async fn link(&self, request: MemoryLinkRequest) -> Result<MemoryResult>;
@@ -104,6 +111,14 @@ impl MemoryStore for FakeMemoryStore {
 
     async fn get(&self, memory_id: MemoryId) -> Result<Option<MemoryRecord>> {
         Ok(self.state.lock().await.records.get(&memory_id).cloned())
+    }
+
+    async fn load_many(&self, memory_ids: Vec<MemoryId>) -> Result<Vec<Option<MemoryRecord>>> {
+        let state = self.state.lock().await;
+        Ok(memory_ids
+            .into_iter()
+            .map(|memory_id| state.records.get(&memory_id).cloned())
+            .collect())
     }
 
     async fn search(&self, request: MemorySearchRequest) -> Result<MemorySearchResult> {

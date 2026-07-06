@@ -849,12 +849,15 @@ dependencies = [
  "async-trait",
  "axon-adapters",
  "axon-api",
+ "axon-embedding",
  "axon-error",
  "axon-retrieval",
+ "axon-vectors",
  "rusqlite",
  "serde_json",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
