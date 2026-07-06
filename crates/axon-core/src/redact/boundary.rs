@@ -116,6 +116,17 @@ impl RedactionContext {
             allow_internal_paths: false,
         }
     }
+
+    /// Default context for a graph node/edge `properties` write — adapter-
+    /// supplied evidence metadata, not user-authored body content.
+    pub fn graph_evidence() -> Self {
+        Self {
+            visibility_ceiling: Visibility::Public,
+            surface: RedactionSurface::GraphEvidence,
+            source_kind: None,
+            allow_internal_paths: false,
+        }
+    }
 }
 
 /// Outcome of a redaction pass over a JSON value.

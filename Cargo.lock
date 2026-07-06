@@ -690,6 +690,7 @@ version = "6.2.2"
 dependencies = [
  "async-trait",
  "axon-api",
+ "axon-core",
  "axon-error",
  "axon-vectors",
  "chrono",
