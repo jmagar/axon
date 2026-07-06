@@ -856,6 +856,7 @@ dependencies = [
  "axon-graph",
  "axon-retrieval",
  "axon-vectors",
+ "chrono",
  "rusqlite",
  "serde_json",
  "tokio",

@@ -4,8 +4,12 @@ use axon_api::source::*;
 use axon_embedding::fake::FakeEmbeddingProvider;
 use axon_vectors::store::FakeVectorStore;
 
+use crate::sqlite::SqliteMemoryStore;
 use crate::store::{FakeMemoryStore, MemoryStore};
-use crate::vector::{MEMORY_VECTOR_NAMESPACE, MemoryVectorConfig, VectorBackedMemoryStore};
+use crate::testing::FixedClock;
+use crate::vector::{
+    MEMORY_VECTOR_NAMESPACE, MemoryBatchLimits, MemoryVectorConfig, VectorBackedMemoryStore,
+};
 
 fn request(body: &str) -> MemoryRequest {
     MemoryRequest {
@@ -36,6 +40,7 @@ fn service(vector_store: Arc<FakeVectorStore>) -> VectorBackedMemoryStore {
             embedding_provider_id: ProviderId::new("fake-embedding"),
             embedding_model: "fake-embedding".to_string(),
             embedding_dimensions: 4,
+            batch_limits: MemoryBatchLimits::default(),
         },
     )
 }
@@ -98,4 +103,169 @@ async fn forgotten_memory_is_not_recalled_from_vector_namespace() {
         .unwrap();
     assert!(hits.results.is_empty());
     assert!(vectors.points("axon-test").await.is_empty());
+}
+
+/// Wraps a real embedding provider and fails every call at or after
+/// `fail_from_call` (1-indexed), so a test can simulate a batch failing
+/// partway through a multi-chunk import.
+struct FlakyEmbeddingProvider {
+    inner: FakeEmbeddingProvider,
+    call_count: std::sync::atomic::AtomicUsize,
+    fail_from_call: usize,
+}
+
+#[async_trait::async_trait]
+impl axon_embedding::provider::EmbeddingProvider for FlakyEmbeddingProvider {
+    async fn embed(
+        &self,
+        batch: EmbeddingBatch,
+    ) -> axon_embedding::provider::Result<EmbeddingResult> {
+        let call = self
+            .call_count
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            + 1;
+        if call >= self.fail_from_call {
+            return Err(ApiError::new(
+                "embedding.fake_failure",
+                axon_error::ErrorStage::Embedding,
+                "flaky provider forced failure",
+            ));
+        }
+        self.inner.embed(batch).await
+    }
+
+    async fn capabilities(
+        &self,
+    ) -> axon_embedding::provider::Result<axon_api::source::ProviderCapability> {
+        self.inner.capabilities().await
+    }
+}
+
+fn record_for_import(memory_id: &str, body: &str) -> MemoryRecord {
+    MemoryRecord {
+        memory_id: MemoryId::new(memory_id),
+        memory_type: MemoryType::Fact,
+        status: MemoryStatus::Active,
+        body: body.to_string(),
+        confidence: 0.8,
+        salience: 0.5,
+        scope: MemoryScope {
+            kind: "project".to_string(),
+            value: "axon".to_string(),
+        },
+        history: vec![MemoryHistoryEvent {
+            status: MemoryStatus::Active,
+            message: "created".to_string(),
+            timestamp: Timestamp("2026-07-04T00:00:00Z".to_string()),
+        }],
+        title: None,
+        links: Vec::new(),
+        decay: None,
+        embedding_refs: Vec::new(),
+        superseded_by: None,
+        contradicts: None,
+    }
+}
+
+#[tokio::test]
+async fn memory_import_embeds_created_records_in_configured_batch_size() {
+    let vectors = Arc::new(FakeVectorStore::new("fake-vector"));
+    let embeddings = Arc::new(FakeEmbeddingProvider::new("fake-embedding", 4));
+    let clock = Arc::new(FixedClock::at_2026());
+    let sqlite: Arc<dyn MemoryStore> =
+        Arc::new(SqliteMemoryStore::in_memory(clock).expect("open sqlite"));
+    let service = VectorBackedMemoryStore::new(
+        sqlite,
+        embeddings.clone(),
+        vectors.clone(),
+        MemoryVectorConfig {
+            collection: "axon-test".to_string(),
+            embedding_provider_id: ProviderId::new("fake-embedding"),
+            embedding_model: "fake-embedding".to_string(),
+            embedding_dimensions: 4,
+            batch_limits: MemoryBatchLimits {
+                embed_batch_size: 2,
+                ..MemoryBatchLimits::default()
+            },
+        },
+    );
+
+    let records = vec![
+        record_for_import("mem_1", "one"),
+        record_for_import("mem_2", "two"),
+        record_for_import("mem_3", "three"),
+    ];
+    let result = service
+        .import(MemoryImportRequest {
+            records,
+            mode: MemoryImportMode::Merge,
+            dry_run: false,
+        })
+        .await
+        .unwrap();
+    assert_eq!(result.created, 3);
+
+    let calls = embeddings.calls().await;
+    let batch_sizes: Vec<usize> = calls.iter().map(|batch| batch.items.len()).collect();
+    assert_eq!(batch_sizes, vec![2, 1]);
+}
+
+#[tokio::test]
+async fn partial_vector_failure_sends_affected_memories_to_review() {
+    let vectors = Arc::new(FakeVectorStore::new("fake-vector"));
+    let flaky = Arc::new(FlakyEmbeddingProvider {
+        inner: FakeEmbeddingProvider::new("fake-embedding", 4),
+        call_count: std::sync::atomic::AtomicUsize::new(0),
+        fail_from_call: 2,
+    });
+    let clock = Arc::new(FixedClock::at_2026());
+    let sqlite: Arc<dyn MemoryStore> =
+        Arc::new(SqliteMemoryStore::in_memory(clock).expect("open sqlite"));
+    let service = VectorBackedMemoryStore::new(
+        sqlite,
+        flaky,
+        vectors,
+        MemoryVectorConfig {
+            collection: "axon-test".to_string(),
+            embedding_provider_id: ProviderId::new("fake-embedding"),
+            embedding_model: "fake-embedding".to_string(),
+            embedding_dimensions: 4,
+            batch_limits: MemoryBatchLimits {
+                embed_batch_size: 1,
+                ..MemoryBatchLimits::default()
+            },
+        },
+    );
+
+    let records = vec![
+        record_for_import("mem_a", "first"),
+        record_for_import("mem_b", "second"),
+    ];
+    let result = service
+        .import(MemoryImportRequest {
+            records,
+            mode: MemoryImportMode::Merge,
+            dry_run: false,
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(result.created, 2);
+    assert_eq!(result.created_ids.len(), 2);
+    assert!(
+        result
+            .warnings
+            .iter()
+            .any(|w| w.code == "memory.vector_failed")
+    );
+
+    // The first record's embed call succeeds (call 1); the second's fails
+    // (call 2 >= fail_from_call) and must be sent to review, not silently
+    // lost or left falsely "active" with no vector.
+    let second = service
+        .get(result.created_ids[1].clone())
+        .await
+        .unwrap()
+        .expect("second record still durable in SQLite");
+    assert_eq!(second.status, MemoryStatus::Review);
 }

@@ -522,6 +522,11 @@ pub struct MemoryImportResult {
     pub updated: u32,
     pub skipped: u32,
     pub dry_run: bool,
+    /// Memory ids actually inserted (empty on a dry run). Lets a decorator
+    /// (e.g. vector embedding) act on exactly what was created without a
+    /// second lookup.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub created_ids: Vec<MemoryId>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<SourceWarning>,
 }

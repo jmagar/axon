@@ -131,9 +131,10 @@ pub async fn import(
     let conn = store.conn().lock().await;
 
     let mut created = 0u32;
-    let mut updated = 0u32;
+    let updated = 0u32;
     let mut skipped = 0u32;
-    let mut warnings = Vec::new();
+    let mut created_ids = Vec::new();
+    let warnings = Vec::new();
 
     if request.mode == MemoryImportMode::ReplaceScope && !request.dry_run {
         let mut archived_scopes = std::collections::HashSet::new();
@@ -159,18 +160,19 @@ pub async fn import(
         }
         let memory_id = store.next_id();
         let mut record = incoming;
-        record.memory_id = memory_id;
+        record.memory_id = memory_id.clone();
         insert_record(&conn, &record, &now)?;
         created += 1;
+        created_ids.push(memory_id);
     }
-    let _ = &mut updated;
 
     Ok(MemoryImportResult {
         created,
         updated,
         skipped,
         dry_run: request.dry_run,
-        warnings: std::mem::take(&mut warnings),
+        created_ids,
+        warnings,
     })
 }
 

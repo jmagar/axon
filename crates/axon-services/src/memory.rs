@@ -26,7 +26,7 @@ use axon_memory::graph::{GraphBackedMemoryMirror, GraphBackedMemoryStore};
 use axon_memory::record::{Clock, SystemClock};
 use axon_memory::sqlite::SqliteMemoryStore;
 use axon_memory::store::MemoryStore;
-use axon_memory::vector::{MemoryVectorConfig, VectorBackedMemoryStore};
+use axon_memory::vector::{MemoryBatchLimits, MemoryVectorConfig, VectorBackedMemoryStore};
 
 mod context_format;
 mod mapping;
@@ -283,6 +283,7 @@ async fn memory_store(ctx: &ServiceContext) -> Result<Arc<dyn MemoryStore>> {
             embedding_provider_id: runtime.embedding_provider_id.clone(),
             embedding_model: runtime.embedding_model.clone(),
             embedding_dimensions: runtime.embedding_dimensions,
+            batch_limits: MemoryBatchLimits::default(),
         },
     )))
 }
