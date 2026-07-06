@@ -1,5 +1,7 @@
 use super::*;
+use axon_api::reset::{ResetCreated, ResetDeleted, ResetStorePlan};
 use axon_core::config::Config;
+use serial_test::serial;
 
 fn cfg_with(stores: Vec<&str>, dry_run: bool, yes: bool) -> Config {
     let mut cfg = Config::test_default();
@@ -106,4 +108,28 @@ async fn sqlite_wipe_and_remigrate_yields_fresh_schema() {
     assert!(inv.table_count > 0);
     assert_eq!(inv.content_rows, 0);
     assert!(!inv.non_empty());
+}
+
+#[tokio::test]
+#[serial]
+async fn reset_receipt_redacts_secrets_before_writing() {
+    // This crate denies `unsafe`, which `std::env::set_var` now requires, so
+    // this writes under the real `axon_data_base_dir()` (matching the
+    // `reddit_acquire.rs`/`youtube_acquire_tests.rs` precedent for the same
+    // constraint) with a uniquely-named reset id, then cleans up after.
+    let reset_id = "phase3b-redaction-test";
+    let path = write_receipt(
+        reset_id,
+        &[],
+        &[] as &[ResetStorePlan],
+        &ResetDeleted::default(),
+        &ResetCreated::default(),
+        &["provider error: Authorization: Bearer abcdef0123456789abcdef".to_string()],
+    )
+    .await
+    .expect("write receipt");
+
+    let written = std::fs::read_to_string(&path).expect("read receipt");
+    let _ = std::fs::remove_file(&path);
+    assert!(!written.contains("abcdef0123456789abcdef"));
 }

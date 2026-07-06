@@ -25,6 +25,7 @@ use axon_api::reset::{
 };
 use axon_core::config::Config;
 use axon_core::logging::{log_info, log_warn};
+use axon_core::redact::{DefaultRedactor, RedactionContext, Redactor};
 use std::error::Error;
 use uuid::Uuid;
 
@@ -321,6 +322,11 @@ async fn write_receipt(
         "created": created,
         "warnings": warnings,
     });
+    // Fail-closed redaction boundary: this receipt is a durable audit-trail
+    // artifact returned to callers verbatim; a warning/plan entry carrying a
+    // provider error body or path fragment must not persist a secret.
+    let (receipt, _redaction_report) =
+        DefaultRedactor::new().redact_json(receipt, &RedactionContext::artifact_metadata());
     let bytes = serde_json::to_vec_pretty(&receipt)?;
     let path = axon_core::artifacts::atomic_write_under(&root, &relative, &bytes).await?;
     Ok(path.display().to_string())

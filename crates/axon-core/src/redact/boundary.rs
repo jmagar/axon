@@ -103,6 +103,19 @@ impl RedactionContext {
             allow_internal_paths: false,
         }
     }
+
+    /// Default context for an artifact **metadata** write (reset receipts,
+    /// extract run summaries, …) — structured JSON audit trails, not the
+    /// scraped/rendered body content an artifact may also carry (which stays
+    /// unmasked, same precedent as vector-payload `chunk_text`).
+    pub fn artifact_metadata() -> Self {
+        Self {
+            visibility_ceiling: Visibility::Public,
+            surface: RedactionSurface::Artifacts,
+            source_kind: None,
+            allow_internal_paths: false,
+        }
+    }
 }
 
 /// Outcome of a redaction pass over a JSON value.
