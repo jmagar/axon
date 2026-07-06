@@ -20,6 +20,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
 use axon_api::source::*;
+use axon_core::redact::{DefaultRedactor, RedactionContext, Redactor};
 use rusqlite::Connection;
 use tokio::sync::Mutex;
 
@@ -101,6 +102,18 @@ impl MemoryStore for SqliteMemoryStore {
         let memory_id = self.next_id();
         let now = self.clock.now_rfc3339();
 
+        // Fail-closed redaction boundary: a remembered body/title is durable
+        // and recalled back through CLI/MCP/REST in later sessions, so a
+        // secret pasted into "remember this" content must not persist
+        // verbatim. Scrub before the write, not after.
+        let redactor = DefaultRedactor::new();
+        let redaction_context = RedactionContext::memory_record();
+        let request_body = redactor.redact_text(&request.body, &redaction_context);
+        let request_title = request
+            .title
+            .as_deref()
+            .map(|title| redactor.redact_text(title, &redaction_context));
+
         // Default decay policy from the memory type when none supplied.
         let decay = request.decay.clone().or_else(|| {
             let profile = request.memory_type.default_decay_profile();
@@ -119,7 +132,7 @@ impl MemoryStore for SqliteMemoryStore {
             memory_id: memory_id.clone(),
             memory_type: request.memory_type,
             status: MemoryStatus::Active,
-            body: request.body,
+            body: request_body,
             confidence: request.confidence,
             salience: request.salience,
             scope: request.scope,
@@ -128,7 +141,7 @@ impl MemoryStore for SqliteMemoryStore {
                 message: "created".to_string(),
                 timestamp: Timestamp(now.clone()),
             }],
-            title: request.title,
+            title: request_title,
             links: request.links.clone(),
             decay,
             embedding_refs: Vec::new(),

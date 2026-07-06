@@ -91,6 +91,18 @@ impl RedactionContext {
             allow_internal_paths: false,
         }
     }
+
+    /// Default context for a memory-record write: `public` ceiling (a
+    /// remembered body/title is recalled back through CLI/MCP/REST in later
+    /// sessions), no internal-path allowance.
+    pub fn memory_record() -> Self {
+        Self {
+            visibility_ceiling: Visibility::Public,
+            surface: RedactionSurface::MemoryRecords,
+            source_kind: None,
+            allow_internal_paths: false,
+        }
+    }
 }
 
 /// Outcome of a redaction pass over a JSON value.

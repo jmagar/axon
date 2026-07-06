@@ -60,6 +60,22 @@ async fn remember_then_get_round_trips_record() {
 }
 
 #[tokio::test]
+async fn remember_redacts_secrets_from_body_and_title_before_persisting() {
+    let (store, _clock) = store();
+    let mut remembered = request(
+        MemoryType::Fact,
+        "the deploy token is Authorization: Bearer abcdef0123456789abcdef",
+        "axon",
+    );
+    remembered.title = Some("token: sk-proj-abcdefghijklmnopqrstuvwx".to_string());
+    let result = store.remember(remembered).await.unwrap();
+
+    let record = store.get(result.memory_id).await.unwrap().unwrap();
+    assert!(!record.body.contains("abcdef0123456789abcdef"));
+    assert!(!record.title.unwrap().contains("abcdefghijklmnopqrstuvwx"));
+}
+
+#[tokio::test]
 async fn remember_rejects_empty_body() {
     let (store, _c) = store();
     let err = store
