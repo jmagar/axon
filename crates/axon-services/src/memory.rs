@@ -21,6 +21,8 @@ use axon_api::mcp_schema::{MemoryEdgeType, MemoryRequest, MemorySubaction};
 use axon_api::source::{
     MemoryId, MemoryLink, MemorySearchRequest, MemorySupersedeRequest, Timestamp,
 };
+use axon_graph::SqliteGraphStore;
+use axon_memory::graph::{GraphBackedMemoryMirror, GraphBackedMemoryStore};
 use axon_memory::record::{Clock, SystemClock};
 use axon_memory::sqlite::SqliteMemoryStore;
 use axon_memory::store::MemoryStore;
@@ -85,7 +87,7 @@ pub async fn dispatch(
 }
 
 pub async fn list(ctx: &ServiceContext, req: MemoryRequest) -> Result<Vec<MemoryItem>> {
-    let store = memory_store(ctx)?;
+    let store = memory_store(ctx).await?;
     let limit = req.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
     // Empty-query search returns the full recall-visible set; then facet-filter.
     let search = store
@@ -115,7 +117,7 @@ pub async fn list(ctx: &ServiceContext, req: MemoryRequest) -> Result<Vec<Memory
 }
 
 pub async fn remember(ctx: &ServiceContext, req: MemoryRequest) -> Result<MemoryItem> {
-    let store = memory_store(ctx)?;
+    let store = memory_store(ctx).await?;
     let memory = normalize_remember(req)?;
     let request = axon_api::source::MemoryRequest {
         memory_type: parse_memory_type(&memory.memory_type),
@@ -142,7 +144,7 @@ pub async fn remember(ctx: &ServiceContext, req: MemoryRequest) -> Result<Memory
 pub async fn search(ctx: &ServiceContext, req: MemoryRequest) -> Result<Vec<MemoryItem>> {
     let query = required_text(req.query.as_deref(), "query")?.to_string();
     let limit = req.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
-    let store = memory_store(ctx)?;
+    let store = memory_store(ctx).await?;
     let search = store
         .search(MemorySearchRequest {
             query,
@@ -168,7 +170,7 @@ pub async fn search(ctx: &ServiceContext, req: MemoryRequest) -> Result<Vec<Memo
 
 pub async fn show(ctx: &ServiceContext, req: MemoryRequest) -> Result<Option<MemoryItem>> {
     let id = required_text(req.id.as_deref(), "id")?.to_string();
-    let store = memory_store(ctx)?;
+    let store = memory_store(ctx).await?;
     let record = match store.get(MemoryId::new(id)).await.map_err(store_err)? {
         Some(record) => record,
         None => return Ok(None),
@@ -177,7 +179,7 @@ pub async fn show(ctx: &ServiceContext, req: MemoryRequest) -> Result<Option<Mem
 }
 
 pub async fn link(ctx: &ServiceContext, req: MemoryRequest) -> Result<MemoryEdgeItem> {
-    let store = memory_store(ctx)?;
+    let store = memory_store(ctx).await?;
     let source_id = required_text(req.source_id.as_deref(), "source_id")?.to_string();
     let target_id = required_text(req.target_id.as_deref(), "target_id")?.to_string();
     let edge_type = edge_type_name(req.edge_type.unwrap_or(MemoryEdgeType::RelatesTo));
@@ -200,7 +202,7 @@ pub async fn link(ctx: &ServiceContext, req: MemoryRequest) -> Result<MemoryEdge
 }
 
 pub async fn supersede(ctx: &ServiceContext, req: MemoryRequest) -> Result<MemoryEdgeItem> {
-    let store = memory_store(ctx)?;
+    let store = memory_store(ctx).await?;
     let replacement_id = required_text(req.source_id.as_deref(), "source_id")?.to_string();
     let superseded_id = required_text(req.target_id.as_deref(), "target_id")?.to_string();
     ensure_exists(store.as_ref(), &replacement_id).await?;
@@ -218,7 +220,7 @@ pub async fn supersede(ctx: &ServiceContext, req: MemoryRequest) -> Result<Memor
 }
 
 pub async fn context(ctx: &ServiceContext, req: MemoryRequest) -> Result<MemoryContext> {
-    let store = memory_store(ctx)?;
+    let store = memory_store(ctx).await?;
     let limit = req.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
     let token_budget = req
         .token_budget
@@ -253,14 +255,22 @@ pub async fn context(ctx: &ServiceContext, req: MemoryRequest) -> Result<MemoryC
 /// The memory tables (`memory_records`/`memory_links`/…) are created by the
 /// composed cross-crate migration runner on the same DB file at startup;
 /// `SqliteMemoryStore::open` also runs the idempotent in-crate schema, so it is
-/// safe to open here regardless of composition order.
-fn memory_store(ctx: &ServiceContext) -> Result<Arc<dyn MemoryStore>> {
+/// safe to open here regardless of composition order. The graph mirror opens
+/// its own pool against the same path (`SqliteGraphStore::connect` runs its
+/// own idempotent `ensure_schema`) — safe alongside the sync rusqlite handle
+/// SQLite memory store holds, same file, different table set.
+async fn memory_store(ctx: &ServiceContext) -> Result<Arc<dyn MemoryStore>> {
     let path = ctx.cfg().sqlite_path.to_string_lossy().to_string();
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
     let sqlite: Arc<dyn MemoryStore> = Arc::new(
         SqliteMemoryStore::open(&path, clock)
             .map_err(|e| anyhow::anyhow!("open memory store at {path}: {}", e.message))?,
     );
+    let graph = SqliteGraphStore::connect(&path)
+        .await
+        .map_err(|e| anyhow::anyhow!("open memory graph mirror at {path}: {}", e.message))?;
+    let mirror = Arc::new(GraphBackedMemoryMirror::new(Arc::new(graph)));
+    let sqlite: Arc<dyn MemoryStore> = Arc::new(GraphBackedMemoryStore::new(sqlite, mirror));
     let Some(runtime) = ctx.target_local_source_runtime() else {
         return Ok(sqlite);
     };
