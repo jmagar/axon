@@ -127,6 +127,18 @@ impl RedactionContext {
             allow_internal_paths: false,
         }
     }
+
+    /// Default context for a REST/MCP/CLI error-response envelope — the
+    /// last-mile transport boundary where an underlying error's message and
+    /// details cross into a body returned to an untrusted caller.
+    pub fn transport_response() -> Self {
+        Self {
+            visibility_ceiling: Visibility::Public,
+            surface: RedactionSurface::RestResponse,
+            source_kind: None,
+            allow_internal_paths: false,
+        }
+    }
 }
 
 /// Outcome of a redaction pass over a JSON value.
