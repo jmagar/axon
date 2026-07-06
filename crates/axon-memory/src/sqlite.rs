@@ -10,6 +10,7 @@
 //! durable subsystem, so serializing access is correct and keeps the async
 //! trait surface simple without a connection pool.
 
+pub mod compact;
 pub mod error;
 pub mod lifecycle;
 pub mod recall;
@@ -220,6 +221,52 @@ impl MemoryStore for SqliteMemoryStore {
 
     async fn review(&self, request: MemoryReviewRequest) -> Result<MemoryReviewResult> {
         recall::review(self, request).await
+    }
+
+    async fn update(&self, request: MemoryUpdateRequest) -> Result<MemoryResult> {
+        lifecycle::update(self, request).await
+    }
+
+    async fn pin(&self, request: MemoryPinRequest) -> Result<MemoryResult> {
+        lifecycle::pin(self, request).await
+    }
+
+    async fn archive(&self, request: MemoryArchiveRequest) -> Result<MemoryResult> {
+        lifecycle::set_status(
+            self,
+            MemoryStatusRequest {
+                memory_id: request.memory_id,
+                status: MemoryStatus::Archived,
+                reason: request.reason,
+                timestamp: request.timestamp,
+            },
+        )
+        .await
+    }
+
+    async fn forget(&self, request: MemoryForgetRequest) -> Result<MemoryResult> {
+        lifecycle::set_status(
+            self,
+            MemoryStatusRequest {
+                memory_id: request.memory_id,
+                status: MemoryStatus::Forgotten,
+                reason: request.reason,
+                timestamp: request.timestamp,
+            },
+        )
+        .await
+    }
+
+    async fn compact(&self, request: MemoryCompactRequest) -> Result<MemoryResult> {
+        compact::compact(self, request).await
+    }
+
+    async fn import(&self, request: MemoryImportRequest) -> Result<MemoryImportResult> {
+        compact::import(self, request).await
+    }
+
+    async fn export(&self, request: MemoryExportRequest) -> Result<MemoryExportResult> {
+        compact::export(self, request).await
     }
 
     async fn reset(&self) -> Result<()> {

@@ -399,6 +399,61 @@ impl MemoryStore for GraphBackedMemoryStore {
         self.inner.review(request).await
     }
 
+    async fn update(&self, request: MemoryUpdateRequest) -> Result<MemoryResult> {
+        let memory_id = request.memory_id.clone();
+        let result = self.inner.update(request).await?;
+        let record = self.load_or_missing(&memory_id).await?;
+        self.mirror.upsert_memory_node(&record).await?;
+        Ok(result)
+    }
+
+    async fn pin(&self, request: MemoryPinRequest) -> Result<MemoryResult> {
+        let memory_id = request.memory_id.clone();
+        let result = self.inner.pin(request).await?;
+        let record = self.load_or_missing(&memory_id).await?;
+        self.mirror.upsert_memory_node(&record).await?;
+        Ok(result)
+    }
+
+    async fn archive(&self, request: MemoryArchiveRequest) -> Result<MemoryResult> {
+        let memory_id = request.memory_id.clone();
+        let result = self.inner.archive(request).await?;
+        let record = self.load_or_missing(&memory_id).await?;
+        self.mirror.upsert_memory_node(&record).await?;
+        Ok(result)
+    }
+
+    async fn forget(&self, request: MemoryForgetRequest) -> Result<MemoryResult> {
+        let memory_id = request.memory_id.clone();
+        let reason = request
+            .reason
+            .clone()
+            .unwrap_or_else(|| "status -> forgotten".to_string());
+        let result = self.inner.forget(request).await?;
+        self.mirror.hide_recall_edges(&memory_id, &reason).await?;
+        Ok(result)
+    }
+
+    async fn compact(&self, request: MemoryCompactRequest) -> Result<MemoryResult> {
+        let source_ids = request.memory_ids.clone();
+        let mut sources = Vec::with_capacity(source_ids.len());
+        for source_id in &source_ids {
+            sources.push(self.load_or_missing(source_id).await?);
+        }
+        let result = self.inner.compact(request).await?;
+        let compacted = self.load_or_missing(&result.memory_id).await?;
+        self.mirror.derived_from(&compacted, &sources).await?;
+        Ok(result)
+    }
+
+    async fn import(&self, request: MemoryImportRequest) -> Result<MemoryImportResult> {
+        self.inner.import(request).await
+    }
+
+    async fn export(&self, request: MemoryExportRequest) -> Result<MemoryExportResult> {
+        self.inner.export(request).await
+    }
+
     async fn reset(&self) -> Result<()> {
         self.inner.reset().await
     }

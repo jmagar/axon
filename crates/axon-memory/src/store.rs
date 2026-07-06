@@ -55,6 +55,49 @@ pub trait MemoryStore: Send + Sync {
         Err(unsupported_option("review"))
     }
 
+    /// Edit a memory's editable fields (body/title/type/confidence/salience/
+    /// scope) in place.
+    async fn update(&self, request: MemoryUpdateRequest) -> Result<MemoryResult> {
+        let _ = request;
+        Err(unsupported_option("update"))
+    }
+
+    /// Pin or unpin a memory (exempts it from decay while pinned).
+    async fn pin(&self, request: MemoryPinRequest) -> Result<MemoryResult> {
+        let _ = request;
+        Err(unsupported_option("pin"))
+    }
+
+    /// Archive a memory (excluded from recall unless explicitly requested).
+    async fn archive(&self, request: MemoryArchiveRequest) -> Result<MemoryResult> {
+        let _ = request;
+        Err(unsupported_option("archive"))
+    }
+
+    /// Forget a memory (never recalled again; history is preserved).
+    async fn forget(&self, request: MemoryForgetRequest) -> Result<MemoryResult> {
+        let _ = request;
+        Err(unsupported_option("forget"))
+    }
+
+    /// Merge several memories into one new memory, recording provenance.
+    async fn compact(&self, request: MemoryCompactRequest) -> Result<MemoryResult> {
+        let _ = request;
+        Err(unsupported_option("compact"))
+    }
+
+    /// Bulk-import memory records (or preview a dry-run plan).
+    async fn import(&self, request: MemoryImportRequest) -> Result<MemoryImportResult> {
+        let _ = request;
+        Err(unsupported_option("import"))
+    }
+
+    /// Export memory records matching a scope.
+    async fn export(&self, request: MemoryExportRequest) -> Result<MemoryExportResult> {
+        let _ = request;
+        Err(unsupported_option("export"))
+    }
+
     async fn reset(&self) -> Result<()>;
     async fn capabilities(&self) -> Result<MemoryStoreCapability>;
 }

@@ -298,6 +298,65 @@ impl MemoryStore for VectorBackedMemoryStore {
         self.inner.review(request).await
     }
 
+    async fn update(&self, request: MemoryUpdateRequest) -> Result<MemoryResult> {
+        let body_changed = request.body.is_some();
+        let memory_id = request.memory_id.clone();
+        let result = self.inner.update(request).await?;
+        if body_changed {
+            let record = self
+                .inner
+                .get(memory_id)
+                .await?
+                .ok_or_else(|| missing_memory(&result.memory_id))?;
+            self.upsert_record(&record).await?;
+        }
+        Ok(result)
+    }
+
+    async fn pin(&self, request: MemoryPinRequest) -> Result<MemoryResult> {
+        self.inner.pin(request).await
+    }
+
+    async fn archive(&self, request: MemoryArchiveRequest) -> Result<MemoryResult> {
+        let memory_id = request.memory_id.clone();
+        let result = self.inner.archive(request).await?;
+        self.hide_vectors(&memory_id).await?;
+        Ok(result)
+    }
+
+    async fn forget(&self, request: MemoryForgetRequest) -> Result<MemoryResult> {
+        let memory_id = request.memory_id.clone();
+        let result = self.inner.forget(request).await?;
+        self.hide_vectors(&memory_id).await?;
+        Ok(result)
+    }
+
+    async fn compact(&self, request: MemoryCompactRequest) -> Result<MemoryResult> {
+        let archive_sources = request.archive_sources;
+        let source_ids = request.memory_ids.clone();
+        let result = self.inner.compact(request).await?;
+        let record = self
+            .inner
+            .get(result.memory_id.clone())
+            .await?
+            .ok_or_else(|| missing_memory(&result.memory_id))?;
+        self.upsert_record(&record).await?;
+        if archive_sources {
+            for source_id in source_ids {
+                self.hide_vectors(&source_id).await?;
+            }
+        }
+        Ok(result)
+    }
+
+    async fn import(&self, request: MemoryImportRequest) -> Result<MemoryImportResult> {
+        self.inner.import(request).await
+    }
+
+    async fn export(&self, request: MemoryExportRequest) -> Result<MemoryExportResult> {
+        self.inner.export(request).await
+    }
+
     async fn reset(&self) -> Result<()> {
         self.inner.reset().await
     }
