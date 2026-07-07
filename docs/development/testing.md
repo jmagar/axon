@@ -160,7 +160,7 @@ Use `cd apps/web && npm run build` when changing panel assets.
 
 ### Desktop palette screenshots
 
-Use [`docs/contributing/desktop-palette-testing.md`](desktop-palette-testing.md)
+Use [`docs/development/desktop-palette-testing.md`](desktop-palette-testing.md)
 when validating the Windows `axon-palette-tauri.exe` operation output. It
 documents the Windows-MCP capture workflow on agent-os for the Tauri palette
 (`apps/palette-tauri`).

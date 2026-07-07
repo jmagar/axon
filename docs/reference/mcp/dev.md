@@ -197,4 +197,4 @@ removed or now return runtime errors when their backing service is missing.
 
 - [TOOLS.md](tools.md) -- action/subaction reference
 - [PATTERNS.md](patterns.md) -- code patterns
-- [../repo/RECIPES.md](../../contributing/repo/recipes.md) -- Justfile recipes
+- [../repo/RECIPES.md](../../development/repo/recipes.md) -- Justfile recipes
