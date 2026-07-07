@@ -10,6 +10,27 @@
 //! collections, row/point/file counts) and mutates nothing. See
 //! `docs/pipeline-unification/delivery/cutover-contract.md` ("Required Reset
 //! Tooling", reset result shape).
+//!
+//! ## Deliberately NOT job-tracked
+//!
+//! `docs/pipeline-unification/plans/2026-07-04-full-durable-job-cutover.md`
+//! classifies `OperationKind::Reset` as job-backed at the DTO/schema level
+//! (see `job_policy_for_operation`), but `reset()` itself is intentionally
+//! exempted from actually enqueuing a job -- see that plan's "Scope
+//! Exception: `reset` Stays Jobless" section for the full rationale. Short
+//! version: this function's dry-run default is contractually required to
+//! create/migrate nothing (see `reset_tests.rs::
+//! dry_run_reset_mutates_nothing_and_reports_plan`), and any job-tracking
+//! call (`enqueue_operation`/`start_operation_job`/`complete_operation_job`,
+//! or a bare `SqliteUnifiedJobStore`) opens and migrates the SQLite DB as a
+//! side effect of writing a job row -- which would violate that invariant on
+//! the common (dry-run) path. `crates/axon-cli/src/lib.rs` also deliberately
+//! runs `reset` before any `ServiceContext`/job store is constructed for the
+//! same reason. When `reset` wipes the `jobs` store itself
+//! (`RESET_STORE_JOBS`), a job row created just before the wipe would not
+//! even survive it. Reset's own `ResetResult`/receipt
+//! (`reset/artifacts.rs::write_receipt`) is the durable audit trail for this
+//! operation instead.
 
 mod artifacts;
 mod qdrant;

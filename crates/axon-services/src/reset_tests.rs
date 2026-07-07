@@ -155,6 +155,41 @@ async fn real_reset_records_legacy_cutover_receipt() {
 }
 
 #[tokio::test]
+async fn reset_writes_no_unified_job_row_for_itself() {
+    // `reset` is intentionally NOT job-tracked (see docs/pipeline-unification/
+    // plans/2026-07-04-full-durable-job-cutover.md, "Scope Exception: `reset`
+    // Stays Jobless"): its dry-run default must not create/migrate the SQLite
+    // DB at all, and any job-backed tracking path
+    // (enqueue_operation/start_operation_job/complete_operation_job) does
+    // exactly that as a side effect of writing a job row. Prove a real
+    // (--yes) reset that wipes the `jobs` store leaves the freshly
+    // re-migrated unified `jobs` table empty -- reset never enqueues a job
+    // for its own execution.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db_path = dir.path().join("jobs.db");
+
+    let mut cfg = cfg_with(vec!["jobs"], false, true);
+    cfg.sqlite_path = db_path.clone();
+
+    let result = reset(&cfg).await.expect("real reset");
+    assert!(!result.dry_run);
+
+    let pool = axon_core::sqlite::open_pool_unlocked(&db_path.to_string_lossy())
+        .await
+        .expect("open post-reset pool");
+    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM jobs")
+        .fetch_one(&pool)
+        .await
+        .expect("count jobs rows");
+    pool.close().await;
+
+    assert_eq!(
+        count.0, 0,
+        "reset must not create a unified job row for its own execution"
+    );
+}
+
+#[tokio::test]
 #[serial]
 async fn reset_receipt_redacts_secrets_before_writing() {
     // This crate denies `unsafe`, which `std::env::set_var` now requires, so
