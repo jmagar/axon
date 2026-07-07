@@ -100,7 +100,11 @@ impl AxonMcpServer {
         req: DoctorRequest,
     ) -> Result<AxonToolResponse, ErrorData> {
         let response_mode = req.response_mode;
-        let result = system::doctor(self.cfg.as_ref())
+        let ctx = self
+            .base_service_context()
+            .await
+            .map_err(|e| logged_internal_error("doctor", e.as_ref()))?;
+        let result = system::doctor(&ctx)
             .await
             .map_err(|e| logged_internal_error("doctor", e.as_ref()))?;
         respond_with_mode(

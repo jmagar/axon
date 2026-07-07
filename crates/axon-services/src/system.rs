@@ -10,6 +10,7 @@ mod collections;
 mod dedupe;
 mod doctor;
 mod domains;
+mod job_tracking;
 mod purge;
 mod sources;
 mod stats;
