@@ -1,6 +1,7 @@
 use axon_api::source::*;
 use axon_embedding::fake::FakeEmbeddingProvider;
 use axon_ledger::store::{FakeLedgerStore, LedgerStore};
+use axon_vectors::payload::generation_payload_i64;
 use axon_vectors::store::FakeVectorStore;
 
 use super::{RedditSourceIndexInput, index_reddit_source};
@@ -168,8 +169,8 @@ async fn refresh_vectorizes_added_and_modified_posts_and_debts_removed_items() {
             .points("axon-test")
             .await
             .iter()
-            .any(|point| point.payload["source_generation"].as_str()
-                == Some(first.generation.0.as_str()))
+            .any(|point| point.payload["source_generation"].as_i64()
+                == generation_payload_i64(&first.generation, "source_generation").ok())
     );
     let stable_points = vectors
         .points("axon-test")

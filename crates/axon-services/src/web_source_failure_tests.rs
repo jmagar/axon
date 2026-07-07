@@ -2,6 +2,7 @@ use axon_api::source::*;
 use axon_embedding::fake::FakeEmbeddingProvider;
 use axon_embedding::provider::EmbeddingProvider;
 use axon_ledger::store::FakeLedgerStore;
+use axon_vectors::payload::generation_payload_i64;
 use axon_vectors::store::{FakeVectorMode, FakeVectorStore};
 use serde_json::json;
 
@@ -173,7 +174,8 @@ async fn partial_unchanged_vector_copy_failure_keeps_previous_web_generation_vis
         .collect::<Vec<_>>();
     assert!(!api_points.is_empty());
     assert!(api_points.iter().all(|point| {
-        point.payload["committed_generation"].as_str() == Some(first.generation.0.as_str())
+        point.payload["committed_generation"].as_i64()
+            == generation_payload_i64(&first.generation, "committed_generation").ok()
     }));
 }
 

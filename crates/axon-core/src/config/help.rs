@@ -42,7 +42,7 @@ const COMMAND_SECTIONS: &[(&str, &[&str])] = &[
     (
         "Jobs And Imports",
         &[
-            "status", "source", "sessions", "watch", "monitor", "sync", "refresh", "fresh",
+            "status", "jobs", "source", "sessions", "watch", "monitor", "sync", "refresh", "fresh",
         ],
     ),
     (
@@ -53,6 +53,7 @@ const COMMAND_SECTIONS: &[(&str, &[&str])] = &[
             "mcp",
             "serve",
             "setup",
+            "reset",
             "preflight",
             "smoke",
             "compose",
