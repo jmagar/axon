@@ -43,7 +43,7 @@ async fn run_once(
         CommandKind::Brand => run_brand(cfg).await?,
         CommandKind::Debug => run_debug(cfg).await?,
         CommandKind::Diff => run_diff(cfg).await?,
-        CommandKind::Doctor => run_doctor(cfg).await?,
+        CommandKind::Doctor => run_doctor(cfg, service_context).await?,
         CommandKind::Query => run_query(cfg, service_context).await?,
         CommandKind::Retrieve => run_retrieve(cfg).await?,
         CommandKind::Ask => run_ask(cfg, service_context).await?,
