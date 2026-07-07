@@ -8,7 +8,7 @@ use axon_api::source::{
     ApiError, CollectionSpec, ErrorStage, SourceItemKey, VectorPointBatch, VectorStoreDeleteResult,
     VectorStoreWriteResult,
 };
-use axon_prune::PruneExecutor;
+use axon_prune::{PruneAuthz, PruneExecutor};
 use axon_vectors::store::{Result as VectorResult, VectorStore};
 use uuid::Uuid;
 
@@ -311,7 +311,7 @@ async fn vector_only_target_deletes_via_real_selector_on_step() {
 
     let plan = plan_with_vector_step(true);
     let result = executor
-        .execute(&plan)
+        .execute(&plan, &PruneAuthz::admin())
         .await
         .expect("admin+confirmed execute path is not gated by the executor itself");
 
@@ -338,7 +338,7 @@ async fn vector_only_target_reports_debt_on_store_failure() {
 
     let plan = plan_with_vector_step(true);
     let result = executor
-        .execute(&plan)
+        .execute(&plan, &PruneAuthz::admin())
         .await
         .expect("store-level failure surfaces as a failed step, not a denial");
 

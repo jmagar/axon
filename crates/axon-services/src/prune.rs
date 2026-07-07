@@ -85,7 +85,7 @@ pub async fn prune_execute(
         collection: ctx.cfg().collection.clone(),
     };
     let executor = PruneExecutor::new(target);
-    executor.execute(plan).await
+    executor.execute(plan, authz).await
 }
 
 /// Convenience wrapper mirroring [`crate::reset::reset`]'s shape: build a plan
