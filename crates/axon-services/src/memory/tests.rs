@@ -368,6 +368,26 @@ async fn dispatch_covers_full_lifecycle_surface() {
     assert!(compacted.body.as_deref().unwrap().contains("qdrant"));
     assert!(compacted.body.as_deref().unwrap().contains("postgres"));
 
+    // compact records a completed unified job (Task 6: job-backed operations).
+    let jobs = ctx
+        .job_store()
+        .expect("unified job store")
+        .list(axon_api::source::JobListRequest {
+            status: None,
+            kind: Some(axon_api::source::JobKind::Memory),
+            source_id: None,
+            watch_id: None,
+            limit: None,
+            cursor: None,
+        })
+        .await
+        .expect("list jobs");
+    assert_eq!(jobs.items.len(), 1);
+    assert_eq!(
+        jobs.items[0].status,
+        axon_api::source::LifecycleStatus::Completed
+    );
+
     // archive the compacted memory, then forget it
     let archived = archive(
         &ctx,

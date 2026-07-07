@@ -30,9 +30,13 @@ use axon_memory::sqlite::SqliteMemoryStore;
 use axon_memory::store::MemoryStore;
 use axon_memory::vector::{MemoryBatchLimits, MemoryVectorConfig, VectorBackedMemoryStore};
 
+mod compact;
 mod context_format;
+mod job_tracking;
 mod mapping;
 mod runtime_metadata;
+
+pub use compact::compact;
 #[cfg(test)]
 mod tests;
 
@@ -410,66 +414,6 @@ pub async fn review(ctx: &ServiceContext, req: MemoryRequest) -> Result<Vec<Memo
         .iter()
         .map(|record| item_from_record(record, None))
         .collect())
-}
-
-pub async fn compact(ctx: &ServiceContext, req: MemoryRequest) -> Result<MemoryItem> {
-    let store = memory_store(ctx).await?;
-    let memory_ids = req
-        .memory_ids
-        .clone()
-        .filter(|ids| !ids.is_empty())
-        .context("compact requires memory_ids (at least 2)")?;
-    for id in &memory_ids {
-        ensure_exists(store.as_ref(), id).await?;
-    }
-    let strategy = req
-        .strategy
-        .clone()
-        .unwrap_or_else(|| "concatenate".to_string());
-    let result_type = req
-        .memory_type
-        .map(|t| parse_memory_type(node_type_name(t)))
-        .unwrap_or(axon_api::source::MemoryType::Fact);
-    let scope = if let Some(project) = req.project.clone() {
-        MemoryScope {
-            kind: "project".to_string(),
-            value: project,
-        }
-    } else if let Some(repo) = req.repo.clone() {
-        MemoryScope {
-            kind: "repo".to_string(),
-            value: repo,
-        }
-    } else if let Some(file) = req.file.clone() {
-        MemoryScope {
-            kind: "file".to_string(),
-            value: file,
-        }
-    } else {
-        MemoryScope {
-            kind: "global".to_string(),
-            value: String::new(),
-        }
-    };
-    let result = store
-        .compact(MemoryCompactRequest {
-            memory_ids: memory_ids.into_iter().map(MemoryId::new).collect(),
-            strategy,
-            result_type,
-            title: req.title.clone(),
-            scope,
-            archive_sources: req.archive_sources.unwrap_or(false),
-            instructions: None,
-            timestamp: Timestamp(SystemClock.now_rfc3339()),
-        })
-        .await
-        .map_err(store_err)?;
-    let record = store
-        .get(result.memory_id.clone())
-        .await
-        .map_err(store_err)?
-        .context("compacted memory not found after write")?;
-    Ok(item_from_record(&record, Some(result.memory_score as f64)))
 }
 
 /// Open the durable SQLite memory store against the unified jobs DB.
