@@ -111,6 +111,50 @@ async fn sqlite_wipe_and_remigrate_yields_fresh_schema() {
 }
 
 #[tokio::test]
+async fn real_reset_records_legacy_cutover_receipt() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db_path = dir.path().join("jobs.db");
+
+    // Seed a legacy job row before the reset destroys everything.
+    let version = sqlite::wipe_and_remigrate(&db_path)
+        .await
+        .expect("initial migrate");
+    assert!(version > 0);
+    {
+        let pool = axon_core::sqlite::open_pool_unlocked(&db_path.to_string_lossy())
+            .await
+            .expect("open pool");
+        sqlx::query(
+            "INSERT INTO axon_crawl_jobs (id, created_at, updated_at) VALUES ('legacy-1', 0, 0)",
+        )
+        .execute(&pool)
+        .await
+        .expect("seed legacy row");
+        pool.close().await;
+    }
+
+    let mut cfg = cfg_with(vec!["jobs"], false, true);
+    cfg.sqlite_path = db_path.clone();
+
+    let result = reset(&cfg).await.expect("real reset");
+    assert!(!result.dry_run);
+
+    let pool = axon_core::sqlite::open_pool_unlocked(&db_path.to_string_lossy())
+        .await
+        .expect("open post-reset pool");
+    let row: (String, String) = sqlx::query_as(
+        "SELECT receipt_kind, message FROM axon_job_cutover_receipts ORDER BY created_at DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("fetch receipt");
+    pool.close().await;
+
+    assert_eq!(row.0, "legacy_reset");
+    assert!(row.1.contains("axon_crawl_jobs"));
+}
+
+#[tokio::test]
 #[serial]
 async fn reset_receipt_redacts_secrets_before_writing() {
     // This crate denies `unsafe`, which `std::env::set_var` now requires, so
