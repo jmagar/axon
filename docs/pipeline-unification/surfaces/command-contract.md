@@ -471,6 +471,18 @@ axon memory review
 axon memory compact <memory_id>...
 ```
 
+**CLI wiring gap (not a missing feature):** `crates/axon-cli/src/commands/memory.rs`
+today only implements `remember`, `list`, `search`, `show`, `link`, `supersede`,
+and `context` as CLI subcommands. `reinforce`, `contradict`, `pin`, `archive`,
+`forget`, `review`, and `compact` are not yet wired into the CLI's `clap` tree —
+running any of them fails as an unrecognized subcommand. The underlying
+lifecycle **is** implemented in `axon-memory` (see
+`crates/axon-memory/src/CLAUDE.md` and the reinforcement/decay/review/pin/
+archive/forget/compact operations there); this is purely a CLI transport gap.
+It is tracked as **Task 9 ("CLI, MCP, And REST Memory Contract")** in
+`docs/pipeline-unification/plans/2026-07-04-phase-3b-security-error-memory-completion.md`,
+which requires CLI/MCP/REST to expose the full lifecycle as one contract.
+
 Subcommand matrix:
 
 | Command | Required | Optional | Mutates |
