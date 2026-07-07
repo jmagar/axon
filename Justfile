@@ -375,6 +375,50 @@ qdrant-down:
     docker compose --env-file "${AXON_ENV_FILE:-$HOME/.axon/.env}" -f docker-compose.yaml --profile local-qdrant stop axon-qdrant
     docker compose --env-file "${AXON_ENV_FILE:-$HOME/.axon/.env}" -f docker-compose.yaml --profile local-qdrant rm -f axon-qdrant
 
+# Production stack (docker-compose.prod.yaml), bundled qdrant mode — the default.
+# Every invocation guarantees --env-file so TEI's env-driven config (e.g.
+# TEI_MAX_CONCURRENT_REQUESTS) can never silently fall back to its built-in
+# default the way it would with a bare `docker compose up`.
+prod-up:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source scripts/lib/axon-env.sh
+    repo="$(pwd)"
+    env_file="$(resolve_axon_env_file "$repo")"
+    if [ -f "$env_file" ]; then
+      perm=$(stat -c '%a' "$env_file")
+      if [ "${perm: -2}" != "00" ]; then
+        echo "warn: $env_file is group/world-readable (mode $perm) — tighten with chmod 600" >&2
+      fi
+    fi
+    echo "=== bundled qdrant IS starting locally (default mode) ==="
+    docker compose --env-file "$env_file" -f docker-compose.prod.yaml up -d
+
+prod-down:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source scripts/lib/axon-env.sh
+    env_file="$(resolve_axon_env_file "$(pwd)")"
+    docker compose --env-file "$env_file" -f docker-compose.prod.yaml down
+
+# Production stack, external-qdrant override — this deployment's mode (qdrant
+# lives on tootie). Requires AXON_EXTERNAL_QDRANT_URL; fails loudly if unset.
+prod-up-external-qdrant:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source scripts/lib/axon-env.sh
+    repo="$(pwd)"
+    env_file="$(resolve_axon_env_file "$repo")"
+    echo "=== bundled qdrant is NOT starting, using external QDRANT_URL=${AXON_EXTERNAL_QDRANT_URL:?AXON_EXTERNAL_QDRANT_URL must be set} ==="
+    docker compose --env-file "$env_file" -f docker-compose.prod.yaml -f docker-compose.external-qdrant.yaml up -d
+
+prod-down-external-qdrant:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source scripts/lib/axon-env.sh
+    env_file="$(resolve_axon_env_file "$(pwd)")"
+    docker compose --env-file "$env_file" -f docker-compose.prod.yaml -f docker-compose.external-qdrant.yaml down
+
 # Backward-compatible aliases used by setup/docs for local infra.
 test-infra-up:
     just services-up
