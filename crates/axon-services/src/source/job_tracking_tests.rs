@@ -375,3 +375,114 @@ async fn track_graph_mutation_with_restricted_caller_does_not_create_admin_child
     let job = only_job(&store, JobKind::Graph).await;
     assert_eq!(job.status, LifecycleStatus::Completed);
 }
+
+async fn completed_source_job(store: &Arc<dyn JobStore>) -> JobId {
+    let job_id = JobId::new(Uuid::new_v4());
+    store
+        .create(axon_api::source::JobCreateRequest {
+            request_id: None,
+            job_kind: JobKind::Source,
+            job_intent: axon_api::source::JobIntent::Run,
+            source_id: None,
+            watch_id: None,
+            parent_job_id: None,
+            root_job_id: None,
+            attempt: 1,
+            priority: axon_api::source::JobPriority::Normal,
+            idempotency_key: None,
+            stage_plan: vec![axon_api::source::JobStagePlan {
+                phase: PipelinePhase::Fetching,
+                required: true,
+                provider_requirements: Vec::new(),
+                estimated_items: None,
+            }],
+            request: None,
+            auth_snapshot: AuthSnapshot::trusted_system("test"),
+            config_snapshot_id: None,
+            requirements: axon_api::source::MetadataMap::new(),
+            result_schema: None,
+            warnings: Vec::new(),
+            error: None,
+            metadata: axon_api::source::MetadataMap::new(),
+        })
+        .await
+        .expect("create parent source job");
+    store
+        .update_status(JobStatusUpdate {
+            job_id,
+            source_id: None,
+            status: LifecycleStatus::Running,
+            phase: PipelinePhase::Fetching,
+            stage_id: None,
+            counts: None,
+            current: None,
+            message: None,
+            error: None,
+        })
+        .await
+        .expect("mark parent running");
+    store
+        .update_status(JobStatusUpdate {
+            job_id,
+            source_id: None,
+            status: LifecycleStatus::Completed,
+            phase: PipelinePhase::Complete,
+            stage_id: None,
+            counts: None,
+            current: None,
+            message: None,
+            error: None,
+        })
+        .await
+        .expect("mark parent completed");
+    job_id
+}
+
+#[tokio::test]
+async fn child_jobs_attach_to_an_already_terminal_parent_source_job() {
+    let store = store();
+    let parent_job_id = completed_source_job(&store).await;
+
+    // Sanity: the parent really is terminal before either child is tracked.
+    let parent_before = store
+        .get(parent_job_id)
+        .await
+        .expect("get parent job")
+        .expect("parent job exists");
+    assert_eq!(parent_before.status, LifecycleStatus::Completed);
+
+    track_graph_mutation(
+        Some(store.clone()),
+        parent_job_id,
+        None,
+        &nonempty_graph_summary(false),
+    )
+    .await;
+    track_prune(
+        Some(store.clone()),
+        parent_job_id,
+        None,
+        &nonempty_drain_summary(0),
+    )
+    .await;
+
+    let graph_child = only_job(&store, JobKind::Graph).await;
+    assert_eq!(graph_child.status, LifecycleStatus::Completed);
+    assert_eq!(graph_child.parent_job_id, Some(parent_job_id));
+    assert_eq!(graph_child.root_job_id, Some(parent_job_id));
+
+    let prune_child = only_job(&store, JobKind::Prune).await;
+    assert_eq!(prune_child.status, LifecycleStatus::Completed);
+    assert_eq!(prune_child.parent_job_id, Some(parent_job_id));
+    assert_eq!(prune_child.root_job_id, Some(parent_job_id));
+
+    // The parent's own row is unaffected by children being created/completed
+    // against it after its own terminal transition.
+    let parent_after = store
+        .get(parent_job_id)
+        .await
+        .expect("get parent job")
+        .expect("parent job exists");
+    assert_eq!(parent_after.status, LifecycleStatus::Completed);
+    assert_eq!(parent_after.parent_job_id, None);
+}

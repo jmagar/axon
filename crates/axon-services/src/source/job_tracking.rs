@@ -21,6 +21,40 @@
 //! every tiny source index. Job-store errors during tracking are logged and
 //! swallowed: the parent source index is already committed, so a tracking
 //! failure must never fail acquisition.
+//!
+//! ## The parent `Source` job is already terminal when these children attach
+//!
+//! Every per-family bridge (`git_source_job.rs`, `web_source_job.rs`, ...)
+//! records its own `Source` job's terminal status (`Completed`/`Failed`)
+//! *before* [`index_source_with_auth`](super::index_source_with_auth) reaches
+//! the graph write and cleanup-debt drain — acquisition, embedding, and
+//! publish are the source's own contract, and that contract is fully
+//! committed by the time this module runs. `write_baseline_graph` and
+//! `drain_cleanup_debt` are best-effort *post*-publish housekeeping over the
+//! manifest the source just committed, not additional required stages of the
+//! source's own completion.
+//!
+//! This means the `parent_job_id`/`root_job_id` these children carry point at
+//! a `Source` job that is already in a terminal state by the time the child
+//! is created. That is intentional here, not a bug: it inverts the usual
+//! fan-out/fan-in expectation from `docs/pipeline-unification/runtime/
+//! job-contract.md` ("Parent jobs aggregate child status" — i.e. a parent
+//! normally waits on its children) because these children are not gating
+//! whether the source publish succeeded; they are an audit trail for work
+//! that runs *after* publish is already durable. The job store does not
+//! (and must not) reject child-job creation or transitions against a
+//! terminal parent — see
+//! `child_jobs_attach_to_an_already_terminal_parent_source_job` in the
+//! sidecar tests for a regression pin of this exact sequence.
+//!
+//! Reordering acquisition to defer the parent's terminal status until after
+//! graph/prune would require threading a "don't finalize yet" signal through
+//! all eight per-family bridges' internal progress sinks (each one calls its
+//! own multi-phase `record_phase`/equivalent deep inside its own pipeline,
+//! independently of `index_source_with_auth`), and would delay job-visible
+//! completion of the source index for what is otherwise pure post-publish
+//! bookkeeping. That tradeoff was rejected in favor of documenting and
+//! testing the current, narrower ordering.
 
 use std::sync::Arc;
 
