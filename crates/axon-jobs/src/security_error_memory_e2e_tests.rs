@@ -121,6 +121,7 @@ async fn recovered_job_uses_original_auth_snapshot() {
         &Config::default_minimal(),
         &reclaimed_claim,
         &CancellationToken::new(),
+        None,
     )
     .await;
 

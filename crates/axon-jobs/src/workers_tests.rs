@@ -63,7 +63,7 @@ async fn dropping_worker_handles_gracefully_stops_worker_loops() {
     let cfg = Arc::new(Config::default_minimal());
     let cancel_store = Arc::new(CancelStore::new());
 
-    let handles = spawn_workers(pool, cfg, cancel_store);
+    let handles = spawn_workers(pool, cfg, cancel_store, None);
     let abort_handles: Vec<_> = handles
         .worker_handles
         .iter()
@@ -132,6 +132,7 @@ async fn unified_worker_marks_unsupported_stage_failed() {
         &Config::default_minimal(),
         &claimed,
         &CancellationToken::new(),
+        None,
     )
     .await;
 
@@ -183,7 +184,7 @@ async fn unified_worker_executes_extract_job_from_request_json() {
         .await
         .unwrap()
         .expect("claim job");
-    unified::run_unified_claimed(&pool, &cfg, &claimed, &CancellationToken::new()).await;
+    unified::run_unified_claimed(&pool, &cfg, &claimed, &CancellationToken::new(), None).await;
 
     let summary = store.get(job.job_id).await.unwrap().unwrap();
     assert_eq!(summary.status, LifecycleStatus::Completed);
@@ -206,7 +207,8 @@ async fn unified_worker_shutdown_claim_marks_job_canceled() {
     let shutdown = CancellationToken::new();
     shutdown.cancel();
 
-    unified::run_unified_claimed(&pool, &Config::default_minimal(), &claimed, &shutdown).await;
+    unified::run_unified_claimed(&pool, &Config::default_minimal(), &claimed, &shutdown, None)
+        .await;
 
     let summary = store.get(job.job_id).await.unwrap().unwrap();
     assert_eq!(summary.status, LifecycleStatus::Canceled);
@@ -282,6 +284,7 @@ async fn stale_claimed_attempt_cannot_terminalize_recovered_job() {
         &Config::default_minimal(),
         &claimed,
         &CancellationToken::new(),
+        None,
     )
     .await;
 

@@ -26,8 +26,11 @@ use helpers::{
     empty_counts, enum_name, json_error, parse_enum, parse_uuid, source_error_from_api, sql_error,
 };
 
+mod runner_registry;
+pub use runner_registry::{JobRunnerRegistry, UnifiedJobRunner};
+
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct UnifiedClaimedJob {
+pub struct UnifiedClaimedJob {
     pub job_id: JobId,
     pub kind: UnifiedJobKind,
     pub attempt: u32,
@@ -44,6 +47,7 @@ pub(crate) async fn unified_worker_loop(
     cfg: Arc<Config>,
     notify: Arc<Notify>,
     shutdown: CancellationToken,
+    registry: Option<Arc<JobRunnerRegistry>>,
 ) {
     if let Err(error) = ensure_no_incompatible_legacy_jobs(&pool).await {
         tracing::error!(
@@ -68,7 +72,8 @@ pub(crate) async fn unified_worker_loop(
             while processed < WORKER_BATCH_LIMIT && !shutdown.is_cancelled() {
                 match claim_next_unified_job_unchecked(&pool).await {
                     Ok(Some(claimed)) => {
-                        run_unified_claimed(&pool, &cfg, &claimed, &shutdown).await;
+                        run_unified_claimed(&pool, &cfg, &claimed, &shutdown, registry.as_deref())
+                            .await;
                         processed += 1;
                     }
                     Ok(None) => break,
@@ -215,6 +220,7 @@ pub(crate) async fn run_unified_claimed(
     cfg: &Config,
     claimed: &UnifiedClaimedJob,
     shutdown: &CancellationToken,
+    registry: Option<&JobRunnerRegistry>,
 ) {
     let store = SqliteUnifiedJobStore::new(pool.clone());
     if shutdown.is_cancelled() {
@@ -233,27 +239,58 @@ pub(crate) async fn run_unified_claimed(
         return;
     }
 
-    match claimed.kind {
-        UnifiedJobKind::Extract => {
-            run_extract_claimed(pool, cfg, &store, claimed, shutdown).await;
+    // Extract has a dedicated in-crate runner (its real work,
+    // axon_extract::sync::extract_sync, is a pure domain call reachable
+    // directly from axon-jobs). Every other kind goes through the
+    // dependency-inversion registry the composition layer (axon-services)
+    // populates at startup; kinds with no registered runner keep failing
+    // with job_runner.unsupported_stage.
+    if claimed.kind == UnifiedJobKind::Extract {
+        run_extract_claimed(pool, cfg, &store, claimed, shutdown).await;
+        return;
+    }
+
+    let Some(runner) = registry.and_then(|registry| registry.get(claimed.kind)) else {
+        let error = ApiError::new(
+            "job_runner.unsupported_stage",
+            ErrorStage::Planning,
+            format!(
+                "unified durable runner claimed {:?} job {}, but this stage is not wired yet",
+                claimed.kind, claimed.job_id.0
+            ),
+        );
+        fail_unified_claimed(pool, &store, claimed, error).await;
+        return;
+    };
+
+    match runner.run(claimed, &store, shutdown).await {
+        Ok(()) => {
+            if let Err(mark_error) = mark_terminal(
+                pool,
+                claimed,
+                LifecycleStatus::Completed,
+                PipelinePhase::Complete,
+                None,
+            )
+            .await
+            {
+                tracing::error!(
+                    job_id = %claimed.job_id.0,
+                    error = %mark_error.message,
+                    "unified worker failed to mark completed job terminal"
+                );
+            }
         }
-        _ => {
-            let error = ApiError::new(
-                "job_runner.unsupported_stage",
-                ErrorStage::Planning,
-                format!(
-                    "unified durable runner claimed {:?} job {}, but this stage is not wired yet",
-                    claimed.kind, claimed.job_id.0
-                ),
-            );
+        Err(error) => {
             fail_unified_claimed(pool, &store, claimed, error).await;
         }
     }
 }
 
 /// Append a failure event and mark the claimed job terminal-failed with
-/// `error`. Shared by every rejection path (auth denial, unsupported stage)
-/// so each one only needs to construct its own `ApiError`.
+/// `error`. Shared by every rejection path (auth denial, unsupported stage,
+/// registered-runner failure) so each one only needs to construct its own
+/// `ApiError`.
 async fn fail_unified_claimed(
     pool: &SqlitePool,
     store: &SqliteUnifiedJobStore,
