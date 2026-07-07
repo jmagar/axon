@@ -63,6 +63,7 @@ const COMMAND_SECTIONS: &[(&str, &[&str])] = &[
             "palette",
         ],
     ),
+    ("Destructive Cleanup", &["reset", "prune"]),
 ];
 
 const VECTOR_OPTIONS: &[(&str, &str)] = &[

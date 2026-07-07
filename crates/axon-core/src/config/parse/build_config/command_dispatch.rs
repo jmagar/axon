@@ -7,9 +7,9 @@
 use super::super::super::cli::{
     CliCommand, ComposeArgs, ComposeSubcommand, ConfigArgs, ConfigSubcommand, DoctorSubcommand,
     FreshSubcommand, JobsSubcommand, MemoryCliSubcommand, MonitorSubcommand, PaletteArgs,
-    ResetArgs, ServeArgs, ServeSubcommand, SessionWatchServiceSubcommand, SessionsArgs,
-    SessionsSubcommand, SetupArgs, SetupAuthMode, SetupInitArgs, SetupSubcommand, SourceArgs,
-    SyncSubcommand, UpdateArgs,
+    PruneCliSubcommand, PruneTargetArgs, ResetArgs, ServeArgs, ServeSubcommand,
+    SessionWatchServiceSubcommand, SessionsArgs, SessionsSubcommand, SetupArgs, SetupAuthMode,
+    SetupInitArgs, SetupSubcommand, SourceArgs, SyncSubcommand, UpdateArgs,
 };
 use super::super::super::types::{
     CommandKind, EvaluateResponsesMode, MapFallback, McpTransport, RedditSort, RedditTime,
@@ -90,6 +90,12 @@ pub(super) struct DispatchOutput {
     pub reset_stores: Vec<String>,
     /// `--dry-run` pin for `axon reset`.
     pub reset_dry_run: bool,
+    /// Prune target for `axon prune plan|exec` (source id or `collection:<name>`).
+    pub prune_target: Option<String>,
+    /// `--generation` scope for `axon prune plan|exec`.
+    pub prune_generation: Option<String>,
+    /// `--confirm` for `axon prune exec`.
+    pub prune_confirm: bool,
 }
 
 impl DispatchOutput {
@@ -150,6 +156,9 @@ impl DispatchOutput {
             source_scope: None,
             reset_stores: Vec::new(),
             reset_dry_run: false,
+            prune_target: None,
+            prune_generation: None,
+            prune_confirm: false,
         }
     }
 }
@@ -307,6 +316,7 @@ pub(super) fn dispatch(cli_command: CliCommand) -> DispatchOutput {
         }
         CliCommand::Serve(args) => apply_serve(&mut out, args),
         CliCommand::Reset(args) => apply_reset(&mut out, args),
+        CliCommand::Prune(args) => apply_prune(&mut out, args.action),
         CliCommand::Preflight => out.command = CommandKind::Preflight,
         CliCommand::Smoke => out.command = CommandKind::Smoke,
         CliCommand::Compose(args) => apply_compose(&mut out, args),
@@ -652,6 +662,27 @@ fn apply_reset(out: &mut DispatchOutput, args: ResetArgs) {
         .filter(|s| !s.is_empty())
         .collect();
     out.reset_dry_run = args.dry_run;
+}
+
+fn apply_prune_target(out: &mut DispatchOutput, target: PruneTargetArgs) {
+    out.prune_target = Some(target.target);
+    out.prune_generation = target.generation;
+}
+
+fn apply_prune(out: &mut DispatchOutput, action: PruneCliSubcommand) {
+    match action {
+        PruneCliSubcommand::Plan(target) => {
+            out.command = CommandKind::Prune;
+            out.positional = vec!["plan".to_string()];
+            apply_prune_target(out, target);
+        }
+        PruneCliSubcommand::Exec(args) => {
+            out.command = CommandKind::Prune;
+            out.positional = vec!["exec".to_string()];
+            out.prune_confirm = args.confirm;
+            apply_prune_target(out, args.target);
+        }
+    }
 }
 
 fn apply_config(out: &mut DispatchOutput, args: ConfigArgs) {

@@ -82,6 +82,9 @@ fn populate_identity_and_crawl(cfg: &mut Config, inputs: &LiteralInputs<'_>) {
     cfg.source_scope = inputs.dispatched.source_scope.clone();
     cfg.reset_stores = inputs.dispatched.reset_stores.clone();
     cfg.reset_dry_run = inputs.dispatched.reset_dry_run;
+    cfg.prune_target = inputs.dispatched.prune_target.clone();
+    cfg.prune_generation = inputs.dispatched.prune_generation.clone();
+    cfg.prune_confirm = inputs.dispatched.prune_confirm;
     cfg.doctor_diagnose = inputs.dispatched.doctor_diagnose;
     // `extract` defaults to the exact single-page path when omitted. The crawl
     // page-cap default + ceiling are NOT resolved here — that policy lives in the

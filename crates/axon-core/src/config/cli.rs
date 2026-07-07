@@ -95,6 +95,8 @@ pub(super) enum CliCommand {
     Serve(ServeArgs),
     /// Destructive clean-slate reset of local stores (dry-run by default; requires --yes to mutate)
     Reset(ResetArgs),
+    /// Plan or execute a scoped destructive cleanup (target-state replacement for dedupe/purge)
+    Prune(PruneArgs),
     /// Check host prerequisites and service readiness
     Preflight,
     /// Run crawl/ask smoke checks against the running stack
@@ -268,6 +270,42 @@ pub(super) struct ResetArgs {
     /// default; pass this to keep it a dry-run even alongside --yes.
     #[arg(long, action = ArgAction::SetTrue)]
     pub(super) dry_run: bool,
+}
+
+#[derive(Debug, Args)]
+pub(super) struct PruneArgs {
+    #[command(subcommand)]
+    pub(super) action: PruneCliSubcommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(super) enum PruneCliSubcommand {
+    /// Resolve a prune target into a reviewable dry-run plan (mutates nothing)
+    Plan(PruneTargetArgs),
+    /// Execute a prune target's plan (destructive; requires --confirm and admin)
+    Exec(PruneExecArgs),
+}
+
+#[derive(Debug, Args)]
+pub(super) struct PruneTargetArgs {
+    /// Prune target: a source id (or `collection:<name>` to target a whole
+    /// Qdrant collection instead of one source)
+    pub(super) target: String,
+
+    /// Scope the prune to one generation of `target` instead of the whole source
+    #[arg(long)]
+    pub(super) generation: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub(super) struct PruneExecArgs {
+    #[command(flatten)]
+    pub(super) target: PruneTargetArgs,
+
+    /// Explicit confirmation required to actually delete (destructive prune
+    /// also requires local admin trust — see `axon prune exec --help`)
+    #[arg(long, action = ArgAction::SetTrue)]
+    pub(super) confirm: bool,
 }
 
 #[derive(Debug, Args)]
