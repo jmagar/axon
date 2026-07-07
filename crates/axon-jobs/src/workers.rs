@@ -461,3 +461,7 @@ async fn ingest_worker(
 #[cfg(test)]
 #[path = "workers_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "security_error_memory_e2e_tests.rs"]
+mod security_error_memory_e2e_tests;

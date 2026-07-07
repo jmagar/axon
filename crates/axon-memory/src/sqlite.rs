@@ -20,14 +20,14 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use axon_api::source::*;
-use axon_core::redact::{DefaultRedactor, RedactionContext, Redactor};
+use axon_core::redact::{DefaultRedactor, RedactionContext, redact_text_checked};
 use rusqlite::Connection;
 use tokio::sync::Mutex;
 
 use crate::migration::ensure_schema;
 use crate::record::Clock;
 use crate::store::{MemoryStore, Result};
-use error::{invalid, not_found, store_error};
+use error::{invalid, not_found, redaction_failed, store_error};
 use rows::{record_from_row, record_json_columns, status_to_str, type_to_str};
 
 /// A durable memory store backed by SQLite.
@@ -105,14 +105,31 @@ impl MemoryStore for SqliteMemoryStore {
         // Fail-closed redaction boundary: a remembered body/title is durable
         // and recalled back through CLI/MCP/REST in later sessions, so a
         // secret pasted into "remember this" content must not persist
-        // verbatim. Scrub before the write, not after.
+        // verbatim. Scrub before the write, not after. When the boundary
+        // cannot safely scan the input (oversized text — unbounded regex
+        // scanning over attacker-controlled content is itself a DoS
+        // surface), block the write entirely rather than persist it
+        // unscrubbed.
         let redactor = DefaultRedactor::new();
         let redaction_context = RedactionContext::memory_record();
-        let request_body = redactor.redact_text(&request.body, &redaction_context);
+        let request_body = redact_text_checked(&redactor, &request.body, &redaction_context)
+            .map_err(|_| {
+                redaction_failed(format!(
+                    "memory body exceeds {} bytes; redaction cannot be safely verified",
+                    axon_core::redact::MAX_REDACTABLE_TEXT_BYTES
+                ))
+            })?;
         let request_title = request
             .title
             .as_deref()
-            .map(|title| redactor.redact_text(title, &redaction_context));
+            .map(|title| redact_text_checked(&redactor, title, &redaction_context))
+            .transpose()
+            .map_err(|_| {
+                redaction_failed(format!(
+                    "memory title exceeds {} bytes; redaction cannot be safely verified",
+                    axon_core::redact::MAX_REDACTABLE_TEXT_BYTES
+                ))
+            })?;
 
         // Default decay policy from the memory type when none supplied.
         let decay = request.decay.clone().or_else(|| {

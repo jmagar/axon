@@ -8,7 +8,7 @@ use axon_api::source::*;
 use rusqlite::Connection;
 
 use crate::record::age_days;
-use crate::sqlite::error::{invalid, not_found, store_error};
+use crate::sqlite::error::{invalid, not_found, redaction_failed, store_error};
 use crate::sqlite::{SqliteMemoryStore, age_and_bounds, result_from_record, update_record};
 use crate::store::Result;
 
@@ -236,19 +236,30 @@ pub async fn update(
 
     // Fail-closed redaction boundary: an updated body/title is durable and
     // recalled back through CLI/MCP/REST in later sessions — same rule as
-    // `remember`.
+    // `remember`. Oversized input blocks the write rather than persisting
+    // unscrubbed content (see `redact_text_checked`'s doc comment).
     let redactor = axon_core::redact::DefaultRedactor::new();
     let redaction_context = axon_core::redact::RedactionContext::memory_record();
     if let Some(body) = request.body {
-        record.body =
-            axon_core::redact::Redactor::redact_text(&redactor, &body, &redaction_context);
+        record.body = axon_core::redact::redact_text_checked(&redactor, &body, &redaction_context)
+            .map_err(|_| {
+                redaction_failed(format!(
+                    "memory body exceeds {} bytes; redaction cannot be safely verified",
+                    axon_core::redact::MAX_REDACTABLE_TEXT_BYTES
+                ))
+            })?;
     }
     if let Some(title) = request.title {
-        record.title = Some(axon_core::redact::Redactor::redact_text(
-            &redactor,
-            &title,
-            &redaction_context,
-        ));
+        record.title = Some(
+            axon_core::redact::redact_text_checked(&redactor, &title, &redaction_context).map_err(
+                |_| {
+                    redaction_failed(format!(
+                        "memory title exceeds {} bytes; redaction cannot be safely verified",
+                        axon_core::redact::MAX_REDACTABLE_TEXT_BYTES
+                    ))
+                },
+            )?,
+        );
     }
     if let Some(memory_type) = request.memory_type {
         record.memory_type = memory_type;

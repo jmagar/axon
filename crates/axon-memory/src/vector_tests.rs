@@ -4,6 +4,7 @@ use axon_api::source::*;
 use axon_embedding::fake::FakeEmbeddingProvider;
 use axon_vectors::store::FakeVectorStore;
 
+use crate::record::SystemClock;
 use crate::sqlite::SqliteMemoryStore;
 use crate::store::{FakeMemoryStore, MemoryStore};
 use crate::testing::FixedClock;
@@ -43,6 +44,40 @@ fn service(vector_store: Arc<FakeVectorStore>) -> VectorBackedMemoryStore {
             batch_limits: MemoryBatchLimits::default(),
         },
     )
+}
+
+/// Fail-closed redaction guard (phase-3b Task 11): the shared redaction
+/// boundary blocks a write it cannot safely scan (oversized body — unbounded
+/// regex scanning over attacker-controlled text is itself a DoS surface)
+/// rather than persisting it unscrubbed. Uses the *real* `SqliteMemoryStore`
+/// as the inner store (not `FakeMemoryStore`, which never redacts) so the
+/// guard under test is the actual production write path, and asserts the
+/// vector decorator never reaches the embed/upsert step because `remember`
+/// fails before `self.inner.remember()` returns.
+#[tokio::test]
+async fn redaction_failure_blocks_memory_vector_write() {
+    let vectors = Arc::new(FakeVectorStore::new("fake-vector"));
+    let sqlite_store: Arc<dyn MemoryStore> =
+        Arc::new(SqliteMemoryStore::in_memory(Arc::new(SystemClock)).expect("store"));
+    let service = VectorBackedMemoryStore::new(
+        sqlite_store,
+        Arc::new(FakeEmbeddingProvider::new("fake-embedding", 4)),
+        Arc::clone(&vectors) as Arc<dyn axon_vectors::store::VectorStore>,
+        MemoryVectorConfig {
+            collection: "axon-test".to_string(),
+            embedding_provider_id: ProviderId::new("fake-embedding"),
+            embedding_model: "fake-embedding".to_string(),
+            embedding_dimensions: 4,
+            batch_limits: MemoryBatchLimits::default(),
+        },
+    );
+
+    let oversized_body = "a".repeat(axon_core::redact::MAX_REDACTABLE_TEXT_BYTES + 1);
+    let result = service.remember(request(&oversized_body)).await;
+
+    let err = result.expect_err("oversized body must fail closed");
+    assert_eq!(err.code.to_string(), "redaction.failed");
+    assert!(vectors.points("axon-test").await.is_empty());
 }
 
 #[tokio::test]

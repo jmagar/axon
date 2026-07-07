@@ -324,6 +324,29 @@ impl DefaultRedactor {
     }
 }
 
+/// Upper bound on free text the redaction boundary will scan. Unbounded regex
+/// scanning over attacker-controlled text is itself a DoS surface, so the
+/// fail-closed contract caps input size rather than silently skipping the
+/// scan on oversized input — a write this large must block, not launder
+/// unscrubbed content through.
+pub const MAX_REDACTABLE_TEXT_BYTES: usize = 1_000_000;
+
+/// Redact free text via `redactor`, but fail closed instead of silently
+/// scanning (or silently skipping) oversized input: `Err(RedactionStatus::
+/// Failed)` when `input` exceeds [`MAX_REDACTABLE_TEXT_BYTES`]. Callers at a
+/// durable write boundary (e.g. `axon-memory`'s `remember`) must block the
+/// write on `Err`, never fall back to persisting `input` verbatim.
+pub fn redact_text_checked(
+    redactor: &impl Redactor,
+    input: &str,
+    context: &RedactionContext,
+) -> Result<String, RedactionStatus> {
+    if input.len() > MAX_REDACTABLE_TEXT_BYTES {
+        return Err(RedactionStatus::Failed);
+    }
+    Ok(redactor.redact_text(input, context))
+}
+
 /// Redact a payload metadata map, returning the scrubbed map plus its report.
 pub fn redact_metadata(
     metadata: MetadataMap,

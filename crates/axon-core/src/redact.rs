@@ -144,8 +144,9 @@ mod boundary;
 mod detectors;
 
 pub use boundary::{
-    DefaultRedactor, REDACTION_VERSION, RedactionContext, RedactionReport, RedactionStatus,
-    RedactionSurface, Redactor, redact_metadata,
+    DefaultRedactor, MAX_REDACTABLE_TEXT_BYTES, REDACTION_VERSION, RedactionContext,
+    RedactionReport, RedactionStatus, RedactionSurface, Redactor, redact_metadata,
+    redact_text_checked,
 };
 pub use detectors::{
     BARE_SECRET_TOKEN_PREFIXES, FORBIDDEN_FIELD_FRAGMENTS, FORBIDDEN_VALUE_FRAGMENTS,
