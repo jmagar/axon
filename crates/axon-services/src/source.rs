@@ -243,7 +243,13 @@ pub async fn index_source_with_auth(
     // Record the graph write as a child `graph` job of the parent source job,
     // when it produced non-trivial output (see `job_tracking` module docs for
     // why this is a child job rather than a standalone `axon graph` command).
-    job_tracking::track_graph_mutation(ctx.job_store(), counts.job_id, &graph).await;
+    job_tracking::track_graph_mutation(
+        ctx.job_store(),
+        counts.job_id,
+        auth_snapshot.as_ref(),
+        &graph,
+    )
+    .await;
 
     // Drain cleanup debt: after the new generation is committed, the ledger has
     // recorded superseded-item vector deletes for the prior generation. Run the
@@ -260,7 +266,13 @@ pub async fn index_source_with_auth(
 
     // Record the drain as a child `prune` job of the parent source job, when
     // it touched at least one pending debt entry.
-    job_tracking::track_prune(ctx.job_store(), counts.job_id, &drain).await;
+    job_tracking::track_prune(
+        ctx.job_store(),
+        counts.job_id,
+        auth_snapshot.as_ref(),
+        &drain,
+    )
+    .await;
 
     Ok(to_source_result(
         route.source.source_kind,

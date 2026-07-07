@@ -25,21 +25,56 @@
 use std::sync::Arc;
 
 use axon_api::source::{
-    AuthSnapshot, ConfigSnapshotId, GraphWriteSummary, JobCreateRequest, JobId, JobIntent, JobKind,
-    JobPriority, JobStagePlan, JobStatusUpdate, LifecycleStatus, MetadataMap, PipelinePhase,
+    AuthMode, AuthSnapshot, ConfigSnapshotId, GraphWriteSummary, JobCreateRequest, JobId,
+    JobIntent, JobKind, JobPriority, JobStagePlan, JobStatusUpdate, LifecycleStatus, MetadataMap,
+    PipelinePhase, TransportKind, Visibility,
 };
 use axon_jobs::boundary::JobStore;
+use axon_jobs::workers::auth_enforcement::child_auth_snapshot;
 
 use super::prune::DebtDrainSummary;
 
+/// Auth snapshot for a child job when no real parent snapshot is available
+/// (degraded/system-triggered paths that never reach this call site with a
+/// real caller identity in practice, but the fallback must still fail
+/// closed). Carries **no** elevated scopes -- mirrors the
+/// `watch_auth_snapshot()` precedent in
+/// `axon_jobs::watch::job_tracking` -- instead of defaulting to
+/// `AuthSnapshot::trusted_system`'s Read+Write+Admin grant, which would let
+/// an unauthenticated/no-scope caller's child job silently gain admin.
+fn no_scope_child_auth_snapshot() -> AuthSnapshot {
+    AuthSnapshot {
+        caller_id: None,
+        transport: TransportKind::System,
+        granted_scopes: Vec::new(),
+        visibility_ceiling: Visibility::Internal,
+        request_time: axon_api::source::Timestamp::from(chrono::Utc::now()),
+        policy_version: "runtime".to_string(),
+        auth_mode: AuthMode::TrustedLocal,
+        token_id: None,
+        display_name: None,
+    }
+}
+
 /// Build the child-job create request shared by graph/prune tracking.
+///
+/// `parent_auth_snapshot` is the real caller's snapshot threaded in from
+/// `index_source_with_auth`. When present, the child job inherits exactly
+/// the parent's grants via `child_auth_snapshot` -- never more. When absent
+/// (no real caller identity, e.g. a system-triggered run), the child job
+/// gets [`no_scope_child_auth_snapshot`] rather than an elevated default.
 fn child_job_request(
     parent_job_id: JobId,
+    parent_auth_snapshot: Option<&AuthSnapshot>,
     job_kind: JobKind,
     job_intent: JobIntent,
     phase: PipelinePhase,
     result_schema: &str,
 ) -> JobCreateRequest {
+    let auth_snapshot = match parent_auth_snapshot {
+        Some(parent) => child_auth_snapshot(parent),
+        None => no_scope_child_auth_snapshot(),
+    };
     JobCreateRequest {
         request_id: None,
         job_kind,
@@ -58,7 +93,7 @@ fn child_job_request(
             estimated_items: None,
         }],
         request: None,
-        auth_snapshot: AuthSnapshot::trusted_system("runtime"),
+        auth_snapshot,
         config_snapshot_id: Some(ConfigSnapshotId::new("runtime")),
         requirements: MetadataMap::new(),
         result_schema: Some(result_schema.to_string()),
@@ -134,6 +169,7 @@ async fn run_tracked(
 pub async fn track_graph_mutation(
     job_store: Option<Arc<dyn JobStore>>,
     parent_job_id: JobId,
+    parent_auth_snapshot: Option<&AuthSnapshot>,
     summary: &GraphWriteSummary,
 ) {
     let Some(store) = job_store else {
@@ -148,6 +184,7 @@ pub async fn track_graph_mutation(
 
     let request = child_job_request(
         parent_job_id,
+        parent_auth_snapshot,
         JobKind::Graph,
         JobIntent::Run,
         PipelinePhase::Graphing,
@@ -188,6 +225,7 @@ pub async fn track_graph_mutation(
 pub async fn track_prune(
     job_store: Option<Arc<dyn JobStore>>,
     parent_job_id: JobId,
+    parent_auth_snapshot: Option<&AuthSnapshot>,
     summary: &DebtDrainSummary,
 ) {
     let Some(store) = job_store else {
@@ -202,6 +240,7 @@ pub async fn track_prune(
 
     let request = child_job_request(
         parent_job_id,
+        parent_auth_snapshot,
         JobKind::Prune,
         JobIntent::Cleanup,
         PipelinePhase::Cleaning,

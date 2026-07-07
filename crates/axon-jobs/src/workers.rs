@@ -1,4 +1,4 @@
-mod auth_enforcement;
+pub mod auth_enforcement;
 mod heartbeat;
 mod panic_guard;
 mod progress;

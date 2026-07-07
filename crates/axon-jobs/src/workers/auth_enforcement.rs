@@ -39,7 +39,13 @@ pub(crate) fn require_job_scope(
 /// created by the system on the parent's behalf (a watch spawning a crawl, a
 /// retry, a stale reclaim) must not gain scope the original request never
 /// held.
-pub(crate) fn child_auth_snapshot(parent: &AuthSnapshot) -> AuthSnapshot {
+///
+/// `pub` (not `pub(crate)`): `axon-services` (a downstream crate per the
+/// `axon-jobs` -> `axon-services` layering direction) calls this directly
+/// when tracking child `graph`/`prune` jobs of a parent `Source` job, so the
+/// child job's stored auth snapshot reflects the real caller's grants
+/// instead of a hardcoded elevated default.
+pub fn child_auth_snapshot(parent: &AuthSnapshot) -> AuthSnapshot {
     parent.clone()
 }
 

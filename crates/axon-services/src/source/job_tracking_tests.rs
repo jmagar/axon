@@ -1,11 +1,23 @@
 use super::*;
 
-use axon_api::source::{JobKind, JobListRequest, LifecycleStatus};
+use axon_api::source::{AuthScope, JobKind, JobListRequest, LifecycleStatus, TransportKind};
 use axon_jobs::boundary::FakeJobWatchStore;
 use uuid::Uuid;
 
 fn store() -> Arc<dyn JobStore> {
     Arc::new(FakeJobWatchStore::new())
+}
+
+/// A restricted, non-admin caller snapshot — read/write only, no admin/local/
+/// execute scope. Mirrors a real end-user request (as opposed to a system-
+/// triggered run).
+fn restricted_caller_snapshot() -> AuthSnapshot {
+    AuthSnapshot {
+        caller_id: Some("user_1".to_string()),
+        transport: TransportKind::Mcp,
+        granted_scopes: vec![AuthScope::Read, AuthScope::Write],
+        ..AuthSnapshot::default()
+    }
 }
 
 fn nonempty_graph_summary(degraded: bool) -> GraphWriteSummary {
@@ -62,6 +74,7 @@ async fn track_graph_mutation_creates_completed_child_job_on_success() {
     track_graph_mutation(
         Some(store.clone()),
         parent_job_id,
+        None,
         &nonempty_graph_summary(false),
     )
     .await;
@@ -80,6 +93,7 @@ async fn track_graph_mutation_marks_degraded_write_as_failed_child_job() {
     track_graph_mutation(
         Some(store.clone()),
         parent_job_id,
+        None,
         &nonempty_graph_summary(true),
     )
     .await;
@@ -93,7 +107,13 @@ async fn track_graph_mutation_skips_job_creation_for_zero_op_write() {
     let store = store();
     let parent_job_id = JobId::new(Uuid::new_v4());
 
-    track_graph_mutation(Some(store.clone()), parent_job_id, &empty_graph_summary()).await;
+    track_graph_mutation(
+        Some(store.clone()),
+        parent_job_id,
+        None,
+        &empty_graph_summary(),
+    )
+    .await;
 
     let page = store
         .list(JobListRequest {
@@ -119,6 +139,7 @@ async fn track_graph_mutation_skips_when_no_job_store() {
     track_graph_mutation(
         None,
         JobId::new(Uuid::new_v4()),
+        None,
         &nonempty_graph_summary(false),
     )
     .await;
@@ -130,6 +151,7 @@ async fn track_graph_mutation_skips_nil_parent_job_id() {
     track_graph_mutation(
         Some(store.clone()),
         JobId::new(Uuid::nil()),
+        None,
         &nonempty_graph_summary(false),
     )
     .await;
@@ -159,6 +181,7 @@ async fn track_prune_creates_completed_child_job_when_all_debt_resolved() {
     track_prune(
         Some(store.clone()),
         parent_job_id,
+        None,
         &nonempty_drain_summary(0),
     )
     .await;
@@ -177,6 +200,7 @@ async fn track_prune_marks_partial_failure_as_failed_child_job() {
     track_prune(
         Some(store.clone()),
         parent_job_id,
+        None,
         &nonempty_drain_summary(1),
     )
     .await;
@@ -190,7 +214,13 @@ async fn track_prune_skips_job_creation_when_no_debt_touched() {
     let store = store();
     let parent_job_id = JobId::new(Uuid::new_v4());
 
-    track_prune(Some(store.clone()), parent_job_id, &empty_drain_summary()).await;
+    track_prune(
+        Some(store.clone()),
+        parent_job_id,
+        None,
+        &empty_drain_summary(),
+    )
+    .await;
 
     let page = store
         .list(JobListRequest {
@@ -215,6 +245,7 @@ async fn track_prune_skips_nil_parent_job_id() {
     track_prune(
         Some(store.clone()),
         JobId::new(Uuid::nil()),
+        None,
         &nonempty_drain_summary(0),
     )
     .await;
@@ -234,4 +265,113 @@ async fn track_prune_skips_nil_parent_job_id() {
         page.items.is_empty(),
         "nil parent job id must not create a child job"
     );
+}
+
+// -- Security: child jobs must never gain more scope than the real caller --
+//
+// Before this fix, `child_job_request` hardcoded
+// `AuthSnapshot::trusted_system("runtime")` for every child graph/prune job,
+// granting Read+Write+Admin regardless of what the actual caller held. These
+// tests prove a restricted (non-admin) caller's auth snapshot is inherited
+// by the child job request — not silently escalated — and that the no-caller
+// fallback also carries no elevated scope.
+
+#[test]
+fn child_job_request_inherits_restricted_parent_scopes_for_graph() {
+    let parent_job_id = JobId::new(Uuid::new_v4());
+    let parent = restricted_caller_snapshot();
+
+    let request = child_job_request(
+        parent_job_id,
+        Some(&parent),
+        JobKind::Graph,
+        JobIntent::Run,
+        PipelinePhase::Graphing,
+        "graph_result",
+    );
+
+    assert_eq!(request.auth_snapshot.granted_scopes, parent.granted_scopes);
+    assert!(
+        !request
+            .auth_snapshot
+            .granted_scopes
+            .contains(&AuthScope::Admin),
+        "restricted caller's child graph job must not gain Admin scope"
+    );
+    assert_eq!(request.auth_snapshot.caller_id, parent.caller_id);
+}
+
+#[test]
+fn child_job_request_inherits_restricted_parent_scopes_for_prune() {
+    let parent_job_id = JobId::new(Uuid::new_v4());
+    let parent = restricted_caller_snapshot();
+
+    let request = child_job_request(
+        parent_job_id,
+        Some(&parent),
+        JobKind::Prune,
+        JobIntent::Cleanup,
+        PipelinePhase::Cleaning,
+        "prune_result",
+    );
+
+    assert_eq!(request.auth_snapshot.granted_scopes, parent.granted_scopes);
+    assert!(
+        !request
+            .auth_snapshot
+            .granted_scopes
+            .contains(&AuthScope::Admin),
+        "restricted caller's child prune job must not gain Admin scope"
+    );
+    assert_eq!(request.auth_snapshot.caller_id, parent.caller_id);
+}
+
+#[test]
+fn child_job_request_without_parent_snapshot_gets_no_elevated_scope() {
+    let parent_job_id = JobId::new(Uuid::new_v4());
+
+    let request = child_job_request(
+        parent_job_id,
+        None,
+        JobKind::Graph,
+        JobIntent::Run,
+        PipelinePhase::Graphing,
+        "graph_result",
+    );
+
+    assert!(
+        request.auth_snapshot.granted_scopes.is_empty(),
+        "missing parent snapshot must fall back to no scopes, not trusted_system's \
+         Read+Write+Admin"
+    );
+    assert!(
+        !request
+            .auth_snapshot
+            .granted_scopes
+            .contains(&AuthScope::Admin)
+    );
+}
+
+/// End-to-end: `track_graph_mutation` accepts a restricted caller's auth
+/// snapshot and completes normally. The fake store does not persist
+/// `auth_snapshot` on `JobSummary`, so the exact snapshot contents are
+/// asserted via the dedicated `child_job_request` tests above (the single
+/// place both `track_graph_mutation`/`track_prune` construct it); this test
+/// proves the plumbing end-to-end with a restricted (non-admin) parent.
+#[tokio::test]
+async fn track_graph_mutation_with_restricted_caller_does_not_create_admin_child_job() {
+    let store = store();
+    let parent_job_id = JobId::new(Uuid::new_v4());
+    let parent = restricted_caller_snapshot();
+
+    track_graph_mutation(
+        Some(store.clone()),
+        parent_job_id,
+        Some(&parent),
+        &nonempty_graph_summary(false),
+    )
+    .await;
+
+    let job = only_job(&store, JobKind::Graph).await;
+    assert_eq!(job.status, LifecycleStatus::Completed);
 }
