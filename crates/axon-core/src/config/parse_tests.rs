@@ -65,6 +65,68 @@ fn help_omits_removed_source_commands() {
     assert!(help.contains("query"));
 }
 
+/// Full pipeline (bare-source routing + clap parse + config build) for the
+/// removed source-family command names: `axon embed` must resolve to
+/// `CommandKind::Source` with the removed token itself treated as the
+/// (unsupported) source input, never dispatched to a dedicated `embed`
+/// command (which no longer exists as a clap subcommand), and never a parse
+/// error. `axon <source>` accepts exactly one positional, so this proves the
+/// single-token case; `source_routing_tests.rs` proves the routing rewrite
+/// itself for the multi-token argv shape.
+#[allow(unsafe_code)]
+#[test]
+fn removed_command_names_dispatch_as_source() {
+    let _guard = ENV_LOCK.lock().unwrap();
+
+    for removed in [
+        "embed",
+        "ingest",
+        "scrape",
+        "crawl",
+        "code-search",
+        "code-search-watch",
+    ] {
+        let raw = vec![
+            "axon".to_string(),
+            "--tei-url".to_string(),
+            "http://127.0.0.1:52000".to_string(),
+            "--qdrant-url".to_string(),
+            "http://127.0.0.1:53333".to_string(),
+            removed.to_string(),
+        ];
+        let command = super::build_cli_command();
+        let routed = crate::config::source_routing::route_bare_source(raw, &command);
+        assert_eq!(
+            routed,
+            vec![
+                "axon".to_string(),
+                "--tei-url".to_string(),
+                "http://127.0.0.1:52000".to_string(),
+                "--qdrant-url".to_string(),
+                "http://127.0.0.1:53333".to_string(),
+                "source".to_string(),
+                removed.to_string(),
+            ],
+            "removed token `{removed}` should be routed through `source`, after global flags"
+        );
+        let cli = super::Cli::try_parse_from(&routed)
+            .unwrap_or_else(|e| panic!("`{removed}` should route to source and parse: {e}"));
+        let cfg = super::build_config::into_config(cli)
+            .unwrap_or_else(|e| panic!("`{removed}` routed config should build: {e}"));
+        assert_eq!(
+            cfg.command,
+            CommandKind::Source,
+            "removed command `{removed}` must dispatch as CommandKind::Source"
+        );
+        assert_eq!(
+            cfg.positional,
+            vec![removed.to_string()],
+            "removed token `{removed}` should be the source positional, got {:?}",
+            cfg.positional
+        );
+    }
+}
+
 #[test]
 fn parse_brand_rejects_fresh_flag() {
     let result =
