@@ -45,7 +45,26 @@ fn legacy_status(status: LifecycleStatus) -> String {
     .to_string()
 }
 
-fn job_summary_to_service_job(summary: JobSummary) -> ServiceJob {
+/// Extract's stored `request` payload shape:
+/// `{"urls": [...], "config_json": "..."}` (see
+/// `extract_start_with_context` in `crates/axon-services/src/extract.rs`).
+/// Pulls just the `urls` array back out so the bridge can populate
+/// `ServiceJob.urls_json`/`target` for CLI/MCP/REST rendering.
+fn urls_from_request_json(request_json: &serde_json::Value) -> Option<serde_json::Value> {
+    request_json.get("urls").cloned()
+}
+
+fn job_summary_to_service_job(
+    summary: JobSummary,
+    request_json: Option<serde_json::Value>,
+) -> ServiceJob {
+    let urls_json = request_json.as_ref().and_then(urls_from_request_json);
+    let target = urls_json.as_ref().and_then(|urls| match urls {
+        serde_json::Value::Array(items) if items.len() == 1 => {
+            items.first().and_then(|v| v.as_str()).map(String::from)
+        }
+        _ => None,
+    });
     ServiceJob {
         id: summary.job_id.0,
         status: legacy_status(summary.status),
@@ -56,8 +75,8 @@ fn job_summary_to_service_job(summary: JobSummary) -> ServiceJob {
         error_text: summary.last_error.as_ref().map(|e| e.message.clone()),
         url: None,
         source_type: None,
-        target: None,
-        urls_json: None,
+        target,
+        urls_json,
         progress_json: summary
             .counts
             .as_ref()
@@ -91,24 +110,46 @@ pub(super) async fn list(
         })
         .await
         .map_err(|e| Box::<dyn Error + Send + Sync>::from(e.message))?;
-    Ok(page
+    let page_items = page
         .items
         .into_iter()
         .skip(offset.max(0) as usize)
         .take(limit.max(0) as usize)
-        .map(job_summary_to_service_job)
-        .collect())
+        .collect::<Vec<_>>();
+    // One `request_json` lookup per rendered row: the unified `JobStore`
+    // trait's `list()` returns only `JobSummary` (no request payload), and
+    // Extract job volumes are low enough (see the offset workaround above)
+    // that this N+1 is an acceptable bridge cost until Extract gets its own
+    // cursor-aware CLI/MCP/REST rendering.
+    let mut jobs = Vec::with_capacity(page_items.len());
+    for summary in page_items {
+        let job_id = summary.job_id;
+        let request_json = store
+            .request_json(job_id)
+            .await
+            .map_err(|e| Box::<dyn Error + Send + Sync>::from(e.message))?;
+        jobs.push(job_summary_to_service_job(summary, request_json));
+    }
+    Ok(jobs)
 }
 
 pub(super) async fn status(
     store: &Arc<dyn JobStore>,
     id: Uuid,
 ) -> Result<Option<ServiceJob>, Box<dyn Error + Send + Sync>> {
+    let job_id = JobId::new(id);
     let summary = store
-        .get(JobId::new(id))
+        .get(job_id)
         .await
         .map_err(|e| Box::<dyn Error + Send + Sync>::from(e.message))?;
-    Ok(summary.map(job_summary_to_service_job))
+    let Some(summary) = summary else {
+        return Ok(None);
+    };
+    let request_json = store
+        .request_json(job_id)
+        .await
+        .map_err(|e| Box::<dyn Error + Send + Sync>::from(e.message))?;
+    Ok(Some(job_summary_to_service_job(summary, request_json)))
 }
 
 pub(super) async fn cancel(

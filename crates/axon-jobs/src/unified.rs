@@ -23,6 +23,8 @@ mod observe;
 mod ops;
 #[path = "unified/pagination.rs"]
 mod pagination;
+#[path = "unified/request_read.rs"]
+mod request_read;
 #[path = "unified/schema.rs"]
 mod schema;
 
@@ -67,6 +69,10 @@ impl JobStore for SqliteUnifiedJobStore {
 
     async fn get(&self, job_id: JobId) -> Result<Option<JobSummary>> {
         self.get_job(job_id).await
+    }
+
+    async fn request_json(&self, job_id: JobId) -> Result<Option<serde_json::Value>> {
+        self.get_job_request_json(job_id).await
     }
 
     async fn attempts(&self, job_id: JobId) -> Result<Vec<JobAttemptSnapshot>> {
