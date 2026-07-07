@@ -40,15 +40,15 @@ routes.
 | Token | Scope | Browser-visible |
 |-------|-------|-----------------|
 | `~/.axon/panel-password` | Gates `/api/panel/config`, `/api/panel/ops`, and setup routes | Returned only after `/api/panel/login` succeeds |
-| `AXON_MCP_HTTP_TOKEN` | Static bearer for `/mcp` and protected `/v1` routes | Client-configured secret |
-| OAuth JWT (`AXON_MCP_AUTH_MODE=oauth`) | OAuth bearer for `/mcp` and protected `/v1` routes | Client obtains through OAuth flow |
+| `AXON_HTTP_TOKEN` | Static bearer for `/mcp` and protected `/v1` routes | Client-configured secret |
+| OAuth JWT (`AXON_AUTH_MODE=oauth`) | OAuth bearer for `/mcp` and protected `/v1` routes | Client obtains through OAuth flow |
 
 Rules:
 - `~/.axon/panel-password` must stay mode `0600`.
 - Non-loopback HTTP binds require bearer or OAuth auth.
 - Do not expose Chrome, Qdrant, or TEI directly to a network.
 - Mobile clients must require an explicit panel-token unlock for `/api/panel/*`.
-  Do not fall back to `AXON_MCP_HTTP_TOKEN` or OAuth tokens for panel config
+  Do not fall back to `AXON_HTTP_TOKEN` or OAuth tokens for panel config
   routes on the client.
 - Mobile settings UIs must not write a masked placeholder back to disk as a
   secret value. Preserve the raw server text privately and patch only genuinely

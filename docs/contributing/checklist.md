@@ -31,7 +31,7 @@ Pre-release quality checklist. Complete all items before tagging a release.
 - [ ] `.dockerignore` includes `.env`, `.git/`
 - [ ] Docker containers run as non-root (`user: "1000:1000"`)
 - [ ] No baked environment variables in Docker images
-- [ ] MCP/action auth uses `AXON_MCP_HTTP_TOKEN` or OAuth for non-loopback binds
+- [ ] MCP/action auth uses `AXON_HTTP_TOKEN` or OAuth for non-loopback binds
 
 ## Infrastructure
 

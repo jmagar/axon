@@ -16,7 +16,7 @@ See the family contract for declared output paths.
 |---|---|
 | `crates/axon-api/src/source/vector.rs` | `sha256:97c767a15c9f88a3a7278ac32c6b7b1a4fce722223e9dd3c5f59079fee69b9ac` |
 | `crates/axon-vectors/src/payload.rs` | `sha256:45d6beef236e16d572122701748e36ff528992cff85c6ca222440f9e499559f2` |
-| `crates/axon-vectors/src/payload_families.rs` | `sha256:4c58991a84d602ca8facc12f7bc2da84dd76b2908ff8e2051b799848e5cb18e3` |
+| `crates/axon-vectors/src/payload_families.rs` | `sha256:9336d0c89dcf90394087fbc070553207ed0c838ddeab5bd51e881b058269699f` |
 | `crates/axon-vectors/src/point.rs` | `sha256:f4da74621d8db799cf00f752b323d9b23c4ebe2b8fd30d49eafb87d5628ff44c` |
 | `crates/axon-vectors/src/schema_registry.rs` | `sha256:039aed1c85daf7da804f6f3a79d0482c39e435122f7a24177d703a9b9f63768a` |
 | `docs/pipeline-unification/schemas/vector-payload-schema.md` | `sha256:34a1edc5a11e47d4175555cc82c33ba37be84b24c58da16d5ec8d7aaa7a65604` |
@@ -109,7 +109,7 @@ Payload validation rejects secret field fragments and secret value fragments bef
 | `local` | `local_checkout`, `local_path_key`, `local_git_remote`, `local_git_commit` |
 | `tool` | `tool_name`, `tool_action`, `tool_side_effect_class`, `tool_output_artifact_id` |
 | `docker` | `docker_image`, `docker_service`, `docker_port`, `docker_volume` |
-| `env` | `env_key`, `env_secret_reference` |
+| `env` | `env_key`, `env_locator` |
 
 ## Indexable Payload Fields
 

@@ -140,5 +140,10 @@ pub const VECTOR_SOURCE_FAMILY_FIELDS: &[(&str, &[&str])] = &[
             "docker_volume",
         ],
     ),
-    ("env", &["env_key", "env_secret_reference"]),
+    // Not `env_secret_reference`/`env_value_*` -- "secret" and "env_value"
+    // are both fatal `FORBIDDEN_FIELD_FRAGMENTS` substrings in the shared
+    // redaction boundary (fail-closed by design), even though this field
+    // only ever holds a locator/reference, never a secret value. Currently
+    // declarative only -- no adapter reads or writes it yet.
+    ("env", &["env_key", "env_locator"]),
 ];
