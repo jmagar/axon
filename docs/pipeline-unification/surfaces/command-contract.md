@@ -784,7 +784,17 @@ axon code-search <query>
 axon code-search-watch <path>
 axon purge <target>
 axon dedupe
+axon refresh [filter]
+axon fresh <sub>
 ```
+
+`refresh` and `fresh` were missing from this enumeration even though
+`delivery/surface-removal-contract.md`, `foundation/source-pipeline.md`, and
+`plans/finish-unification-metaplan.md` all already treat them as removed
+(`axon refresh ...` → `axon <source> --refresh` or a source operation;
+`axon fresh ...` → `axon watch ...` or source freshness config). This was a
+doc-sync gap in this file, not a scope decision — the canonical list above now
+matches those contracts.
 
 The final parser should treat removed commands like any other unknown command.
 Documentation can explain the new command model, but runtime aliases/remap
