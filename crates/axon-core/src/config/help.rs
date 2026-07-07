@@ -404,7 +404,7 @@ fn subcommand_description(parent_name: &str, command: &Command) -> String {
         ("watch", "list") => "List watch definitions".to_string(),
         ("watch", "get") => "Show a watch definition".to_string(),
         ("watch", "update") => "Update a watch definition".to_string(),
-        ("watch", "run-now") => "Run a watch immediately".to_string(),
+        ("watch", "exec") => "Run a watch immediately".to_string(),
         ("watch", "pause") => "Pause a watch".to_string(),
         ("watch", "resume") => "Resume a paused watch".to_string(),
         ("watch", "delete") => "Delete a watch definition".to_string(),

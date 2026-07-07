@@ -463,7 +463,7 @@ pub enum WatchSubaction {
     Create,
     List,
     Get,
-    RunNow,
+    Exec,
     History,
 }
 

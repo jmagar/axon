@@ -489,8 +489,8 @@ pub(super) enum WatchSubcommand {
         #[arg(long = "every-seconds")]
         every_seconds: Option<i64>,
     },
-    #[command(name = "run-now")]
-    RunNow {
+    #[command(name = "exec")]
+    Exec {
         id: String,
     },
     Pause {

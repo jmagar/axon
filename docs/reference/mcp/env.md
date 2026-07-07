@@ -64,7 +64,7 @@ hosting command creates a worker-enabled service context.
 |-----------|-----------|
 | scrape, query, ask, search | Yes |
 | crawl (sync), embed, ingest | Yes |
-| watch scheduler | Yes for wired subcommands (`create`, `list`, `run-now`, `history`) |
+| watch scheduler | Yes for wired subcommands (`create`, `list`, `exec`, `history`) |
 
 ## Precedence
 

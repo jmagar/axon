@@ -175,7 +175,7 @@ fn config_example_toml_parses() {
 
 #[allow(unsafe_code)]
 #[test]
-fn parse_watch_run_now() {
+fn parse_watch_exec() {
     let _guard = ENV_LOCK.lock().unwrap();
 
     let cli = super::Cli::parse_from([
@@ -185,15 +185,15 @@ fn parse_watch_run_now() {
         "--qdrant-url",
         "http://127.0.0.1:53333",
         "watch",
-        "run-now",
+        "exec",
         "11111111-1111-4111-8111-111111111111",
     ]);
-    let cfg = super::build_config::into_config(cli).expect("watch run-now should parse");
+    let cfg = super::build_config::into_config(cli).expect("watch exec should parse");
     assert!(matches!(cfg.command, CommandKind::Watch));
     assert_eq!(
         cfg.positional,
         vec![
-            "run-now".to_string(),
+            "exec".to_string(),
             "11111111-1111-4111-8111-111111111111".to_string(),
         ]
     );
