@@ -215,7 +215,8 @@ fn panel_routes() -> Router<ServeState> {
     path = "/v1/capabilities",
     responses(
         (status = 200, description = "Server capability metadata", body = ServerInfo),
-        (status = 401, description = "Missing or invalid auth", body = crate::server::error::ErrorBody)
+        (status = 401, description = "Missing or invalid auth", body = crate::server::error::ErrorBody),
+        (status = 403, description = "Insufficient scope", body = crate::server::error::ErrorBody)
     ),
     tag = "discovery"
 )]

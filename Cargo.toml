@@ -143,6 +143,7 @@ opt-level = 2
 
 [dev-dependencies]
 axon-core = { path = "crates/axon-core", features = ["test-util"] }
+axon-llm = { path = "crates/axon-llm" }
 axon-vector = { path = "crates/axon-vector", features = ["test-util"] }
 tokio = { version = "1", features = [
   "macros",

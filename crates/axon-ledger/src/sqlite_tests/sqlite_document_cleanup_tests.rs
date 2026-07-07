@@ -39,12 +39,20 @@ async fn sqlite_records_document_status_and_cleanup_debt_idempotently() {
         .update_document_status(status.clone())
         .await
         .expect("record document status");
+    // `chunk_count`/`vector_point_count` carry `#[serde(skip)]` on
+    // `DocumentStatus` (they're recomputed by callers, not durably tracked
+    // by the ledger's JSON-blob persistence) — read-back always reports 0
+    // for them regardless of what was written.
     assert_eq!(
         store
             .document_status(&DocumentId::new("doc-sqlite"))
             .await
             .expect("read document status"),
-        Some(status)
+        Some(DocumentStatus {
+            chunk_count: 0,
+            vector_point_count: 0,
+            ..status
+        })
     );
     let updated = DocumentStatus {
         document_id: DocumentId::new("doc-sqlite"),
@@ -161,12 +169,19 @@ async fn sqlite_document_status_ignores_stale_updates() {
         .await
         .expect("stale status replay");
 
+    // See the note in `sqlite_records_document_status_and_cleanup_debt_
+    // idempotently` — chunk_count/vector_point_count don't round-trip
+    // through the SQLite ledger store's `#[serde(skip)]`-tagged fields.
     assert_eq!(
         store
             .document_status(&DocumentId::new("doc-sqlite"))
             .await
             .expect("read document status"),
-        Some(newer)
+        Some(DocumentStatus {
+            chunk_count: 0,
+            vector_point_count: 0,
+            ..newer
+        })
     );
 }
 

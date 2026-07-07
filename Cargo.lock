@@ -406,6 +406,7 @@ dependencies = [
  "axon-cli",
  "axon-core",
  "axon-jobs",
+ "axon-llm",
  "axon-mcp",
  "axon-services",
  "axon-vector",
