@@ -112,7 +112,12 @@ impl UnifiedJobRunner for ProviderProbeRunner {
         if shutdown.is_cancelled() {
             return Err(probe_error("provider probe canceled before running"));
         }
-        crate::system::doctor(&self.cfg)
+        // Call the untracked inner check directly -- this runner already
+        // executes inside an already-tracked unified `provider_probe` job,
+        // so going through the public `doctor()` (which wraps itself in a
+        // *second* job_tracking::track_operation_job call) would create a
+        // duplicate, nested job row for the same probe.
+        crate::system::doctor_inner(&self.cfg)
             .await
             .map(|_result| ())
             .map_err(|error| probe_error(error.to_string()))

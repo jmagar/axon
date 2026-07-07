@@ -377,8 +377,7 @@ async fn track_graph_mutation_with_restricted_caller_does_not_create_admin_child
 }
 
 async fn completed_source_job(store: &Arc<dyn JobStore>) -> JobId {
-    let job_id = JobId::new(Uuid::new_v4());
-    store
+    let descriptor = store
         .create(axon_api::source::JobCreateRequest {
             request_id: None,
             job_kind: JobKind::Source,
@@ -407,6 +406,7 @@ async fn completed_source_job(store: &Arc<dyn JobStore>) -> JobId {
         })
         .await
         .expect("create parent source job");
+    let job_id = descriptor.job_id;
     store
         .update_status(JobStatusUpdate {
             job_id,

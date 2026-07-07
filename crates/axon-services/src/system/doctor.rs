@@ -17,6 +17,7 @@
 use crate::context::ServiceContext;
 use crate::types::DoctorResult;
 use axon_api::source::OperationKind;
+use axon_core::config::Config;
 use axon_core::health::build_doctor_report;
 use serde_json::json;
 use std::error::Error;
@@ -32,13 +33,18 @@ pub async fn doctor(ctx: &ServiceContext) -> Result<DoctorResult, Box<dyn Error 
         ctx,
         OperationKind::ProviderProbe,
         request_json,
-        || doctor_inner(ctx),
+        || doctor_inner(ctx.cfg.as_ref()),
     )
     .await
 }
 
-async fn doctor_inner(ctx: &ServiceContext) -> Result<DoctorResult, Box<dyn Error + Send + Sync>> {
-    let cfg = ctx.cfg.as_ref();
+/// The real connectivity checks, without the job-tracking wrapper. Exposed
+/// `pub(crate)` so `runtime::job_runners::ProviderProbeRunner` (which runs
+/// *inside* an already-tracked unified `provider_probe` job) can call it
+/// directly instead of double-tracking a job for the same probe.
+pub(crate) async fn doctor_inner(
+    cfg: &Config,
+) -> Result<DoctorResult, Box<dyn Error + Send + Sync>> {
     let pending_jobs = axon_jobs::store::count_pending_jobs(&cfg.sqlite_path).await;
     let llm_probe = axon_llm::build_llm_doctor_probe(cfg).await;
     let payload = build_doctor_report(cfg, pending_jobs, llm_probe)
