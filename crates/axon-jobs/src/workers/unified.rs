@@ -5,16 +5,26 @@ use axon_api::source::{
     LifecycleStatus, PipelinePhase, Severity, SourceError, SourceProgressEvent, StageCounts,
     Timestamp, Visibility,
 };
+use axon_core::config::Config;
 use sqlx::{Row, SqlitePool};
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
 use crate::boundary::JobStore;
+use crate::config_snapshot::apply_config_snapshot;
 use crate::store_inventory::detect_incompatible_legacy_jobs;
 use crate::unified::SqliteUnifiedJobStore;
 
 use super::auth_enforcement::{require_job_scope, required_scope_for_kind};
 use super::{POLL_INTERVAL, WORKER_BATCH_LIMIT};
+
+mod extract_runner;
+use extract_runner::run_extract_claimed;
+
+mod helpers;
+use helpers::{
+    empty_counts, enum_name, json_error, parse_enum, parse_uuid, source_error_from_api, sql_error,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct UnifiedClaimedJob {
@@ -31,6 +41,7 @@ pub(crate) struct UnifiedClaimedJob {
 
 pub(crate) async fn unified_worker_loop(
     pool: Arc<SqlitePool>,
+    cfg: Arc<Config>,
     notify: Arc<Notify>,
     shutdown: CancellationToken,
 ) {
@@ -57,7 +68,7 @@ pub(crate) async fn unified_worker_loop(
             while processed < WORKER_BATCH_LIMIT && !shutdown.is_cancelled() {
                 match claim_next_unified_job_unchecked(&pool).await {
                     Ok(Some(claimed)) => {
-                        run_unified_claimed(&pool, &claimed, &shutdown).await;
+                        run_unified_claimed(&pool, &cfg, &claimed, &shutdown).await;
                         processed += 1;
                     }
                     Ok(None) => break,
@@ -87,6 +98,9 @@ pub(crate) async fn unified_worker_loop(
     }
 }
 
+/// Test-only entry point: production code claims via the poll loop in
+/// [`unified_worker_loop`]; tests use this to claim+run one job deterministically.
+#[allow(dead_code)]
 pub(crate) async fn claim_next_unified_job(
     pool: &SqlitePool,
 ) -> Result<Option<UnifiedClaimedJob>, ApiError> {
@@ -198,6 +212,7 @@ async fn claim_next_unified_job_unchecked(
 
 pub(crate) async fn run_unified_claimed(
     pool: &SqlitePool,
+    cfg: &Config,
     claimed: &UnifiedClaimedJob,
     shutdown: &CancellationToken,
 ) {
@@ -218,15 +233,22 @@ pub(crate) async fn run_unified_claimed(
         return;
     }
 
-    let error = ApiError::new(
-        "job_runner.unsupported_stage",
-        ErrorStage::Planning,
-        format!(
-            "unified durable runner claimed {:?} job {}, but this stage is not wired yet",
-            claimed.kind, claimed.job_id.0
-        ),
-    );
-    fail_unified_claimed(pool, &store, claimed, error).await;
+    match claimed.kind {
+        UnifiedJobKind::Extract => {
+            run_extract_claimed(pool, cfg, &store, claimed, shutdown).await;
+        }
+        _ => {
+            let error = ApiError::new(
+                "job_runner.unsupported_stage",
+                ErrorStage::Planning,
+                format!(
+                    "unified durable runner claimed {:?} job {}, but this stage is not wired yet",
+                    claimed.kind, claimed.job_id.0
+                ),
+            );
+            fail_unified_claimed(pool, &store, claimed, error).await;
+        }
+    }
 }
 
 /// Append a failure event and mark the claimed job terminal-failed with
@@ -448,65 +470,4 @@ async fn mark_terminal(
     .await
     .map_err(sql_error)?;
     tx.commit().await.map_err(sql_error)
-}
-
-fn parse_enum<T: serde::de::DeserializeOwned>(value: String) -> Result<T, ApiError> {
-    serde_json::from_value(serde_json::Value::String(value)).map_err(json_error)
-}
-
-fn enum_name<T: serde::Serialize>(value: T) -> Result<String, ApiError> {
-    serde_json::to_value(value)
-        .ok()
-        .and_then(|value| value.as_str().map(ToOwned::to_owned))
-        .ok_or_else(|| ApiError::new("job.enum_invalid", ErrorStage::Planning, "invalid enum"))
-}
-
-fn parse_uuid(value: String) -> Result<uuid::Uuid, ApiError> {
-    uuid::Uuid::parse_str(&value).map_err(|error| {
-        ApiError::new(
-            "job.uuid_invalid",
-            ErrorStage::Retrieving,
-            format!("invalid job uuid: {error}"),
-        )
-    })
-}
-
-fn json_error(error: serde_json::Error) -> ApiError {
-    ApiError::new("job.json_error", ErrorStage::Publishing, error.to_string())
-}
-
-fn sql_error(error: sqlx::Error) -> ApiError {
-    ApiError::new(
-        "job.sqlite_error",
-        ErrorStage::Publishing,
-        error.to_string(),
-    )
-}
-
-fn source_error_from_api(error: &ApiError, severity: Severity) -> SourceError {
-    SourceError {
-        code: error.code.to_string(),
-        severity,
-        message: error.message.clone(),
-        source_item_key: None,
-        retryable: error.retryable,
-        provider_id: error
-            .provider_id
-            .clone()
-            .map(axon_api::source::ProviderId::new),
-        cause: None,
-    }
-}
-
-fn empty_counts() -> StageCounts {
-    StageCounts {
-        items_total: None,
-        items_done: 0,
-        documents_total: None,
-        documents_done: 0,
-        chunks_total: None,
-        chunks_done: 0,
-        bytes_total: None,
-        bytes_done: 0,
-    }
 }

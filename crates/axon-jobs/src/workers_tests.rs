@@ -127,7 +127,13 @@ async fn unified_worker_marks_unsupported_stage_failed() {
         .unwrap()
         .expect("claim job");
 
-    unified::run_unified_claimed(&pool, &claimed, &CancellationToken::new()).await;
+    unified::run_unified_claimed(
+        &pool,
+        &Config::default_minimal(),
+        &claimed,
+        &CancellationToken::new(),
+    )
+    .await;
 
     let summary = store.get(job.job_id).await.unwrap().unwrap();
     assert_eq!(summary.status, LifecycleStatus::Failed);
@@ -154,6 +160,37 @@ async fn unified_worker_marks_unsupported_stage_failed() {
 }
 
 #[tokio::test]
+async fn unified_worker_executes_extract_job_from_request_json() {
+    let pool = open_sqlite_pool(":memory:").await.unwrap();
+    seed_source(&pool).await;
+    let store = SqliteUnifiedJobStore::new(pool.clone());
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = Config::default_minimal();
+    cfg.output_dir = dir.path().to_path_buf();
+    let config_json = crate::config_snapshot::extract_config_json(&cfg, None).unwrap();
+
+    let mut request = unified_job_request(UnifiedJobKind::Extract);
+    // Empty URLs so `extract_sync` completes deterministically with zero
+    // items and no network access — this test proves real dispatch (not the
+    // `unsupported_stage` catch-all), not extraction quality.
+    request.request = Some(serde_json::json!({
+        "urls": Vec::<String>::new(),
+        "config_json": config_json,
+    }));
+    let job = store.create(request).await.unwrap();
+
+    let claimed = unified::claim_next_unified_job(&pool)
+        .await
+        .unwrap()
+        .expect("claim job");
+    unified::run_unified_claimed(&pool, &cfg, &claimed, &CancellationToken::new()).await;
+
+    let summary = store.get(job.job_id).await.unwrap().unwrap();
+    assert_eq!(summary.status, LifecycleStatus::Completed);
+    assert!(summary.last_error.is_none());
+}
+
+#[tokio::test]
 async fn unified_worker_shutdown_claim_marks_job_canceled() {
     let pool = open_sqlite_pool(":memory:").await.unwrap();
     seed_source(&pool).await;
@@ -169,7 +206,7 @@ async fn unified_worker_shutdown_claim_marks_job_canceled() {
     let shutdown = CancellationToken::new();
     shutdown.cancel();
 
-    unified::run_unified_claimed(&pool, &claimed, &shutdown).await;
+    unified::run_unified_claimed(&pool, &Config::default_minimal(), &claimed, &shutdown).await;
 
     let summary = store.get(job.job_id).await.unwrap().unwrap();
     assert_eq!(summary.status, LifecycleStatus::Canceled);
@@ -240,7 +277,13 @@ async fn stale_claimed_attempt_cannot_terminalize_recovered_job() {
         .unwrap();
     assert_eq!(recovered.recovered, 1);
 
-    unified::run_unified_claimed(&pool, &claimed, &CancellationToken::new()).await;
+    unified::run_unified_claimed(
+        &pool,
+        &Config::default_minimal(),
+        &claimed,
+        &CancellationToken::new(),
+    )
+    .await;
 
     let summary = store.get(job.job_id).await.unwrap().unwrap();
     assert_eq!(summary.status, LifecycleStatus::Queued);

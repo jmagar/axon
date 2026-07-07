@@ -4,7 +4,6 @@ mod panic_guard;
 mod progress;
 mod runners;
 mod starvation;
-#[allow(dead_code)]
 mod unified;
 mod watch_scheduler;
 mod watchdog;
@@ -103,11 +102,17 @@ pub fn spawn_workers(
         "jobs: spawning in-process job workers"
     );
 
-    tracing::info!(
-        worker = "unified",
-        lanes = 0,
-        "jobs: unified worker disabled until executable runners are wired"
-    );
+    // Unified worker: executes JobKind::Extract jobs created via
+    // axon-services' enqueue_operation()/unified JobStore path. Other job
+    // kinds still fail with `job_runner.unsupported_stage` until their
+    // runners are wired (see run_unified_claimed in workers/unified.rs).
+    tracing::info!(worker = "unified", lanes = 1, "jobs: spawning worker");
+    worker_handles.push(tokio::spawn(unified::unified_worker_loop(
+        Arc::clone(&pool),
+        Arc::clone(&cfg),
+        Arc::clone(&unified_notify),
+        shutdown.clone(),
+    )));
 
     // Crawl: single lane (spider futures are !Send — must stay single-task)
     tracing::info!(worker = "crawl", lanes = 1, "jobs: spawning worker");
