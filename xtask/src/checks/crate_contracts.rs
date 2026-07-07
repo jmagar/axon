@@ -113,17 +113,40 @@ fn check_forbidden_deps(root: &Path, contract: &CrateContract, violations: &mut 
             return;
         }
     };
-    let Some(deps) = parsed.get("dependencies").and_then(toml::Value::as_table) else {
-        return;
-    };
+    let dep_tables = dependency_tables(&parsed);
     for forbidden in contract.forbidden_axon_deps {
-        if deps.contains_key(*forbidden) {
+        if dep_tables
+            .iter()
+            .any(|table| table.contains_key(*forbidden))
+        {
             violations.push(format!(
-                "{}: [dependencies] declares forbidden `{forbidden}` (see Dependencies Forbidden in its README contract)",
+                "{}: declares forbidden `{forbidden}` (see Dependencies Forbidden in its README contract)",
                 contract.name
             ));
         }
     }
+}
+
+/// The top-level `[dependencies]` table plus any platform-specific
+/// `[target.'cfg(...)'.dependencies]` tables — both are real (non-dev/build)
+/// dependencies a crate can use to route around the forbidden-deps check.
+fn dependency_tables(parsed: &toml::Table) -> Vec<&toml::Table> {
+    let mut tables = Vec::new();
+    if let Some(deps) = parsed.get("dependencies").and_then(toml::Value::as_table) {
+        tables.push(deps);
+    }
+    if let Some(targets) = parsed.get("target").and_then(toml::Value::as_table) {
+        for target_cfg in targets.values() {
+            if let Some(deps) = target_cfg
+                .as_table()
+                .and_then(|cfg| cfg.get("dependencies"))
+                .and_then(toml::Value::as_table)
+            {
+                tables.push(deps);
+            }
+        }
+    }
+    tables
 }
 
 #[cfg(test)]

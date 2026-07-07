@@ -156,6 +156,33 @@ fn ignores_dev_dependencies() {
 }
 
 #[test]
+fn flags_forbidden_dependency_under_target_specific_table() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let crate_dir = root.join("crates/axon-graph");
+    fs::create_dir_all(crate_dir.join("src")).unwrap();
+    fs::write(crate_dir.join("src/lib.rs"), "").unwrap();
+    fs::write(
+        crate_dir.join("Cargo.toml"),
+        "[package]\nname = \"axon-graph\"\n\n[dependencies]\n\n[target.'cfg(unix)'.dependencies]\naxon-vectors = { path = \"../axon-vectors\" }\n",
+    )
+    .unwrap();
+    let contract = CrateContract {
+        name: "axon-graph",
+        modules: &[],
+        forbidden_axon_deps: &["axon-vectors"],
+    };
+    let mut violations = Vec::new();
+    check_forbidden_deps(root, &contract, &mut violations);
+    assert!(
+        violations
+            .iter()
+            .any(|v| v.contains("declares forbidden `axon-vectors`")),
+        "{violations:?}"
+    );
+}
+
+#[test]
 fn every_contract_crate_exists_in_the_real_workspace() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
