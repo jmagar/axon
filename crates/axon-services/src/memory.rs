@@ -19,7 +19,9 @@ use crate::context::ServiceContext;
 use crate::types::ClientActionError;
 use axon_api::mcp_schema::{MemoryEdgeType, MemoryRequest, MemorySubaction};
 use axon_api::source::{
-    MemoryId, MemoryLink, MemorySearchRequest, MemorySupersedeRequest, Timestamp,
+    MemoryArchiveRequest, MemoryCompactRequest, MemoryContradictRequest, MemoryForgetRequest,
+    MemoryId, MemoryLink, MemoryPinRequest, MemoryReinforcement, MemoryReviewRequest, MemoryScope,
+    MemorySearchRequest, MemorySupersedeRequest, Timestamp,
 };
 use axon_graph::SqliteGraphStore;
 use axon_memory::graph::{GraphBackedMemoryMirror, GraphBackedMemoryStore};
@@ -82,6 +84,34 @@ pub async fn dispatch(
         MemorySubaction::Context => {
             let context = context(ctx, req).await.map_err(memory_error)?;
             Ok(json!({ "context": context }))
+        }
+        MemorySubaction::Reinforce => {
+            let item = reinforce(ctx, req).await.map_err(memory_error)?;
+            Ok(json!({ "memory": item }))
+        }
+        MemorySubaction::Contradict => {
+            let edge = contradict(ctx, req).await.map_err(memory_error)?;
+            Ok(json!({ "edge": edge }))
+        }
+        MemorySubaction::Pin => {
+            let item = pin(ctx, req).await.map_err(memory_error)?;
+            Ok(json!({ "memory": item }))
+        }
+        MemorySubaction::Archive => {
+            let item = archive(ctx, req).await.map_err(memory_error)?;
+            Ok(json!({ "memory": item }))
+        }
+        MemorySubaction::Forget => {
+            let item = forget(ctx, req).await.map_err(memory_error)?;
+            Ok(json!({ "memory": item }))
+        }
+        MemorySubaction::Review => {
+            let items = review(ctx, req).await.map_err(memory_error)?;
+            Ok(json!({ "memories": items }))
+        }
+        MemorySubaction::Compact => {
+            let item = compact(ctx, req).await.map_err(memory_error)?;
+            Ok(json!({ "memory": item }))
         }
     }
 }
@@ -248,6 +278,198 @@ pub async fn context(ctx: &ServiceContext, req: MemoryRequest) -> Result<MemoryC
         .collect();
     items.truncate(limit);
     Ok(format_memory_context(items, token_budget))
+}
+
+pub async fn reinforce(ctx: &ServiceContext, req: MemoryRequest) -> Result<MemoryItem> {
+    let store = memory_store(ctx).await?;
+    let id = required_text(req.id.as_deref(), "id")?.to_string();
+    let amount = req.amount.unwrap_or(0.1) as f32;
+    let reason = req
+        .reason
+        .clone()
+        .unwrap_or_else(|| "reinforced".to_string());
+    let result = store
+        .reinforce(
+            MemoryId::new(id.clone()),
+            MemoryReinforcement {
+                amount,
+                reason,
+                timestamp: Timestamp(SystemClock.now_rfc3339()),
+            },
+        )
+        .await
+        .map_err(store_err)?;
+    let record = store
+        .get(MemoryId::new(id))
+        .await
+        .map_err(store_err)?
+        .context("reinforced memory not found after write")?;
+    Ok(item_from_record(&record, Some(result.memory_score as f64)))
+}
+
+pub async fn contradict(ctx: &ServiceContext, req: MemoryRequest) -> Result<MemoryEdgeItem> {
+    let store = memory_store(ctx).await?;
+    let memory_id = required_text(req.source_id.as_deref(), "source_id")?.to_string();
+    let conflicting_id = required_text(req.target_id.as_deref(), "target_id")?.to_string();
+    ensure_exists(store.as_ref(), &memory_id).await?;
+    ensure_exists(store.as_ref(), &conflicting_id).await?;
+    store
+        .contradict(MemoryContradictRequest {
+            memory_id: MemoryId::new(memory_id.clone()),
+            conflicting_id: MemoryId::new(conflicting_id.clone()),
+            reason: req.reason.clone(),
+            timestamp: Timestamp(SystemClock.now_rfc3339()),
+        })
+        .await
+        .map_err(store_err)?;
+    Ok(edge_item(&memory_id, &conflicting_id, "contradicts"))
+}
+
+pub async fn pin(ctx: &ServiceContext, req: MemoryRequest) -> Result<MemoryItem> {
+    let store = memory_store(ctx).await?;
+    let id = required_text(req.id.as_deref(), "id")?.to_string();
+    ensure_exists(store.as_ref(), &id).await?;
+    store
+        .pin(MemoryPinRequest {
+            memory_id: MemoryId::new(id.clone()),
+            pinned: req.pinned.unwrap_or(true),
+            reason: req.reason.clone(),
+            timestamp: Timestamp(SystemClock.now_rfc3339()),
+        })
+        .await
+        .map_err(store_err)?;
+    let record = store
+        .get(MemoryId::new(id))
+        .await
+        .map_err(store_err)?
+        .context("pinned memory not found after write")?;
+    Ok(item_from_record(&record, None))
+}
+
+pub async fn archive(ctx: &ServiceContext, req: MemoryRequest) -> Result<MemoryItem> {
+    let store = memory_store(ctx).await?;
+    let id = required_text(req.id.as_deref(), "id")?.to_string();
+    ensure_exists(store.as_ref(), &id).await?;
+    store
+        .archive(MemoryArchiveRequest {
+            memory_id: MemoryId::new(id.clone()),
+            reason: req.reason.clone(),
+            timestamp: Timestamp(SystemClock.now_rfc3339()),
+        })
+        .await
+        .map_err(store_err)?;
+    let record = store
+        .get(MemoryId::new(id))
+        .await
+        .map_err(store_err)?
+        .context("archived memory not found after write")?;
+    Ok(item_from_record(&record, None))
+}
+
+pub async fn forget(ctx: &ServiceContext, req: MemoryRequest) -> Result<MemoryItem> {
+    let store = memory_store(ctx).await?;
+    let id = required_text(req.id.as_deref(), "id")?.to_string();
+    ensure_exists(store.as_ref(), &id).await?;
+    store
+        .forget(MemoryForgetRequest {
+            memory_id: MemoryId::new(id.clone()),
+            reason: req.reason.clone(),
+            timestamp: Timestamp(SystemClock.now_rfc3339()),
+        })
+        .await
+        .map_err(store_err)?;
+    // Forgotten memories return no body content — same visibility rule as
+    // the transport layer applies for a `forgotten` status memory anywhere
+    // else it's surfaced.
+    let mut record = store
+        .get(MemoryId::new(id))
+        .await
+        .map_err(store_err)?
+        .context("forgotten memory not found after write")?;
+    record.body.clear();
+    Ok(item_from_record(&record, None))
+}
+
+pub async fn review(ctx: &ServiceContext, req: MemoryRequest) -> Result<Vec<MemoryItem>> {
+    let store = memory_store(ctx).await?;
+    let limit = req.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT) as u32;
+    let result = store
+        .review(MemoryReviewRequest {
+            reason: req.reason.clone(),
+            memory_type: req
+                .memory_type
+                .map(|t| parse_memory_type(node_type_name(t))),
+            scope: None,
+            limit: Some(limit),
+            cursor: None,
+        })
+        .await
+        .map_err(store_err)?;
+    Ok(result
+        .memories
+        .iter()
+        .map(|record| item_from_record(record, None))
+        .collect())
+}
+
+pub async fn compact(ctx: &ServiceContext, req: MemoryRequest) -> Result<MemoryItem> {
+    let store = memory_store(ctx).await?;
+    let memory_ids = req
+        .memory_ids
+        .clone()
+        .filter(|ids| !ids.is_empty())
+        .context("compact requires memory_ids (at least 2)")?;
+    for id in &memory_ids {
+        ensure_exists(store.as_ref(), id).await?;
+    }
+    let strategy = req
+        .strategy
+        .clone()
+        .unwrap_or_else(|| "concatenate".to_string());
+    let result_type = req
+        .memory_type
+        .map(|t| parse_memory_type(node_type_name(t)))
+        .unwrap_or(axon_api::source::MemoryType::Fact);
+    let scope = if let Some(project) = req.project.clone() {
+        MemoryScope {
+            kind: "project".to_string(),
+            value: project,
+        }
+    } else if let Some(repo) = req.repo.clone() {
+        MemoryScope {
+            kind: "repo".to_string(),
+            value: repo,
+        }
+    } else if let Some(file) = req.file.clone() {
+        MemoryScope {
+            kind: "file".to_string(),
+            value: file,
+        }
+    } else {
+        MemoryScope {
+            kind: "global".to_string(),
+            value: String::new(),
+        }
+    };
+    let result = store
+        .compact(MemoryCompactRequest {
+            memory_ids: memory_ids.into_iter().map(MemoryId::new).collect(),
+            strategy,
+            result_type,
+            title: req.title.clone(),
+            scope,
+            archive_sources: req.archive_sources.unwrap_or(false),
+            instructions: None,
+            timestamp: Timestamp(SystemClock.now_rfc3339()),
+        })
+        .await
+        .map_err(store_err)?;
+    let record = store
+        .get(result.memory_id.clone())
+        .await
+        .map_err(store_err)?
+        .context("compacted memory not found after write")?;
+    Ok(item_from_record(&record, Some(result.memory_score as f64)))
 }
 
 /// Open the durable SQLite memory store against the unified jobs DB.

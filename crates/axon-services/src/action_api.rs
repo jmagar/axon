@@ -80,13 +80,20 @@ pub fn required_scope(action: &AxonRequest) -> Option<&'static str> {
             _ => Some("axon:write"),
         },
         AxonRequest::Memory(req) => match req.subaction.unwrap_or(MemorySubaction::Remember) {
-            MemorySubaction::Remember | MemorySubaction::Link | MemorySubaction::Supersede => {
-                Some("axon:write")
-            }
+            MemorySubaction::Remember
+            | MemorySubaction::Link
+            | MemorySubaction::Supersede
+            | MemorySubaction::Reinforce
+            | MemorySubaction::Contradict
+            | MemorySubaction::Pin
+            | MemorySubaction::Archive
+            | MemorySubaction::Forget
+            | MemorySubaction::Compact => Some("axon:write"),
             MemorySubaction::List
             | MemorySubaction::Search
             | MemorySubaction::Show
-            | MemorySubaction::Context => Some("axon:read"),
+            | MemorySubaction::Context
+            | MemorySubaction::Review => Some("axon:read"),
         },
         AxonRequest::Jobs(req) => match req.subaction.unwrap_or(JobsSubaction::List) {
             JobsSubaction::List

@@ -17,7 +17,6 @@ pub mod recall;
 pub mod rows;
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
 use axon_api::source::*;
@@ -35,7 +34,6 @@ use rows::{record_from_row, record_json_columns, status_to_str, type_to_str};
 pub struct SqliteMemoryStore {
     conn: Arc<Mutex<Connection>>,
     clock: Arc<dyn Clock>,
-    id_seq: AtomicU64,
 }
 
 impl SqliteMemoryStore {
@@ -56,15 +54,16 @@ impl SqliteMemoryStore {
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
             clock,
-            id_seq: AtomicU64::new(0),
         })
     }
 
+    /// Generate a fresh memory id. UUIDv4-based rather than a per-instance
+    /// counter: `axon-services` opens a new `SqliteMemoryStore` handle on
+    /// every dispatch call, so a process-local sequence resets each time and
+    /// two `remember`s in the same wall-clock second could otherwise collide
+    /// on `mem_<secs>_<seq>`.
     fn next_id(&self) -> MemoryId {
-        let seq = self.id_seq.fetch_add(1, Ordering::Relaxed);
-        // Epoch seconds + monotonic sequence keeps ids unique within a process.
-        let secs = self.clock.now_epoch_secs();
-        MemoryId::new(format!("mem_{secs}_{seq}"))
+        MemoryId::new(format!("mem_{}", uuid::Uuid::new_v4().simple()))
     }
 
     pub(crate) fn conn(&self) -> &Arc<Mutex<Connection>> {
