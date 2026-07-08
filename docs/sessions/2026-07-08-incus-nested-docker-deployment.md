@@ -9,6 +9,17 @@ pr: #383 "Incus nested-Docker deployment: qdrant mandatory, GPU passthrough vali
 beads: axon_rust-4m749 (epic), axon_rust-4m749.1 through .8
 ---
 
+> **Superseded note (added after the fact):** this log describes running axon
+> itself as a nested-Docker service (via `docker-compose.prod.yaml`) inside
+> the Incus container. That design was replaced hours later, on the same
+> day, by [PR #385](https://github.com/jmagar/axon/pull/385): axon now runs
+> as a native systemd service (`axon-native.service`) inside the container,
+> not Docker — the nested-Docker port-proxy silently reset axon's own
+> connections, which PR #383/this session's design never hit end-to-end
+> before merging. See `deploy/incus/README.md` for the current, accurate
+> architecture. This log is left as a historical record of what was actually
+> built and merged in PR #383 at the time.
+
 ## User Request
 
 Deploy axon's full stack (axon + TEI + qdrant + chrome) inside an Incus container on dookie so the whole stack ships as "one Incus profile + bootstrap script." Explore Incus OCI-native containers as an alternative to nested Docker-in-Incus, evaluate feasibility including GPU passthrough, then fully implement, review, and merge whichever architecture actually works — the user explicitly directed working the entire epic to completion ("YES YOU NEED TO LAVRA-WORK THE ENTIRE FUCKING EPIC"), not just a single bead.
