@@ -14,6 +14,21 @@ pub(super) use super::artifacts::respond_with_mode;
 
 pub(super) const MCP_TOOL_SCHEMA_URI: &str = "axon://schema/mcp-tool";
 
+tokio::task_local! {
+    /// The [`axon_services::prune::PruneAuthz`] resolved for the in-flight
+    /// `axon` tool call, when the action is `prune`.
+    ///
+    /// `call_tool`'s scope gate resolves the caller's real `AuthContext`
+    /// scopes before dispatch (see `server.rs`), then scopes this task-local
+    /// around the `tool_router` call so `handle_prune` can read the honest,
+    /// per-request authorization without threading an extra parameter through
+    /// the rmcp `#[tool]` macro (which does not expose `RequestContext` to
+    /// the top-level `axon` tool method the way it does to `ServerHandler`
+    /// trait methods). Task-locals are per-async-task, so concurrent MCP
+    /// calls on the shared `AxonMcpServer` never observe each other's value.
+    pub(super) static CURRENT_PRUNE_AUTHZ: axon_services::prune::PruneAuthz;
+}
+
 // --- Error constructors ---
 
 pub(super) fn invalid_params(msg: impl Into<String>) -> ErrorData {

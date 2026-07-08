@@ -158,10 +158,13 @@ fn write_routes(cfg: Arc<Config>, service_context: &Arc<ServiceContext>) -> Rout
 /// Routes requiring the explicit `axon:admin` scope. Broad write tokens do not
 /// satisfy this scope.
 fn admin_routes(service_context: &Arc<ServiceContext>) -> Router<ServeState> {
-    Router::new().nest(
-        "/v1/jobs",
-        handlers::jobs::unified_jobs_admin_router(Arc::clone(service_context)),
-    )
+    Router::new()
+        .nest(
+            "/v1/jobs",
+            handlers::jobs::unified_jobs_admin_router(Arc::clone(service_context)),
+        )
+        .route("/v1/prune/plan", post(handlers::admin::prune_plan))
+        .route("/v1/prune/exec", post(handlers::admin::prune_exec))
 }
 
 /// Write-scoped routes whose payloads exceed the standard REST body cap
@@ -360,6 +363,8 @@ fn is_loopback_destructive_request(method: &Method, path: &str) -> bool {
             || path == "/v1/watch"
             || path == "/v1/jobs/recover"
             || path == "/v1/jobs/cleanup"
+            || path == "/v1/prune/plan"
+            || path == "/v1/prune/exec"
             || path.starts_with("/v1/watch/")
             || path.starts_with("/v1/jobs/"))
     {
