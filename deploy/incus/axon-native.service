@@ -1,0 +1,18 @@
+[Unit]
+Description=Axon unified server (native binary, Incus-hosted)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/mnt/axon-data/.env
+Environment=AXON_HOME=/mnt/axon-data
+Environment=AXON_DATA_DIR=/mnt/axon-data
+WorkingDirectory=/mnt/axon-data
+ExecStart=/usr/local/bin/axon serve
+Restart=always
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target

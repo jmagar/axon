@@ -1,17 +1,30 @@
 #!/usr/bin/env bash
-# Idempotent bootstrap for axon's nested-Docker-in-Incus deployment.
+# Idempotent bootstrap for axon's Incus deployment.
+#
+# Architecture: HYBRID, not all-Docker. Only axon-tei, axon-chrome, and
+# (default mode) axon-qdrant run as nested-Docker containers inside the Incus
+# container. The axon binary itself runs natively via systemd
+# (axon-native.service) directly on the Incus container's own OS — no
+# container image is built or shipped for axon. This avoids the build/publish
+# overhead of a Docker image for a binary that already runs fine as a native
+# process on the same OS family as the Incus container (Debian, x86_64,
+# matching dookie's host arch — no cross-compilation needed). See
+# deploy/incus/README.md for the full rationale.
 #
 # Usage:
 #   deploy/incus/bootstrap.sh [default|external-qdrant]
 #
-# default mode:          bundled qdrant starts alongside axon/tei/chrome.
+# default mode:          bundled qdrant starts alongside tei/chrome; axon
+#                        (native) points at the bundled qdrant.
 # external-qdrant mode:  requires AXON_EXTERNAL_QDRANT_URL; bundled qdrant is
-#                        not started, axon points at the external instance.
+#                        not started, axon (native) points at the external
+#                        instance instead.
 #
 # Safe to re-run at any time (idempotent). Also the intended entry point for
 # the companion systemd unit (axon-incus-bootstrap.service) that re-runs this
 # on every host boot, since boot.autostart=true alone does not re-apply the
-# known-fragile nvidia-procfs device or re-verify GPU access.
+# known-fragile nvidia-procfs device, re-verify GPU access, or rebuild/restart
+# the native axon binary.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -89,6 +102,43 @@ if ! incus exec "$CONTAINER_NAME" -- sh -c 'command -v docker' >/dev/null 2>&1; 
 else
   log "Docker already present inside container"
 fi
+
+### 5b. Install the Rust toolchain natively inside the container (idempotent)
+### — needed to build the axon binary in place, matching the container's own
+### OS/arch (Debian x86_64, same as dookie — no cross-compilation).
+if ! incus exec "$CONTAINER_NAME" -- sh -c 'command -v /root/.cargo/bin/cargo' >/dev/null 2>&1; then
+  log "Rust toolchain not found inside container, installing via rustup..."
+  incus exec "$CONTAINER_NAME" -- sh -c \
+    'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable'
+else
+  log "Rust toolchain already present inside container"
+fi
+
+### 5c. Build + install the axon binary natively — skip the rebuild if a
+### binary already installed reports the same version as this checkout's
+### Cargo.toml (keeps re-runs fast; a version bump or explicit force forces
+### a rebuild). Source is shipped as a plain archive (git archive, not a full
+### clone) so the container never needs its own git credentials.
+axon_repo_version="$(awk -F'"' '/^version = /{print $2; exit}' "$REPO_ROOT/Cargo.toml")"
+installed_version="$(incus exec "$CONTAINER_NAME" -- sh -c '/usr/local/bin/axon --version 2>/dev/null' | awk '{print $2}' || true)"
+if [ "$installed_version" = "$axon_repo_version" ] && [ "${AXON_FORCE_REBUILD:-0}" != "1" ]; then
+  log "axon binary already at v${installed_version}, skipping native build (set AXON_FORCE_REBUILD=1 to force)"
+else
+  log "building axon v${axon_repo_version} natively inside container (was: ${installed_version:-none}) — this can take several minutes"
+  incus exec "$CONTAINER_NAME" -- rm -rf /root/axon-src
+  incus exec "$CONTAINER_NAME" -- mkdir -p /root/axon-src
+  git -C "$REPO_ROOT" archive HEAD | incus exec "$CONTAINER_NAME" -- tar -x -C /root/axon-src
+  incus exec "$CONTAINER_NAME" --cwd /root/axon-src --env "PATH=/root/.cargo/bin:/usr/bin:/bin" \
+    -- cargo build --release --bin axon
+  incus exec "$CONTAINER_NAME" -- install -m 0755 /root/axon-src/target/release/axon /usr/local/bin/axon
+fi
+
+### 5d. Install + enable the axon-native systemd unit (idempotent — re-copying
+### and re-enabling an already-enabled unit is a no-op).
+incus file push "$REPO_ROOT/deploy/incus/axon-native.service" \
+  "$CONTAINER_NAME/etc/systemd/system/axon-native.service"
+incus exec "$CONTAINER_NAME" -- systemctl daemon-reload
+incus exec "$CONTAINER_NAME" -- systemctl enable axon-native.service >/dev/null 2>&1 || true
 
 ### 6. Re-apply the nvidia-procfs device. REQUIRED ON EVERY RUN — confirmed
 ### (bead axon_rust-4m749.2) this does not reliably survive a container
@@ -212,47 +262,63 @@ incus file push --mode 0600 "$env_file_on_host" "$CONTAINER_NAME/mnt/axon-data/.
 # must be explicit, not left to the compose file's own fallback.)
 #
 # Passed via `incus exec --env`/`--cwd` flags, not interpolated into an
-# `sh -c` string — these values (AXON_INCUS_IMAGE, AXON_EXTERNAL_QDRANT_URL)
-# come from a trusted operator-authored env file today, but string
-# interpolation into a root-executed shell command is a shape worth avoiding
-# even when the current threat model doesn't require it: a stray single
-# quote in either value would otherwise splice arbitrary content into the
-# command.
-axon_incus_image="${AXON_INCUS_IMAGE:-ghcr.io/jmagar/axon:latest}"
+# `sh -c` string — this value (AXON_EXTERNAL_QDRANT_URL) comes from a
+# trusted operator-authored env file today, but string interpolation into a
+# root-executed shell command is a shape worth avoiding even when the current
+# threat model doesn't require it: a stray single quote would otherwise
+# splice arbitrary content into the command.
 
+### Only the sidecar services run via docker compose here — axon itself runs
+### natively (step 5c/5d above), so it is deliberately excluded from the `up
+### -d` service list even though docker-compose.prod.yaml still defines an
+### `axon` service (that definition is for bare-host/non-Incus deployments).
+### AXON_HOME is still needed here: axon-tei and axon-qdrant's volume mounts
+### resolve off it. GEMINI_HOME/AXON_IMAGE are not — those only apply to the
+### now-excluded `axon` service definition.
 if [ "$MODE" = "default" ]; then
   log "=== bundled qdrant IS starting locally (default mode) ==="
   incus exec "$CONTAINER_NAME" \
     --cwd "$DEPLOY_PATH" \
     --env AXON_HOME=/mnt/axon-data \
-    --env GEMINI_HOME=/mnt/axon-gemini \
-    --env "AXON_IMAGE=${axon_incus_image}" \
-    -- docker compose --env-file .env -f docker-compose.prod.yaml up -d
+    -- docker compose --env-file .env -f docker-compose.prod.yaml up -d axon-tei axon-chrome axon-qdrant
 else
   log "=== bundled qdrant is NOT starting, using external QDRANT_URL=${AXON_EXTERNAL_QDRANT_URL} ==="
   incus exec "$CONTAINER_NAME" \
     --cwd "$DEPLOY_PATH" \
     --env AXON_HOME=/mnt/axon-data \
-    --env GEMINI_HOME=/mnt/axon-gemini \
-    --env "AXON_IMAGE=${axon_incus_image}" \
     --env "AXON_EXTERNAL_QDRANT_URL=${AXON_EXTERNAL_QDRANT_URL}" \
-    -- docker compose --env-file .env -f docker-compose.prod.yaml -f docker-compose.external-qdrant.yaml up -d
+    -- docker compose --env-file .env -f docker-compose.prod.yaml -f docker-compose.external-qdrant.yaml up -d axon-tei axon-chrome
 fi
+
+### Restart the native axon service now that its .env/config is in place and
+### its dependent sidecars are up — `systemctl restart` is safe even on the
+### very first run (a not-yet-started unit just starts).
+log "restarting axon-native.service"
+incus exec "$CONTAINER_NAME" -- systemctl restart axon-native.service
 
 ### 13. Health-check polling — EXPLICIT bounded timeout/retry (36 * 10s =
 ### 360s max), sized against axon's own 180s start_period plus margin. No
 ### open-ended "wait until ready" loop.
-### Assumes every service in docker-compose.prod.yaml defines a healthcheck
-### (true today for axon/axon-tei/axon-chrome/axon-qdrant) — a service added
-### later without one reports an empty .Health, which correctly fails this
-### check rather than being silently ignored, but will spin the full 360s
-### every time until it gets a healthcheck of its own.
-log "polling for all services healthy (bounded: up to 360s)"
+### Checks two independent things: (a) the Docker sidecars started in step 12
+### (tei/chrome, +qdrant in default mode) report healthy, and (b) the native
+### axon-native.service is active AND its own /healthz responds — a Docker
+### sidecar going healthy says nothing about the native axon process, and
+### vice versa.
+log "polling for sidecars + native axon healthy (bounded: up to 360s)"
 healthy=0
 for _ in $(seq 1 36); do
   statuses="$(incus exec "$CONTAINER_NAME" -- sh -c \
     "cd $DEPLOY_PATH && docker compose -f docker-compose.prod.yaml ps --format '{{.Service}}:{{.Health}}'" 2>/dev/null || true)"
+  sidecars_ok=0
   if [ -n "$statuses" ] && ! printf '%s\n' "$statuses" | grep -qv "healthy$"; then
+    sidecars_ok=1
+  fi
+  axon_ok=0
+  if incus exec "$CONTAINER_NAME" -- systemctl is-active --quiet axon-native.service \
+      && incus exec "$CONTAINER_NAME" -- curl -fsS --max-time 4 http://127.0.0.1:8001/healthz >/dev/null 2>&1; then
+    axon_ok=1
+  fi
+  if [ "$sidecars_ok" = "1" ] && [ "$axon_ok" = "1" ]; then
     healthy=1
     break
   fi
@@ -266,8 +332,25 @@ if [ "$healthy" != "1" ]; then
   # most common real-world failure mode (slow model load, transient GPU
   # flake) exactly where the fail-closed design matters most. Services that
   # did start are left running, not torn down — inspect 'docker compose ps'
-  # inside the container to see what's actually up.
-  fatal "not all services reported healthy within the bounded window (360s) — inspect 'docker compose ps' inside $CONTAINER_NAME"
+  # and 'systemctl status axon-native' inside the container to see what's
+  # actually up.
+  fatal "not all services reported healthy within the bounded window (360s) — inspect 'docker compose ps' and 'systemctl status axon-native' inside $CONTAINER_NAME"
+fi
+
+### 13b. Ensure the axon HTTP proxy device exists (host address -> the native
+### axon-native.service's 127.0.0.1:8001 inside the container). Not part of
+### the shared profile.yaml since the host-side listen address is
+### deployment-specific (e.g. a Tailscale IP:port). Idempotent — only added
+### if AXON_HTTP_PUBLISH_LISTEN is set AND the device doesn't already exist;
+### an existing device (created manually or by a prior run) is left as-is.
+if [ -n "${AXON_HTTP_PUBLISH_LISTEN:-}" ]; then
+  if ! incus config device show "$CONTAINER_NAME" 2>/dev/null | grep -q '^mcp-publish:'; then
+    log "adding mcp-publish proxy device (listen=${AXON_HTTP_PUBLISH_LISTEN} -> 127.0.0.1:8001)"
+    incus config device add "$CONTAINER_NAME" mcp-publish proxy \
+      "listen=tcp:${AXON_HTTP_PUBLISH_LISTEN}" "connect=tcp:127.0.0.1:8001"
+  fi
+else
+  log "AXON_HTTP_PUBLISH_LISTEN not set — skipping proxy device management (set it, e.g. 100.88.16.79:40090, for bootstrap.sh to manage the host-facing port idempotently)"
 fi
 
 ### 14. Enable Incus-level autostart. The companion systemd unit
