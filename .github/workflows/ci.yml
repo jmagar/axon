@@ -750,6 +750,12 @@ jobs:
     name: version-sync
     runs-on: ubuntu-latest
     needs: [changes]
+    # TEMP(refactor): disable version-bump enforcement while pipeline-unification
+    # lands. Release-please is the only supported version-bump path now
+    # (see CLAUDE.md "Release Pipeline") -- it bumps versions in its own
+    # generated release PR after CI succeeds on main, not per feature PR, so
+    # this per-PR gate is redundant with (and fights) that flow.
+    if: ${{ false && (needs.changes.outputs.rust == 'true' || needs.changes.outputs.android == 'true' || needs.changes.outputs.palette == 'true') }}
     steps:
       - uses: actions/checkout@v5
         with:
