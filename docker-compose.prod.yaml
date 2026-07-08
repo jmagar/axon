@@ -7,8 +7,9 @@ name: axon
 # reasons, not dookie), apply docker-compose.external-qdrant.yaml on top:
 #   docker compose --env-file ~/.axon/.env \
 #     -f docker-compose.prod.yaml -f docker-compose.external-qdrant.yaml up -d
-# That override skips starting the bundled axon-qdrant container and points
-# AXON_QDRANT_URL at the external instance instead — see that file's comments.
+# That override skips starting the bundled axon-qdrant container and sets
+# QDRANT_URL directly from AXON_EXTERNAL_QDRANT_URL instead (overriding this
+# file's own AXON_QDRANT_URL-based default) — see that file's comments.
 # ~/.axon is the canonical host appdata root. Override AXON_HOME only when
 # relocating the full Axon appdata tree to another absolute path.
 

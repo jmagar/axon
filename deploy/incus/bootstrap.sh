@@ -107,7 +107,9 @@ incus config device add "$CONTAINER_NAME" nvidia-procfs disk \
 ### conflates "GPU/nvidia-procfs isn't ready yet" with "registry is slow,"
 ### and 3s between retries isn't enough time for a fresh pull anyway.
 GPU_VERIFY_IMAGE="nvidia/cuda:12.6.0-base-ubuntu24.04"
-incus exec "$CONTAINER_NAME" -- docker pull "$GPU_VERIFY_IMAGE" >/dev/null 2>&1 || true
+if ! incus exec "$CONTAINER_NAME" -- docker pull "$GPU_VERIFY_IMAGE" >/dev/null 2>&1; then
+  log "warn: could not pre-pull ${GPU_VERIFY_IMAGE} (registry/network issue?) — if GPU verification below fails, check network/registry access first, not just the GPU/driver"
+fi
 log "verifying nested-Docker GPU access (fail-closed if this doesn't work)"
 gpu_ok=0
 for _ in 1 2 3; do
@@ -142,11 +144,20 @@ incus file push -r "$REPO_ROOT/config" "$CONTAINER_NAME$DEPLOY_PATH/"
 ### correctly) instead of a one-off grep, in a subshell so it doesn't leak
 ### the whole env file into this script's environment.
 # shellcheck source=/dev/null
+docker_network_load_err="$(mktemp)"
 docker_network_name="$(
   source "$REPO_ROOT/scripts/lib/axon-env.sh"
-  AXON_ENV_FILE="$env_file_on_host" load_axon_env_file "$REPO_ROOT" 2>/dev/null || true
+  AXON_ENV_FILE="$env_file_on_host" load_axon_env_file "$REPO_ROOT" 2>"$docker_network_load_err"
   printf '%s' "${DOCKER_NETWORK:-axon}"
 )"
+# This deployment specifically relies on a non-default DOCKER_NETWORK value
+# (dookie's ~/.axon/.env sets jakenet) — a silently-swallowed parse failure
+# here would fall through to the "axon" default and misroute the whole stack
+# onto the wrong bridge with no visible error. Surface it instead.
+if [ -s "$docker_network_load_err" ]; then
+  log "warn: error loading ${env_file_on_host} while resolving DOCKER_NETWORK: $(cat "$docker_network_load_err")"
+fi
+rm -f "$docker_network_load_err"
 log "ensuring Docker network '$docker_network_name' exists"
 incus exec "$CONTAINER_NAME" -- docker network inspect "$docker_network_name" >/dev/null 2>&1 \
   || incus exec "$CONTAINER_NAME" -- docker network create "$docker_network_name" >/dev/null

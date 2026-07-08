@@ -376,9 +376,14 @@ qdrant-down:
     docker compose --env-file "${AXON_ENV_FILE:-$HOME/.axon/.env}" -f docker-compose.yaml --profile local-qdrant rm -f axon-qdrant
 
 # Production stack (docker-compose.prod.yaml), bundled qdrant mode — the default.
-# Every invocation guarantees --env-file so TEI's env-driven config (e.g.
-# TEI_MAX_CONCURRENT_REQUESTS) can never silently fall back to its built-in
-# default the way it would with a bare `docker compose up`.
+# Every invocation guarantees --env-file so .env's values actually reach
+# Compose interpolation (a bare `docker compose up` from the wrong cwd can
+# miss the file entirely). Note this guarantees .env is READ, not that no
+# default-drift is possible: docker-compose.prod.yaml's own
+# TEI_MAX_CONCURRENT_REQUESTS:-512 fallback is a separate value from TEI's own
+# built-in default — this repo has hit that exact two-layer drift before
+# (32 vs 256 permits) and --env-file alone doesn't prevent a repeat if the
+# YAML's own fallback and .env's intended value ever diverge again.
 prod-up:
     #!/usr/bin/env bash
     set -euo pipefail
