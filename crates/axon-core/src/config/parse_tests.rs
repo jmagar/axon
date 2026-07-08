@@ -421,6 +421,10 @@ fn parse_domains_domain_flag_into_config() {
 
 #[test]
 fn parse_retrieve_max_points_into_config() {
+    // `retrieve` is not in into_config's early-return command list, so it
+    // reads AXON_COLLECTION/AXON_SQLITE_PATH/AXON_OUTPUT_DIR/AXON_CONFIG_PATH
+    // -- hold ENV_LOCK to avoid racing other tests that mutate that env.
+    let _guard = ENV_LOCK.lock().unwrap();
     let cli = super::Cli::parse_from([
         "axon",
         "--tei-url",
@@ -1002,6 +1006,10 @@ fn parse_setup_init_preflight_smoke_and_stack_modes() {
 
 #[test]
 fn parse_sessions_watch_provider_and_project_filters_are_typed() {
+    // `sessions` is not in into_config's early-return command list, so it
+    // reads AXON_COLLECTION/AXON_SQLITE_PATH/AXON_OUTPUT_DIR/AXON_CONFIG_PATH
+    // -- hold ENV_LOCK to avoid racing other tests that mutate that env.
+    let _guard = ENV_LOCK.lock().unwrap();
     let cli = super::Cli::parse_from([
         "axon",
         "--tei-url",
