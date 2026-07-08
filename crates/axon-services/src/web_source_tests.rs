@@ -1,9 +1,10 @@
 use axon_api::source::*;
 use axon_embedding::fake::FakeEmbeddingProvider;
 use axon_ledger::store::FakeLedgerStore;
-use axon_vectors::payload::generation_payload_i64;
 use axon_vectors::store::FakeVectorStore;
 use serde_json::json;
+
+use crate::test_support::committed_generation_payload;
 
 use super::{WebSourceIndexInput, index_web_source};
 
@@ -67,8 +68,8 @@ async fn web_source_refresh_writes_vectors_then_commits_generation() {
             && point.payload["web_domain"].as_str() == Some("example.com")
             && point.payload["visibility"].as_str() == Some("internal")
             && point.payload["redaction_status"].as_str() == Some("clean")
-            && point.payload["committed_generation"].as_i64()
-                == generation_payload_i64(&output.generation, "committed_generation").ok()
+            && point.payload["committed_generation"]
+                == committed_generation_payload(&output.generation)
             && point.payload["document_status"].as_str() == Some("published")
     }));
 }
@@ -222,8 +223,7 @@ async fn mixed_web_refresh_carries_unchanged_vectors_into_new_generation() {
         })
         .collect::<Vec<_>>();
     assert!(api_points.iter().any(|point| {
-        point.payload["committed_generation"].as_i64()
-            == generation_payload_i64(&second.generation, "committed_generation").ok()
+        point.payload["committed_generation"] == committed_generation_payload(&second.generation)
     }));
 }
 

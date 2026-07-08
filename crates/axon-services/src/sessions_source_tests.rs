@@ -3,9 +3,10 @@ use axon_embedding::fake::FakeEmbeddingProvider;
 use axon_embedding::reservation::{ProviderReservationConfig, ProviderReservationManager};
 use axon_jobs::boundary::{FakeJobWatchStore, JobStore};
 use axon_ledger::store::{FakeLedgerStore, LedgerStore};
-use axon_vectors::payload::generation_payload_i64;
 use axon_vectors::store::FakeVectorStore;
 use std::sync::Arc;
+
+use crate::test_support::committed_generation_payload;
 
 use super::{SessionsSourceIndexInput, index_sessions_source, index_sessions_source_with_job};
 
@@ -103,8 +104,8 @@ async fn sessions_refresh_writes_vectors_then_commits_source_generation() {
             .points("axon-test")
             .await
             .iter()
-            .all(|point| point.payload["committed_generation"].as_i64()
-                == generation_payload_i64(&output.generation, "committed_generation").ok())
+            .all(|point| point.payload["committed_generation"]
+                == committed_generation_payload(&output.generation))
     );
     assert!(
         vectors

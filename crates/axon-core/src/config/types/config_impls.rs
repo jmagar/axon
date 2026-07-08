@@ -82,6 +82,7 @@ impl Default for Config {
             prune_target: None,
             prune_generation: None,
             prune_confirm: false,
+            reset_plan_id: None,
             color_choice: super::enums::ColorChoice::Auto,
             watch_mode: false,
             performance_profile: PerformanceProfile::HighStable,

@@ -2,8 +2,9 @@ use axon_api::source::*;
 use axon_embedding::fake::{FakeEmbeddingMode, FakeEmbeddingProvider};
 use axon_jobs::boundary::{FakeJobWatchStore, JobStore};
 use axon_ledger::store::FakeLedgerStore;
-use axon_vectors::payload::generation_payload_i64;
 use axon_vectors::store::{FakeVectorMode, FakeVectorStore};
+
+use crate::test_support::{committed_generation_payload, is_uncommitted_generation};
 
 use super::{
     LocalSourceIndexInput, LocalSourceSelectionPolicy, index_local_source,
@@ -347,15 +348,12 @@ async fn publish_generation_failure_reports_rollback_delete_failure() {
     let source_id = super::local_source_id(&tokio::fs::canonicalize(&path).await.unwrap());
     assert_eq!(ledger.committed_generation(&source_id).await, None);
     assert_eq!(ledger.generation_count().await, 1);
-    // `mark_generation_committed` ran successfully (see the calls list
-    // above); only the rollback `delete` failed. Points are left committed
-    // (an integer generation), not rolled back to null.
     assert!(
         vectors
             .points("axon-test")
             .await
             .iter()
-            .all(|point| point.payload["committed_generation"].as_i64().is_some())
+            .all(|point| !is_uncommitted_generation(&point.payload["committed_generation"]))
     );
 }
 
@@ -420,8 +418,7 @@ async fn partial_unchanged_vector_copy_failure_keeps_previous_generation_visible
         .collect::<Vec<_>>();
     assert!(!keep_points.is_empty());
     assert!(keep_points.iter().all(|point| {
-        point.payload["committed_generation"].as_i64()
-            == generation_payload_i64(&first.generation, "committed_generation").ok()
+        point.payload["committed_generation"] == committed_generation_payload(&first.generation)
     }));
 }
 
@@ -447,15 +444,11 @@ async fn vector_commit_marker_failure_leaves_vectors_uncommitted() {
     let source_id = super::local_source_id(&tokio::fs::canonicalize(&path).await.unwrap());
     assert_eq!(ledger.committed_generation(&source_id).await, None);
     assert_eq!(ledger.generation_count().await, 1);
-    // The shared point builder (`axon_vectors::point`) stamps every
-    // not-yet-committed point's `committed_generation` as JSON null, not a
-    // string sentinel — it's only ever an integer generation number (once
-    // committed) or null (see the vector-payload schema contract).
     assert!(
         vectors
             .points("axon-test")
             .await
             .iter()
-            .all(|point| point.payload["committed_generation"].is_null())
+            .all(|point| is_uncommitted_generation(&point.payload["committed_generation"]))
     );
 }

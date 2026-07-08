@@ -256,6 +256,9 @@ pub struct Config {
     /// `prune exec --confirm`.
     pub prune_confirm: bool,
 
+    /// Optional reusable plan id for destructive reset execution.
+    pub reset_plan_id: Option<String>,
+
     /// Terminal color override. Flag: `--color=auto|always|never`.
     pub color_choice: super::enums::ColorChoice,
 

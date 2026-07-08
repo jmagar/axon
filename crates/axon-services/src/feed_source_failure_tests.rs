@@ -4,6 +4,8 @@ use axon_jobs::boundary::{FakeJobWatchStore, JobStore};
 use axon_ledger::store::FakeLedgerStore;
 use axon_vectors::store::{FakeVectorMode, FakeVectorStore};
 
+use crate::test_support::is_uncommitted_generation;
+
 use super::{FeedSourceIndexInput, index_feed_source, index_feed_source_with_job};
 
 const RSS_TWO_ITEMS: &str = r#"<?xml version="1.0"?>
@@ -267,15 +269,12 @@ async fn publish_generation_failure_reports_rollback_delete_failure() {
     let source_id = super::feed_source_id(&tokio::fs::canonicalize(&path).await.unwrap());
     assert_eq!(ledger.committed_generation(&source_id).await, None);
     assert_eq!(ledger.generation_count().await, 1);
-    // `mark_generation_committed` ran successfully (see the calls list
-    // above); only the rollback `delete` failed. Points are left committed
-    // (an integer generation), not rolled back to null.
     assert!(
         vectors
             .points("axon-test")
             .await
             .iter()
-            .all(|point| point.payload["committed_generation"].as_i64().is_some())
+            .all(|point| !is_uncommitted_generation(&point.payload["committed_generation"]))
     );
 }
 
@@ -298,15 +297,11 @@ async fn vector_commit_marker_failure_leaves_vectors_uncommitted() {
     let source_id = super::feed_source_id(&tokio::fs::canonicalize(&path).await.unwrap());
     assert_eq!(ledger.committed_generation(&source_id).await, None);
     assert_eq!(ledger.generation_count().await, 1);
-    // The shared point builder (`axon_vectors::point`) stamps every
-    // not-yet-committed point's `committed_generation` as JSON null, not a
-    // string sentinel — it's only ever an integer generation number (once
-    // committed) or null (see the vector-payload schema contract).
     assert!(
         vectors
             .points("axon-test")
             .await
             .iter()
-            .all(|point| point.payload["committed_generation"].is_null())
+            .all(|point| is_uncommitted_generation(&point.payload["committed_generation"]))
     );
 }
