@@ -131,6 +131,12 @@ pub fn required_scope(action: &AxonRequest) -> Option<&'static str> {
         AxonRequest::Dedupe(_) | AxonRequest::Migrate(_) | AxonRequest::Purge(_) => {
             Some("axon:write")
         }
+        // Prune is admin-gated per the pruning contract: destructive prune
+        // requires axon:admin, not just axon:write. The action-level scope
+        // check here is the coarse "can call this action at all" gate;
+        // axon_services::prune::prune's own PruneAuthz derivation is the
+        // fine-grained "is this specific execution destructive" gate.
+        AxonRequest::Prune(_) => Some("axon:admin"),
         // ElicitDemo is an MCP elicitation primitive. Explicit arm prevents it silently
         // absorbing a future wildcard default change.
         AxonRequest::ElicitDemo(_) => Some("axon:write"),
@@ -202,6 +208,7 @@ fn action_name(action: &AxonRequest) -> &'static str {
         AxonRequest::Diff(_) => "diff",
         AxonRequest::Dedupe(_) => "dedupe",
         AxonRequest::Purge(_) => "purge",
+        AxonRequest::Prune(_) => "prune",
         AxonRequest::Migrate(_) => "migrate",
         AxonRequest::Watch(_) => "watch",
         AxonRequest::Setup(_) => "setup",
