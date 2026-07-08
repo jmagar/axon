@@ -102,11 +102,17 @@ incus config device add "$CONTAINER_NAME" nvidia-procfs disk \
 
 ### 7. Fail-closed GPU verification BEFORE anything GPU-dependent starts.
 ### Do not start TEI in a broken/CPU-fallback state — refuse and exit instead.
+### Pull the verification image once, outside the retry loop — otherwise a
+### cold image cache turns each retry into a registry pull-and-run, which
+### conflates "GPU/nvidia-procfs isn't ready yet" with "registry is slow,"
+### and 3s between retries isn't enough time for a fresh pull anyway.
+GPU_VERIFY_IMAGE="nvidia/cuda:12.6.0-base-ubuntu24.04"
+incus exec "$CONTAINER_NAME" -- docker pull "$GPU_VERIFY_IMAGE" >/dev/null 2>&1 || true
 log "verifying nested-Docker GPU access (fail-closed if this doesn't work)"
 gpu_ok=0
 for _ in 1 2 3; do
   if incus exec "$CONTAINER_NAME" -- docker run --rm --gpus all \
-       nvidia/cuda:12.6.0-base-ubuntu24.04 nvidia-smi >/dev/null 2>&1; then
+       "$GPU_VERIFY_IMAGE" nvidia-smi >/dev/null 2>&1; then
     gpu_ok=1
     break
   fi
@@ -131,26 +137,32 @@ incus file push -r "$REPO_ROOT/config" "$CONTAINER_NAME$DEPLOY_PATH/"
 ### `external: true`). The real network name comes from DOCKER_NETWORK in the
 ### env file (defaults to "axon") — must match compose's own resolution
 ### exactly, not be hardcoded, since a deployment can override it (e.g.
-### dookie's existing ~/.axon/.env sets DOCKER_NETWORK=jakenet).
-docker_network_name="$(grep -E '^DOCKER_NETWORK=' "$env_file_on_host" 2>/dev/null | tail -1 | cut -d= -f2- || true)"
-docker_network_name="${docker_network_name:-axon}"
+### dookie's existing ~/.axon/.env sets DOCKER_NETWORK=jakenet). Reuse the
+### repo's own env-file parser (handles quoting/comments/export prefix
+### correctly) instead of a one-off grep, in a subshell so it doesn't leak
+### the whole env file into this script's environment.
+# shellcheck source=/dev/null
+docker_network_name="$(
+  source "$REPO_ROOT/scripts/lib/axon-env.sh"
+  AXON_ENV_FILE="$env_file_on_host" load_axon_env_file "$REPO_ROOT" 2>/dev/null || true
+  printf '%s' "${DOCKER_NETWORK:-axon}"
+)"
 log "ensuring Docker network '$docker_network_name' exists"
 incus exec "$CONTAINER_NAME" -- docker network inspect "$docker_network_name" >/dev/null 2>&1 \
   || incus exec "$CONTAINER_NAME" -- docker network create "$docker_network_name" >/dev/null
 
-### 10. Config-integrity check. A single combined checksum over the deploy
-### artifacts, recorded as "last known good" after every successful run.
-### Detects drift/corruption between runs; does not gate startup on first
-### run (nothing to compare against yet).
-checksum_file="$DEPLOY_PATH/.last-known-good.sha256"
-current_checksum="$(incus exec "$CONTAINER_NAME" -- sh -c \
-  "sha256sum $DEPLOY_PATH/docker-compose.prod.yaml $DEPLOY_PATH/docker-compose.external-qdrant.yaml | sha256sum" \
-  | awk '{print $1}')"
-stored_checksum="$(incus exec "$CONTAINER_NAME" -- cat "$checksum_file" 2>/dev/null || true)"
-if [ -n "$stored_checksum" ] && [ "$stored_checksum" != "$current_checksum" ]; then
-  log "deploy artifacts changed since the last successful bootstrap (expected after an intentional edit) — recording new checksum"
-fi
-incus exec "$CONTAINER_NAME" -- sh -c "printf '%s' '$current_checksum' > $checksum_file"
+### 10. [removed] A prior version of this step computed a checksum of the
+### files this same script had just pushed in step 8 and compared it against
+### the last run's checksum — which can never differ, since step 8
+### unconditionally overwrites the container's copy with the host's current
+### copy on every run. That made it a no-op that logged a reassuring message
+### without ever being able to detect anything, which is worse than no check
+### at all (a future reader could mistake it for real drift detection). The
+### memory-headroom check in step 11 is this script's actual fail-closed
+### gate; if genuine tamper-evidence for the deployed config is needed later,
+### it needs to compare a HOST-side hash (computed before step 8's push, from
+### a value stored outside this script's own write path) — not container-side
+### state this script itself just wrote.
 
 ### 11. Memory-headroom check before starting bundled qdrant. This is the
 ### mandatory gate — dookie has a real, documented qdrant OOM-crashloop
@@ -165,14 +177,18 @@ if [ "$MODE" = "default" ]; then
 fi
 
 ### 12. Push the env-file and start the stack — --env-file is ALWAYS explicit,
-### no reliance on Compose's implicit .env-in-cwd behavior.
-incus file push "$env_file_on_host" "$CONTAINER_NAME$DEPLOY_PATH/.env"
-incus exec "$CONTAINER_NAME" -- chmod 600 "$DEPLOY_PATH/.env"
+### no reliance on Compose's implicit .env-in-cwd behavior. Push with
+### --mode 0600 directly (not push-then-chmod as a separate step) — the
+### latter leaves the secrets file at incus file push's default mode for the
+### window between the two commands, readable by anything else in the same
+### container in the meantime.
+incus file push --mode 0600 "$env_file_on_host" "$CONTAINER_NAME$DEPLOY_PATH/.env"
 # The axon service's own `env_file:` directive (compose, not the CLI flag
 # above) reads from ${AXON_HOME}/.env — which resolves to /mnt/axon-data/.env
-# once AXON_HOME is overridden below. Keep that copy in sync too.
-incus file push "$env_file_on_host" "$CONTAINER_NAME/mnt/axon-data/.env"
-incus exec "$CONTAINER_NAME" -- chmod 600 /mnt/axon-data/.env
+# once AXON_HOME is overridden below. Keep that copy in sync too (same
+# secrets file, two paths compose needs it at — see README for why the
+# split exists).
+incus file push --mode 0600 "$env_file_on_host" "$CONTAINER_NAME/mnt/axon-data/.env"
 
 # The shared ~/.axon/.env carries host-native paths meant for bare-host/
 # local-dev use (e.g. AXON_HOME=/home/jmagar/.axon, GEMINI_HOME resolving off
@@ -183,22 +199,43 @@ incus exec "$CONTAINER_NAME" -- chmod 600 /mnt/axon-data/.env
 # (Also: `incus exec` runs as root by default, so an unset $HOME-relative
 # default would resolve against /root, not /home/axon — another reason these
 # must be explicit, not left to the compose file's own fallback.)
+#
+# Passed via `incus exec --env`/`--cwd` flags, not interpolated into an
+# `sh -c` string — these values (AXON_INCUS_IMAGE, AXON_EXTERNAL_QDRANT_URL)
+# come from a trusted operator-authored env file today, but string
+# interpolation into a root-executed shell command is a shape worth avoiding
+# even when the current threat model doesn't require it: a stray single
+# quote in either value would otherwise splice arbitrary content into the
+# command.
 axon_incus_image="${AXON_INCUS_IMAGE:-ghcr.io/jmagar/axon:latest}"
-incus_env_overrides="AXON_HOME=/mnt/axon-data GEMINI_HOME=/mnt/axon-gemini AXON_IMAGE='${axon_incus_image}'"
 
 if [ "$MODE" = "default" ]; then
   log "=== bundled qdrant IS starting locally (default mode) ==="
-  incus exec "$CONTAINER_NAME" -- sh -c \
-    "cd $DEPLOY_PATH && ${incus_env_overrides} docker compose --env-file .env -f docker-compose.prod.yaml up -d"
+  incus exec "$CONTAINER_NAME" \
+    --cwd "$DEPLOY_PATH" \
+    --env AXON_HOME=/mnt/axon-data \
+    --env GEMINI_HOME=/mnt/axon-gemini \
+    --env "AXON_IMAGE=${axon_incus_image}" \
+    -- docker compose --env-file .env -f docker-compose.prod.yaml up -d
 else
   log "=== bundled qdrant is NOT starting, using external QDRANT_URL=${AXON_EXTERNAL_QDRANT_URL} ==="
-  incus exec "$CONTAINER_NAME" -- sh -c \
-    "cd $DEPLOY_PATH && ${incus_env_overrides} AXON_EXTERNAL_QDRANT_URL='${AXON_EXTERNAL_QDRANT_URL}' docker compose --env-file .env -f docker-compose.prod.yaml -f docker-compose.external-qdrant.yaml up -d"
+  incus exec "$CONTAINER_NAME" \
+    --cwd "$DEPLOY_PATH" \
+    --env AXON_HOME=/mnt/axon-data \
+    --env GEMINI_HOME=/mnt/axon-gemini \
+    --env "AXON_IMAGE=${axon_incus_image}" \
+    --env "AXON_EXTERNAL_QDRANT_URL=${AXON_EXTERNAL_QDRANT_URL}" \
+    -- docker compose --env-file .env -f docker-compose.prod.yaml -f docker-compose.external-qdrant.yaml up -d
 fi
 
 ### 13. Health-check polling — EXPLICIT bounded timeout/retry (36 * 10s =
 ### 360s max), sized against axon's own 180s start_period plus margin. No
 ### open-ended "wait until ready" loop.
+### Assumes every service in docker-compose.prod.yaml defines a healthcheck
+### (true today for axon/axon-tei/axon-chrome/axon-qdrant) — a service added
+### later without one reports an empty .Health, which correctly fails this
+### check rather than being silently ignored, but will spin the full 360s
+### every time until it gets a healthcheck of its own.
 log "polling for all services healthy (bounded: up to 360s)"
 healthy=0
 for _ in $(seq 1 36); do
@@ -211,7 +248,15 @@ for _ in $(seq 1 36); do
   sleep 10
 done
 if [ "$healthy" != "1" ]; then
-  log "WARNING: not all services reported healthy within the bounded window. Partial-failure behavior: services that DID start remain running, nothing is torn down automatically — inspect 'docker compose ps' inside the container before relying on this deployment."
+  # Fail closed here, not just warn — this is the one signal the systemd
+  # unit's Restart=no is designed to surface (a failed unit after boot means
+  # "check systemctl status", per axon-incus-bootstrap.service). Falling
+  # through to "bootstrap complete" with exit 0 would silently swallow the
+  # most common real-world failure mode (slow model load, transient GPU
+  # flake) exactly where the fail-closed design matters most. Services that
+  # did start are left running, not torn down — inspect 'docker compose ps'
+  # inside the container to see what's actually up.
+  fatal "not all services reported healthy within the bounded window (360s) — inspect 'docker compose ps' inside $CONTAINER_NAME"
 fi
 
 ### 14. Enable Incus-level autostart. The companion systemd unit
