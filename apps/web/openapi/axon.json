@@ -2925,6 +2925,166 @@
         ]
       }
     },
+    "/v1/prune/exec": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "prune_exec",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PruneExecRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Prune execution result (receipt of what was actually deleted)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PruneResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid prune request, or missing confirm=true",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid authentication",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks axon:admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream vector service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:admin"
+            ]
+          }
+        ]
+      }
+    },
+    "/v1/prune/plan": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "prune_plan",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrunePlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Dry-run prune plan (never mutates state)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrunePlan"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid prune request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid authentication",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated token lacks Axon access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream vector service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "oauth2": [
+              "axon:admin"
+            ]
+          }
+        ]
+      }
+    },
     "/v1/purge": {
       "post": {
         "tags": [
@@ -4715,6 +4875,9 @@
       "ChunkId": {
         "type": "string"
       },
+      "CleanupDebtId": {
+        "type": "string"
+      },
       "ColorUsage": {
         "type": "string",
         "enum": [
@@ -5323,6 +5486,12 @@
           }
         },
         "additionalProperties": false
+      },
+      "GraphEdgeId": {
+        "type": "string"
+      },
+      "GraphNodeId": {
+        "type": "string"
       },
       "GraphWriteSummary": {
         "type": "object",
@@ -6253,6 +6422,9 @@
           "blocked"
         ]
       },
+      "MemoryId": {
+        "type": "string"
+      },
       "MetadataChange": {
         "type": "object",
         "required": [
@@ -6624,6 +6796,559 @@
       },
       "ProviderId": {
         "type": "string"
+      },
+      "PruneCounts": {
+        "type": "object",
+        "description": "Actual deletion counts from an executed prune (the receipt's tallies).",
+        "required": [
+          "vector_points",
+          "artifacts",
+          "graph_nodes",
+          "graph_edges",
+          "memory_records",
+          "ledger_generations",
+          "jobs",
+          "cache_entries"
+        ],
+        "properties": {
+          "artifacts": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "cache_entries": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "graph_edges": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "graph_nodes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "jobs": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "ledger_generations": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "memory_records": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "vector_points": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "PruneEstimate": {
+        "type": "object",
+        "description": "Estimated impact counts for a plan (what *would* be deleted).",
+        "required": [
+          "vector_points",
+          "artifacts",
+          "graph_nodes",
+          "graph_edges",
+          "memory_records",
+          "ledger_generations",
+          "jobs",
+          "cache_entries"
+        ],
+        "properties": {
+          "artifacts": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "cache_entries": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "graph_edges": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "graph_nodes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "jobs": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "ledger_generations": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "memory_records": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "vector_points": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "PruneExecRequest": {
+        "type": "object",
+        "description": "Body for `POST /v1/prune/exec` — destructive; requires `axon:admin` (see\n[`super::super::routing::admin_routes`]) and `confirm: true`.",
+        "required": [
+          "target"
+        ],
+        "properties": {
+          "confirm": {
+            "type": "boolean"
+          },
+          "generation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PrunePlan": {
+        "type": "object",
+        "description": "A resolved, reviewable plan describing exactly what a prune would delete.\n\nA plan is produced by dry-run resolution and never mutates state. It must be\nserializable to JSON for review (safety rule: \"prune plans must be\nreviewable as JSON\").",
+        "required": [
+          "job_id",
+          "selector",
+          "destructive",
+          "requires_admin",
+          "estimated",
+          "steps",
+          "warnings"
+        ],
+        "properties": {
+          "destructive": {
+            "type": "boolean"
+          },
+          "estimated": {
+            "$ref": "#/components/schemas/PruneEstimate"
+          },
+          "job_id": {
+            "$ref": "#/components/schemas/JobId"
+          },
+          "requires_admin": {
+            "type": "boolean"
+          },
+          "selector": {
+            "$ref": "#/components/schemas/PruneSelector"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PruneStep"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SourceWarning"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "PrunePlanRequest": {
+        "type": "object",
+        "description": "Body for `POST /v1/prune/plan` — a dry-run plan, always safe to call.\n\n`target` is either a bare source id or `collection:<name>` for a\nwhole-collection prune, mirroring the CLI's `axon prune plan <target>`\nselector grammar (`crates/axon-cli/src/commands/prune.rs::build_selector`).",
+        "required": [
+          "target"
+        ],
+        "properties": {
+          "generation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PruneResult": {
+        "type": "object",
+        "description": "The outcome of executing a prune plan.",
+        "required": [
+          "job_id",
+          "status",
+          "steps",
+          "deleted_counts",
+          "cleanup_debt_remaining"
+        ],
+        "properties": {
+          "cleanup_debt_remaining": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "deleted_counts": {
+            "$ref": "#/components/schemas/PruneCounts"
+          },
+          "job_id": {
+            "$ref": "#/components/schemas/JobId"
+          },
+          "status": {
+            "$ref": "#/components/schemas/LifecycleStatus"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PruneStepResult"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "PruneSelector": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Prune an entire source (all generations).",
+            "required": [
+              "source_id",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "source"
+                ]
+              },
+              "source_id": {
+                "$ref": "#/components/schemas/SourceId"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Prune one generation of a source (generation-fenced).",
+            "required": [
+              "source_id",
+              "generation",
+              "kind"
+            ],
+            "properties": {
+              "generation": {
+                "$ref": "#/components/schemas/SourceGenerationId"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "generation"
+                ]
+              },
+              "source_id": {
+                "$ref": "#/components/schemas/SourceId"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Execute a recorded cleanup-debt entry.",
+            "required": [
+              "debt_id",
+              "kind"
+            ],
+            "properties": {
+              "debt_id": {
+                "$ref": "#/components/schemas/CleanupDebtId"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "cleanup_debt"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Prune a whole vector collection.",
+            "required": [
+              "collection",
+              "kind"
+            ],
+            "properties": {
+              "collection": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "collection"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Prune a single artifact by id (never by arbitrary path).",
+            "required": [
+              "artifact_id",
+              "kind"
+            ],
+            "properties": {
+              "artifact_id": {
+                "$ref": "#/components/schemas/ArtifactId"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "artifact"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Prune graph nodes/edges (orphan cleanup).",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "edge_id": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/GraphEdgeId"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "graph"
+                ]
+              },
+              "node_id": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/GraphNodeId"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Prune (forget) memory records.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "memory"
+                ]
+              },
+              "memory_id": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MemoryId"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Job-retention cleanup older than N days.",
+            "required": [
+              "older_than_days",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "job_retention"
+                ]
+              },
+              "older_than_days": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Cache cleanup older than N days.",
+            "required": [
+              "older_than_days",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "cache"
+                ]
+              },
+              "older_than_days": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          }
+        ],
+        "description": "The scope of a prune. Each variant resolves to a concrete plan by the\n`axon-prune` planner. Variants mirror the pruning contract exactly."
+      },
+      "PruneStep": {
+        "type": "object",
+        "description": "One ordered step in a prune plan. Steps follow the cleanup-debt execution\norder (vector → artifact → graph → memory → ledger → job/cache).",
+        "required": [
+          "target",
+          "description",
+          "estimated_deletes"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "estimated_deletes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "generation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SourceGenerationId"
+              }
+            ]
+          },
+          "source_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SourceId"
+              }
+            ]
+          },
+          "target": {
+            "$ref": "#/components/schemas/PruneTargetKind"
+          },
+          "vector_selector": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/VectorDeleteSelector"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "PruneStepResult": {
+        "type": "object",
+        "description": "Per-step execution outcome. Records what was actually deleted plus any\nskipped reason, satisfying the receipt requirement.",
+        "required": [
+          "target",
+          "status",
+          "deleted"
+        ],
+        "properties": {
+          "deleted": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "generation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SourceGenerationId"
+              }
+            ]
+          },
+          "skipped_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SourceId"
+              }
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/LifecycleStatus"
+          },
+          "target": {
+            "$ref": "#/components/schemas/PruneTargetKind"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PruneTargetKind": {
+        "type": "string",
+        "description": "The store boundary a prune step targets, in cleanup-debt execution order.",
+        "enum": [
+          "vector",
+          "artifact",
+          "graph",
+          "memory",
+          "ledger",
+          "job_retention",
+          "cache"
+        ]
       },
       "PurgeRequest": {
         "type": "object",
@@ -8616,6 +9341,199 @@
             "$ref": "#/components/schemas/MobileSession"
           }
         }
+      },
+      "VectorDeleteSelector": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "collection",
+              "source_id",
+              "kind"
+            ],
+            "properties": {
+              "collection": {
+                "type": "string"
+              },
+              "generation": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SourceGenerationId"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "source"
+                ]
+              },
+              "source_id": {
+                "$ref": "#/components/schemas/SourceId"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "collection",
+              "source_id",
+              "generation",
+              "kind"
+            ],
+            "properties": {
+              "collection": {
+                "type": "string"
+              },
+              "generation": {
+                "$ref": "#/components/schemas/SourceGenerationId"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "generation"
+                ]
+              },
+              "source_id": {
+                "$ref": "#/components/schemas/SourceId"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "collection",
+              "document_id",
+              "kind"
+            ],
+            "properties": {
+              "collection": {
+                "type": "string"
+              },
+              "document_id": {
+                "$ref": "#/components/schemas/DocumentId"
+              },
+              "generation": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SourceGenerationId"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "document"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "collection",
+              "chunk_ids",
+              "kind"
+            ],
+            "properties": {
+              "chunk_ids": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ChunkId"
+                }
+              },
+              "collection": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "chunks"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "collection",
+              "point_ids",
+              "kind"
+            ],
+            "properties": {
+              "collection": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "points"
+                ]
+              },
+              "point_ids": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/VectorPointId"
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "collection",
+              "canonical_uri",
+              "match_prefix",
+              "kind"
+            ],
+            "properties": {
+              "canonical_uri": {
+                "type": "string"
+              },
+              "collection": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "canonical_uri"
+                ]
+              },
+              "match_prefix": {
+                "type": "boolean"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "collection",
+              "filter",
+              "kind"
+            ],
+            "properties": {
+              "collection": {
+                "type": "string"
+              },
+              "filter": {},
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "filter"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "VectorPointId": {
+        "type": "string"
       },
       "Visibility": {
         "type": "string",

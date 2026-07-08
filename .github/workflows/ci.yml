@@ -760,6 +760,7 @@ jobs:
             src
             crates
             xtask
+            .cargo
             release/components.toml
             apps/android
             apps/chrome-extension
