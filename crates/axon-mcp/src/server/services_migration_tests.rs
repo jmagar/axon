@@ -341,7 +341,14 @@ async fn prune_plan_dry_run_succeeds_without_live_store() {
     use crate::schema::PruneMcpRequest;
     use axon_core::config::Config;
 
-    let server = super::AxonMcpServer::new(Config::default());
+    // Must not point at the real default `~/.axon/jobs.db`: on a machine
+    // whose real store already has pre-cutover rows, `ServiceContext`
+    // startup's `assert_workers_allowed_by_cutover` guard would (correctly)
+    // reject it before this test ever reaches prune planning.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut cfg = Config::default();
+    cfg.sqlite_path = dir.path().join("jobs.db");
+    let server = super::AxonMcpServer::new(cfg);
     let req = PruneMcpRequest {
         subaction: Some("plan".to_string()),
         target: Some("src_test".to_string()),

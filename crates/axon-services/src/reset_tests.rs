@@ -1,5 +1,8 @@
 use super::*;
-use axon_api::reset::{ResetCreated, ResetDeleted, ResetStorePlan};
+use axon_api::reset::{
+    ResetCreated, ResetDeleted, ResetEstimate, ResetExecutionState, ResetPlan, ResetReceipt,
+    ResetStorePlan,
+};
 use axon_core::config::Config;
 use serial_test::serial;
 
@@ -202,12 +205,35 @@ async fn reset_receipt_redacts_secrets_before_writing() {
     // `reddit_acquire.rs`/`youtube_acquire_tests.rs` precedent for the same
     // constraint) with a uniquely-named reset id, then cleans up after.
     let reset_id = "phase3b-redaction-test";
+    let plan_id = "phase3b-redaction-test-plan";
+    let reset_plan = ResetPlan {
+        plan_id: plan_id.to_string(),
+        reset_id: reset_id.to_string(),
+        stores: Vec::new(),
+        estimates: ResetEstimate::default(),
+        inventory_checksum: String::new(),
+        config_snapshot_id: String::new(),
+        auth_snapshot_id: String::new(),
+        confirmation_text: String::new(),
+        receipt_path: None,
+        expires_at_utc: String::new(),
+        blockers: Vec::new(),
+    };
+    let receipt = ResetReceipt {
+        plan_id: plan_id.to_string(),
+        reset_id: reset_id.to_string(),
+        state: ResetExecutionState::Completed,
+        chunks: Vec::new(),
+        deleted: ResetDeleted::default(),
+        created: ResetCreated::default(),
+        audit_events: Vec::new(),
+    };
     let path = write_receipt(
         reset_id,
         &[],
         &[] as &[ResetStorePlan],
-        &ResetDeleted::default(),
-        &ResetCreated::default(),
+        &reset_plan,
+        &receipt,
         &["provider error: Authorization: Bearer abcdef0123456789abcdef".to_string()],
     )
     .await
