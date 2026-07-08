@@ -71,11 +71,6 @@ pub(super) enum CliCommand {
     Status,
     /// Manage unified durable jobs
     Jobs(JobsArgs),
-    /// Remove duplicate points from the Qdrant collection
-    Dedupe,
-    #[command(alias = "delete-url", alias = "delete")]
-    /// Delete indexed Qdrant points by URL or seed URL
-    Purge(PurgeArgs),
     /// Re-crawl / re-ingest previously indexed origins (full docs refresh)
     Refresh(RefreshArgs),
     /// Manage embedding freshness schedules
@@ -141,20 +136,6 @@ pub(super) struct DomainsArgs {
     /// Check whether this exact indexed domain/host has any stored URLs.
     #[arg(long)]
     pub(super) domain: Option<String>,
-}
-
-#[derive(Debug, Args)]
-pub(super) struct PurgeArgs {
-    /// URL or seed URL to delete from Qdrant.
-    pub(super) url: String,
-
-    /// Also delete indexed page URLs below this URL prefix.
-    #[arg(long, action = ArgAction::SetTrue)]
-    pub(super) prefix: bool,
-
-    /// Show matching point and URL counts without deleting.
-    #[arg(long, action = ArgAction::SetTrue)]
-    pub(super) dry_run: bool,
 }
 
 #[derive(Debug, Subcommand)]

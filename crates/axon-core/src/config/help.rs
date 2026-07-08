@@ -34,8 +34,6 @@ const COMMAND_SECTIONS: &[(&str, &[&str])] = &[
             "sources",
             "domains",
             "stats",
-            "dedupe",
-            "purge",
             "migrate",
         ],
     ),
@@ -470,7 +468,7 @@ fn relevant_global_options(command_name: &str, path: &[&str]) -> Vec<(String, St
             ("--json", "Output machine-readable JSON"),
         ],
         "query" | "retrieve" | "ask" | "evaluate" | "train" | "sources" | "domains" | "stats"
-        | "dedupe" | "migrate" | "suggest" => VECTOR_OPTIONS,
+        | "migrate" | "suggest" => VECTOR_OPTIONS,
         "status" => JOB_VIEW_OPTIONS,
         "sessions" | "watch" => &[
             ("--wait <bool>", "Block until async jobs complete"),

@@ -77,10 +77,26 @@ fn known_subcommand_is_untouched() {
 
 #[test]
 fn subcommand_alias_is_untouched() {
-    // `delete-url` is an alias of `purge`.
+    // `completion` is an alias of `completions`.
+    assert_eq!(
+        route(&["axon", "completion", "bash"]),
+        vec!["axon", "completion", "bash"]
+    );
+}
+
+#[test]
+fn removed_purge_aliases_route_as_source() {
+    // `delete-url` and `delete` were aliases of the removed `purge` command
+    // (docs/pipeline-unification/delivery/surface-removal-contract.md). With
+    // `purge` gone, these tokens are no longer known subcommands and route as
+    // bare source arguments like any other unrecognized positional.
     assert_eq!(
         route(&["axon", "delete-url", "https://x"]),
-        vec!["axon", "delete-url", "https://x"]
+        vec!["axon", "source", "delete-url", "https://x"]
+    );
+    assert_eq!(
+        route(&["axon", "delete", "https://x"]),
+        vec!["axon", "source", "delete", "https://x"]
     );
 }
 

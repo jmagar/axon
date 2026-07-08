@@ -75,8 +75,6 @@ impl Default for Config {
             wait: false,
             sqlite_path: crate::paths::axon_data_base_dir().join("jobs.db"),
             yes: false,
-            purge_prefix: false,
-            purge_dry_run: false,
             setup_method: None,
             source_scope: None,
             reset_stores: Vec::new(),

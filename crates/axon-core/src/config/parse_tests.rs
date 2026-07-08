@@ -127,6 +127,50 @@ fn removed_command_names_dispatch_as_source() {
     }
 }
 
+/// `axon dedupe` and `axon purge` were removed clap subcommands
+/// (docs/pipeline-unification/delivery/surface-removal-contract.md: replaced by
+/// `axon prune dedupe` / `axon prune ...`). With no matching clap subcommand,
+/// `route_bare_source` treats the leading token as a bare source argument and
+/// routes it through `axon source <token>` instead, exactly like any other
+/// unknown positional. This mirrors `help_omits_removed_source_commands` for
+/// the dedupe/purge removal.
+#[test]
+fn removed_dedupe_purge_dispatch_as_source() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let command = super::build_cli_command();
+
+    for removed in ["dedupe", "purge"] {
+        let argv = vec![
+            "axon".to_string(),
+            "--tei-url".to_string(),
+            "http://127.0.0.1:52000".to_string(),
+            "--qdrant-url".to_string(),
+            "http://127.0.0.1:53333".to_string(),
+            removed.to_string(),
+        ];
+        let routed = crate::config::source_routing::route_bare_source(argv, &command);
+        assert_eq!(
+            routed,
+            vec![
+                "axon".to_string(),
+                "--tei-url".to_string(),
+                "http://127.0.0.1:52000".to_string(),
+                "--qdrant-url".to_string(),
+                "http://127.0.0.1:53333".to_string(),
+                "source".to_string(),
+                removed.to_string(),
+            ],
+            "removed command `{removed}` should route as a bare source token"
+        );
+
+        let cli = super::Cli::parse_from(routed);
+        let cfg = super::build_config::into_config(cli)
+            .unwrap_or_else(|e| panic!("`{removed}` routed through source should parse: {e}"));
+        assert!(matches!(cfg.command, CommandKind::Source));
+        assert_eq!(cfg.positional, vec![removed.to_string()]);
+    }
+}
+
 #[test]
 fn parse_brand_rejects_fresh_flag() {
     let result =
