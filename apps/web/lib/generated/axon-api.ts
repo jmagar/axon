@@ -414,6 +414,28 @@ export type components = {
             "message"?: string | null;
             "provider"?: null | components['schemas']['ProviderId'];
             "source_item_key"?: null | components['schemas']['SourceItemKey'];
+<<<<<<< HEAD
+=======
+        };
+        "ProgressThroughput": {
+            "bytes_per_second"?: number | null;
+            "chunks_per_second"?: number | null;
+            "items_per_second"?: number | null;
+        };
+        "ProgressTiming": {
+            "elapsed_ms": number;
+            "eta_ms"?: number | null;
+            "started_at": components['schemas']['Timestamp'];
+            "updated_at": components['schemas']['Timestamp'];
+        };
+        "ProviderId": string;
+        "PurgeRequest": {
+            "collection"?: string | null;
+            "dry_run"?: boolean | null;
+            "prefix"?: boolean;
+            "response_mode"?: null | components['schemas']['ResponseMode'];
+            "target"?: string | null;
+>>>>>>> origin/main
         };
         "ProgressThroughput": {
             "bytes_per_second"?: number | null;
@@ -435,7 +457,11 @@ export type components = {
         };
         "RenderMode": "http" | "chrome" | "auto-switch";
         "ReservationId": string;
+<<<<<<< HEAD
         "ResponseMode": "auto" | "summary" | "full" | "inline" | "artifact" | "path" | "job_only";
+=======
+        "ResponseMode": "path" | "inline" | "both" | "auto_inline";
+>>>>>>> origin/main
         "RestAskRequest": {
             "ask_authoritative_boost"?: number | null;
             "ask_authoritative_domains"?: string[] | null;
@@ -847,7 +873,11 @@ export type operations = {
     "recover_extract_jobs": { method: "post"; path: "/v1/extract/recover"; operationId: "recover_extract_jobs"; parameters: { query: Record<string, never>; path: Record<string, never> }; requestBody: never; responses: { "200": unknown; "401": components['schemas']['ErrorEnvelope']; "403": components['schemas']['ErrorEnvelope'] }; security: "bearerAuth" | "oauth2" };
     "extract_job_status": { method: "get"; path: "/v1/extract/{id}"; operationId: "extract_job_status"; parameters: { query: Record<string, never>; path: { "id": string } }; requestBody: never; responses: { "200": components['schemas']['JobStatusResponse']; "401": components['schemas']['ErrorEnvelope']; "403": components['schemas']['ErrorEnvelope']; "404": components['schemas']['ErrorBody'] }; security: "bearerAuth" | "oauth2" };
     "cancel_extract_job": { method: "post"; path: "/v1/extract/{id}/cancel"; operationId: "cancel_extract_job"; parameters: { query: Record<string, never>; path: { "id": string } }; requestBody: never; responses: { "200": unknown; "401": components['schemas']['ErrorEnvelope']; "403": components['schemas']['ErrorEnvelope'] }; security: "bearerAuth" | "oauth2" };
+<<<<<<< HEAD
     "list_unified_jobs": { method: "get"; path: "/v1/jobs"; operationId: "list_unified_jobs"; parameters: { query: { "status"?: components['schemas']['LifecycleStatus']; "kind"?: components['schemas']['JobKind']; "limit"?: number; "cursor"?: string }; path: Record<string, never> }; requestBody: never; responses: { "200": components['schemas']['JobListPage']; "401": components['schemas']['ErrorEnvelope']; "403": components['schemas']['ErrorEnvelope'] }; security: "bearerAuth" | "oauth2" };
+=======
+    "list_unified_jobs": { method: "get"; path: "/v1/jobs"; operationId: "list_unified_jobs"; parameters: { query: { "status"?: components['schemas']['LifecycleStatus']; "kind"?: components['schemas']['JobKind']; "limit"?: number; "cursor"?: string }; path: Record<string, never> }; requestBody: never; responses: { "200": components['schemas']['JobSummary']; "401": components['schemas']['ErrorEnvelope']; "403": components['schemas']['ErrorEnvelope'] }; security: "bearerAuth" | "oauth2" };
+>>>>>>> origin/main
     "clear_unified_jobs": { method: "delete"; path: "/v1/jobs"; operationId: "clear_unified_jobs"; parameters: { query: Record<string, never>; path: Record<string, never> }; requestBody: components['schemas']['JobClearRequest']; responses: { "200": components['schemas']['JobClearResult']; "401": components['schemas']['ErrorEnvelope']; "403": components['schemas']['ErrorEnvelope'] }; security: "bearerAuth" | "oauth2" };
     "cleanup_unified_jobs": { method: "post"; path: "/v1/jobs/cleanup"; operationId: "cleanup_unified_jobs"; parameters: { query: Record<string, never>; path: Record<string, never> }; requestBody: components['schemas']['JobCleanupRequest']; responses: { "200": components['schemas']['JobCleanupResult']; "401": components['schemas']['ErrorEnvelope']; "403": components['schemas']['ErrorEnvelope'] }; security: "bearerAuth" | "oauth2" };
     "recover_unified_jobs": { method: "post"; path: "/v1/jobs/recover"; operationId: "recover_unified_jobs"; parameters: { query: Record<string, never>; path: Record<string, never> }; requestBody: components['schemas']['JobRecoveryRequest']; responses: { "200": components['schemas']['JobRecoveryResult']; "401": components['schemas']['ErrorEnvelope']; "403": components['schemas']['ErrorEnvelope'] }; security: "bearerAuth" | "oauth2" };

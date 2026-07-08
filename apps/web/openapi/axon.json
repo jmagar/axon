@@ -1644,7 +1644,11 @@
             "content": {
               "application/json": {
                 "schema": {
+<<<<<<< HEAD
                   "$ref": "#/components/schemas/JobListPage"
+=======
+                  "$ref": "#/components/schemas/JobSummary"
+>>>>>>> origin/main
                 }
               }
             }
@@ -6276,6 +6280,127 @@
         ]
       },
       "ProgressCurrent": {
+<<<<<<< HEAD
+=======
+        "type": "object",
+        "properties": {
+          "adapter": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "chunk_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ChunkId"
+              }
+            ]
+          },
+          "document_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DocumentId"
+              }
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProviderId"
+              }
+            ]
+          },
+          "source_item_key": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SourceItemKey"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProgressThroughput": {
+        "type": "object",
+        "properties": {
+          "bytes_per_second": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "chunks_per_second": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "items_per_second": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProgressTiming": {
+        "type": "object",
+        "required": [
+          "started_at",
+          "updated_at",
+          "elapsed_ms"
+        ],
+        "properties": {
+          "elapsed_ms": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "eta_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "started_at": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "updated_at": {
+            "$ref": "#/components/schemas/Timestamp"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProviderId": {
+        "type": "string"
+      },
+      "PurgeRequest": {
+>>>>>>> origin/main
         "type": "object",
         "properties": {
           "adapter": {

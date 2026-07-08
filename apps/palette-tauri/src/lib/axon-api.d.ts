@@ -1315,6 +1315,45 @@ export interface components {
             message?: string | null;
             provider?: null | components["schemas"]["ProviderId"];
             source_item_key?: null | components["schemas"]["SourceItemKey"];
+<<<<<<< HEAD
+=======
+        };
+        ProgressThroughput: {
+            /** Format: double */
+            bytes_per_second?: number | null;
+            /** Format: double */
+            chunks_per_second?: number | null;
+            /** Format: double */
+            items_per_second?: number | null;
+        };
+        ProgressTiming: {
+            /** Format: int64 */
+            elapsed_ms: number;
+            /** Format: int64 */
+            eta_ms?: number | null;
+            started_at: components["schemas"]["Timestamp"];
+            updated_at: components["schemas"]["Timestamp"];
+        };
+        ProviderId: string;
+        PurgeRequest: {
+            collection?: string | null;
+            /**
+             * @description Preview only — count matches without deleting. **Defaults to `true`** for
+             *     agent safety: a bare `purge` previews; set `dry_run=false` to delete.
+             */
+            dry_run?: boolean | null;
+            /** @description Match `target` as a prefix over a whole docs subtree / origin. */
+            prefix?: boolean;
+            response_mode?: null | components["schemas"]["ResponseMode"];
+            /**
+             * @description URL (or seed-URL/origin when `prefix` is set) to delete from the index.
+             *     **Handler-required despite the `Option`:** the type is `Option<String>`
+             *     only so a missing field deserializes to a clean "target is required"
+             *     error instead of a serde rejection; `handle_purge` returns an error when
+             *     it is `None`. It is not an optional argument.
+             */
+            target?: string | null;
+>>>>>>> origin/main
         };
         ProgressThroughput: {
             /** Format: double */
@@ -2889,7 +2928,11 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+<<<<<<< HEAD
                     "application/json": components["schemas"]["JobListPage"];
+=======
+                    "application/json": components["schemas"]["JobSummary"];
+>>>>>>> origin/main
                 };
             };
             /** @description Missing or invalid authentication */
