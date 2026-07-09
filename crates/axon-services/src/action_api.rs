@@ -88,12 +88,14 @@ pub fn required_scope(action: &AxonRequest) -> Option<&'static str> {
             | MemorySubaction::Pin
             | MemorySubaction::Archive
             | MemorySubaction::Forget
-            | MemorySubaction::Compact => Some("axon:write"),
+            | MemorySubaction::Compact
+            | MemorySubaction::Import => Some("axon:write"),
             MemorySubaction::List
             | MemorySubaction::Search
             | MemorySubaction::Show
             | MemorySubaction::Context
-            | MemorySubaction::Review => Some("axon:read"),
+            | MemorySubaction::Review
+            | MemorySubaction::Export => Some("axon:read"),
         },
         AxonRequest::Jobs(req) => match req.subaction.unwrap_or(JobsSubaction::List) {
             JobsSubaction::List
