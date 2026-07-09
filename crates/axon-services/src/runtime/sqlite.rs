@@ -299,6 +299,11 @@ impl ServiceJobRuntime for SqliteServiceRuntime {
     }
 
     async fn count_jobs(&self, kind: JobKind) -> Result<i64, Box<dyn Error + Send + Sync>> {
+        if let Some(unified_kind) = unified_kind_for_bridged(kind) {
+            return Ok(unified_job_summaries(&self.unified_store(), unified_kind)
+                .await?
+                .len() as i64);
+        }
         Ok(job_query::count_jobs(self.backend.pool(), kind).await?)
     }
 
@@ -306,6 +311,70 @@ impl ServiceJobRuntime for SqliteServiceRuntime {
         &self,
         kind: JobKind,
     ) -> Result<std::collections::HashMap<JobStatus, i64>, Box<dyn Error + Send + Sync>> {
+        if let Some(unified_kind) = unified_kind_for_bridged(kind) {
+            let summaries = unified_job_summaries(&self.unified_store(), unified_kind).await?;
+            let mut out: std::collections::HashMap<JobStatus, i64> =
+                std::collections::HashMap::new();
+            for summary in summaries {
+                let key = JobStatus::from_str(bridge_legacy_status(summary.status));
+                *out.entry(key).or_insert(0) += 1;
+            }
+            return Ok(out);
+        }
         Ok(job_query::count_jobs_by_status(self.backend.pool(), kind).await?)
     }
+}
+
+/// Map a bridged legacy `JobKind` onto its unified `axon_api::source::JobKind`
+/// counterpart. Returns `None` for kinds still fully on the legacy backend
+/// (there are none today — Extract/Embed/Crawl/Ingest are all bridged — but
+/// this keeps `count_jobs`/`count_jobs_by_status` consistent with the other
+/// `if kind == JobKind::X { bridge... }` dispatch in this file, and fails
+/// closed to the legacy path for any future kind added here without a bridge).
+fn unified_kind_for_bridged(kind: JobKind) -> Option<axon_api::source::JobKind> {
+    match kind {
+        JobKind::Extract => Some(axon_api::source::JobKind::Extract),
+        JobKind::Embed => Some(axon_api::source::JobKind::Embed),
+        JobKind::Crawl => Some(axon_api::source::JobKind::Crawl),
+        JobKind::Ingest => Some(axon_api::source::JobKind::Ingest),
+    }
+}
+
+/// Legacy 5-value status string for a unified `LifecycleStatus`, matching
+/// each bridge module's own `legacy_status()` collapse so `count_jobs_by_status`
+/// histograms agree with `list`/`status`'s rendered `ServiceJob.status`.
+fn bridge_legacy_status(status: axon_api::source::LifecycleStatus) -> &'static str {
+    use axon_api::source::LifecycleStatus;
+    match status {
+        LifecycleStatus::Queued
+        | LifecycleStatus::Pending
+        | LifecycleStatus::Waiting
+        | LifecycleStatus::Blocked => "pending",
+        LifecycleStatus::Running | LifecycleStatus::Canceling => "running",
+        LifecycleStatus::Completed | LifecycleStatus::CompletedDegraded => "completed",
+        LifecycleStatus::Failed | LifecycleStatus::Expired => "failed",
+        LifecycleStatus::Canceled | LifecycleStatus::Skipped => "canceled",
+    }
+}
+
+/// All `JobSummary` rows for one unified `job_kind`. Job volumes for the
+/// bridged kinds are low enough (see `extract_bridge::list`'s own comment)
+/// that a single bounded fetch-and-count is an acceptable cost here — same
+/// tradeoff already accepted by the per-kind bridge `list` functions.
+async fn unified_job_summaries(
+    store: &Arc<dyn JobStore>,
+    kind: axon_api::source::JobKind,
+) -> Result<Vec<axon_api::source::JobSummary>, Box<dyn Error + Send + Sync>> {
+    let page = store
+        .list(axon_api::source::JobListRequest {
+            status: None,
+            kind: Some(kind),
+            source_id: None,
+            watch_id: None,
+            limit: Some(1000),
+            cursor: None,
+        })
+        .await
+        .map_err(|e| Box::<dyn Error + Send + Sync>::from(e.message))?;
+    Ok(page.items)
 }
