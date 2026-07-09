@@ -394,3 +394,128 @@ fn max_cooldown_window_is_bounded_to_one_hour() {
         Duration::from_secs(60 * 60)
     );
 }
+
+#[tokio::test]
+async fn cooldown_until_is_cleared_by_cancel_job() {
+    // cancel_job (crates/axon-jobs/src/unified/control.rs) writes directly to
+    // `jobs` via raw SQL and permits Waiting -> Canceling/Canceled, so it
+    // independently must clear cooldown_until on that transition too.
+    let store = store().await;
+    let job = store.create(create_request()).await.expect("create job");
+    run_to_waiting(&store, job.job_id).await;
+
+    let cooling = ProviderCooling::new(chrono::Utc::now() + chrono::Duration::minutes(1))
+        .with_provider("tei");
+    store
+        .apply_provider_cooling(job.job_id, cooling)
+        .await
+        .expect("apply cooling");
+    assert!(
+        stored_cooldown_until(&store, job.job_id).await.is_some(),
+        "precondition: cooldown_until should be set before cancel"
+    );
+
+    store
+        .cancel(
+            job.job_id,
+            JobCancelRequest {
+                reason: None,
+                force_after_ms: None,
+            },
+        )
+        .await
+        .expect("cancel waiting job");
+
+    let cooldown_until = stored_cooldown_until(&store, job.job_id).await;
+    assert!(
+        cooldown_until.is_none(),
+        "cooldown_until must be cleared by cancel_job"
+    );
+}
+
+#[tokio::test]
+async fn cooldown_until_is_cleared_by_heartbeat_failure() {
+    // record_heartbeat/update_heartbeat_summary (crates/axon-jobs/src/unified/
+    // heartbeat.rs) writes directly to `jobs` via raw SQL and permits
+    // Waiting -> Failed/Expired, so it independently must clear
+    // cooldown_until on that transition too.
+    let store = store().await;
+    let job = store.create(create_request()).await.expect("create job");
+    run_to_waiting(&store, job.job_id).await;
+
+    let cooling = ProviderCooling::new(chrono::Utc::now() + chrono::Duration::minutes(1))
+        .with_provider("tei");
+    store
+        .apply_provider_cooling(job.job_id, cooling)
+        .await
+        .expect("apply cooling");
+    assert!(
+        stored_cooldown_until(&store, job.job_id).await.is_some(),
+        "precondition: cooldown_until should be set before heartbeat failure"
+    );
+
+    store
+        .heartbeat(JobHeartbeat {
+            job_id: job.job_id,
+            attempt: 1,
+            worker_id: None,
+            phase: PipelinePhase::Complete,
+            status: LifecycleStatus::Failed,
+            stage_id: None,
+            heartbeat_at: Timestamp::from(chrono::Utc::now()),
+            last_event_sequence: None,
+            counts: None,
+            provider_reservations: Vec::new(),
+        })
+        .await
+        .expect("waiting -> failed heartbeat");
+
+    let cooldown_until = stored_cooldown_until(&store, job.job_id).await;
+    assert!(
+        cooldown_until.is_none(),
+        "cooldown_until must be cleared by a terminal heartbeat write"
+    );
+}
+
+#[tokio::test]
+async fn cooldown_until_is_cleared_by_recovery_reset() {
+    // reset_stale_job_for_recovery (crates/axon-jobs/src/unified/
+    // control_helpers.rs) recycles a stale Waiting job back to queued via raw
+    // SQL, so it independently must clear cooldown_until too.
+    let store = store().await;
+    let job = store.create(create_request()).await.expect("create job");
+    run_to_waiting(&store, job.job_id).await;
+
+    let cooling = ProviderCooling::new(chrono::Utc::now() + chrono::Duration::minutes(1))
+        .with_provider("tei");
+    store
+        .apply_provider_cooling(job.job_id, cooling)
+        .await
+        .expect("apply cooling");
+    assert!(
+        stored_cooldown_until(&store, job.job_id).await.is_some(),
+        "precondition: cooldown_until should be set before recovery reset"
+    );
+
+    let result = store
+        .recover(JobRecoveryRequest {
+            kind: None,
+            stale_before: None,
+            limit: None,
+            older_than_seconds: None,
+            dry_run: false,
+            allow_without_cutoff: true,
+        })
+        .await
+        .expect("recover stale waiting job");
+    assert_eq!(
+        result.jobs_requeued, 1,
+        "expected the waiting job to be requeued by recovery"
+    );
+
+    let cooldown_until = stored_cooldown_until(&store, job.job_id).await;
+    assert!(
+        cooldown_until.is_none(),
+        "cooldown_until must be cleared by recovery's retry-reset path"
+    );
+}

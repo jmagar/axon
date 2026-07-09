@@ -85,12 +85,17 @@ impl SqliteUnifiedJobStore {
             LifecycleStatus::Canceling
         };
         let canceled_at = (target == LifecycleStatus::Canceled).then(|| now.clone());
+        // cooldown_until: a Waiting job legally transitions to Canceling/
+        // Canceled here, and cooldown is only ever meaningful while a job is
+        // Waiting — clear it unconditionally so a canceled/canceling job
+        // never carries a stale cooldown into its next lifecycle.
         sqlx::query(
             "UPDATE jobs SET
                 status = ?,
                 phase = ?,
                 updated_at = ?,
-                finished_at = COALESCE(?, finished_at)
+                finished_at = COALESCE(?, finished_at),
+                cooldown_until = NULL
              WHERE job_id = ?",
         )
         .bind(enum_name(target)?)
