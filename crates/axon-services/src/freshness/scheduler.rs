@@ -290,7 +290,9 @@ async fn crawl_start_for_freshness(
     urls: &[String],
     service_context: &ServiceContext,
 ) -> Result<Value, FreshnessError> {
-    let outcome = crate::crawl::crawl_start_with_context(cfg, urls, service_context, None)
+    // The freshness scheduler is a system-triggered background loop — no real
+    // caller identity is available here.
+    let outcome = crate::crawl::crawl_start_with_context(cfg, urls, service_context, None, None)
         .await
         .map_err(|err| -> FreshnessError { err.to_string().into() })?;
     Ok(serde_json::to_value(outcome.result)?)

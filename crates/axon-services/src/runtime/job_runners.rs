@@ -36,6 +36,9 @@ use axon_memory::sqlite::SqliteMemoryStore;
 use axon_memory::store::MemoryStore;
 use tokio_util::sync::CancellationToken;
 
+mod crawl_runner;
+use crawl_runner::CrawlRunner;
+
 /// Build the [`JobRunnerRegistry`] handed to the unified worker at
 /// composition time. Additive by design — any kind not registered here keeps
 /// falling back to `job_runner.unsupported_stage`, so this function can only
@@ -64,6 +67,12 @@ pub fn build_registry(cfg: &Arc<Config>) -> Result<JobRunnerRegistry, ApiError> 
             cfg: Arc::clone(cfg),
         }),
     );
+    registry.register(
+        JobKind::Crawl,
+        Arc::new(CrawlRunner {
+            cfg: Arc::clone(cfg),
+        }),
+    );
 
     // Open once and reuse: `SqliteMemoryStore::open` runs a schema migration
     // via a bare `rusqlite::Connection` with no busy-timeout configured. Doing
@@ -85,7 +94,7 @@ pub fn build_registry(cfg: &Arc<Config>) -> Result<JobRunnerRegistry, ApiError> 
     Ok(registry)
 }
 
-async fn heartbeat_running(
+pub(crate) async fn heartbeat_running(
     store: &SqliteUnifiedJobStore,
     claimed: &UnifiedClaimedJob,
     phase: PipelinePhase,

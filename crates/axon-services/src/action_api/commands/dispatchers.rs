@@ -51,9 +51,13 @@ pub async fn dispatch_crawl(
                 ));
             }
             let cfg = apply_crawl_overrides(service_context.cfg.as_ref(), &req);
-            let outcome = crawl_svc::crawl_start_with_context(&cfg, &urls, service_context, None)
-                .await
-                .map_err(internal_error)?;
+            // No per-caller auth identity is threaded through the generic
+            // client-action dispatch path today — this is a genuinely
+            // internal call site, made explicit by passing `None`.
+            let outcome =
+                crawl_svc::crawl_start_with_context(&cfg, &urls, service_context, None, None)
+                    .await
+                    .map_err(internal_error)?;
             let result = outcome.result;
             Ok(serde_json::json!({
                 "job_ids": result.job_ids,
