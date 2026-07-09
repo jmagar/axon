@@ -20,6 +20,7 @@ mod diag;
 mod files_bridge;
 mod oauth;
 mod persistence;
+mod sftp_bridge;
 mod stream;
 mod window_events;
 
