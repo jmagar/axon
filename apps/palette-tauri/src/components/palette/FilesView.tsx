@@ -10,11 +10,13 @@ import {
   Loader2,
   RefreshCw,
   Save,
+  Sparkles,
   Upload,
 } from "lucide-react";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/aurora/button";
+import { computeLineDiff, type AiEditProposal } from "@/lib/aiEditModel";
 import { ACTIONS, type RemotePaletteAction } from "@/lib/actions";
 import { type Client, executeAction, type PaletteConfig } from "@/lib/axonClient";
 import {
@@ -174,6 +176,31 @@ export function FilesView({ client, config }: FilesViewProps) {
     );
   }
 
+  // The AI-edit "Edit with the model" flow reuses the palette's existing
+  // `chat` action (POST /v1/chat — "Direct LLM chat answer", no RAG
+  // retrieval) rather than a new Rust-side LLM proxy command: `chat` already
+  // routes through the same `executeAction`/`axon_http_request` path as
+  // ingest, and the alternative (`/v1/ask`) is a RAG-search endpoint that
+  // would treat the file content as a search query instead of context to
+  // transform — the wrong tool for "rewrite this file per this instruction."
+  function resolveChatAction(): RemotePaletteAction | null {
+    return (
+      ACTIONS.find(
+        (action): action is RemotePaletteAction =>
+          action.subcommand === "chat" && action.kind !== "local",
+      ) ?? null
+    );
+  }
+
+  function buildEditPrompt(fileContent: string, instruction: string): string {
+    return (
+      "You are editing a single file. Apply exactly this instruction and " +
+      "return the FULL new file content, with no commentary, no code " +
+      `fences, and no explanation — only the raw file body.\n\nInstruction: ${instruction}` +
+      `\n\nCurrent file content:\n${fileContent}`
+    );
+  }
+
   function setIngestResult(id: PaneId, next: IngestState) {
     setIngestByPane((prev) => ({ ...prev, [id]: next }));
   }
@@ -237,6 +264,85 @@ export function FilesView({ client, config }: FilesViewProps) {
     }
     setBulkIngestState({ kind: "done", succeeded, failed });
     dispatch({ type: "checked/clear" });
+  }
+
+  async function submitSparkleQuery(id: PaneId) {
+    const pane = state.panes.find((p) => p.id === id);
+    if (!pane?.sparkleQuery.trim() || pane.file.kind !== "loaded" || !pane.selected) return;
+    if (!client || !config) {
+      dispatch({
+        type: "pane/proposalError",
+        pane: id,
+        message: "Connect to an Axon server to use AI-assisted edits.",
+      });
+      return;
+    }
+    const chatAction = resolveChatAction();
+    if (!chatAction) {
+      dispatch({ type: "pane/proposalError", pane: id, message: "Chat action is unavailable." });
+      return;
+    }
+    dispatch({ type: "pane/proposalPending", pane: id });
+    const prompt = buildEditPrompt(pane.file.value.content, pane.sparkleQuery);
+    const result = await executeAction(client, chatAction, prompt, config);
+    if (!result.ok) {
+      const payload = unwrapPayload(result.payload);
+      const message =
+        strField(payload, "message") ??
+        strField(payload, "error") ??
+        `Edit generation failed (HTTP ${result.status}).`;
+      dispatch({ type: "pane/proposalError", pane: id, message });
+      return;
+    }
+    const payload = unwrapPayload(result.payload);
+    const proposedContent = strField(payload, "answer");
+    if (proposedContent == null) {
+      dispatch({
+        type: "pane/proposalError",
+        pane: id,
+        message: "The model did not return a rewritten file body.",
+      });
+      return;
+    }
+    dispatch({
+      type: "pane/proposalReady",
+      pane: id,
+      proposal: {
+        forPath: pane.selected.path,
+        proposedContent,
+        diff: computeLineDiff(pane.file.value.content, proposedContent),
+        capturedModifiedUnix: pane.selected.modifiedUnix ?? null,
+      },
+    });
+  }
+
+  async function approveProposal(id: PaneId) {
+    const pane = state.panes.find((p) => p.id === id);
+    if (!pane?.proposal || !pane.selected) return;
+    dispatch({ type: "pane/proposalApproveStart", pane: id });
+    try {
+      // Disk-staleness guard: re-read the file immediately before writing and
+      // compare against the content the diff was computed from. files_write_file's
+      // atomic-write semantics make this a cheap extra round-trip; skipping it
+      // would let Approve silently clobber an out-of-band edit made while the
+      // proposal was open for review.
+      const fresh = await invoke<FileContents>("files_read_file", { path: pane.selected.path });
+      if (pane.file.kind === "loaded" && fresh.content !== pane.file.value.content) {
+        dispatch({
+          type: "pane/proposalApproveError",
+          pane: id,
+          message: "The file changed on disk since this edit was proposed. Re-open it and try again.",
+        });
+        return;
+      }
+      const saved = await invoke<FileContents>("files_write_file", {
+        path: pane.selected.path,
+        content: pane.proposal.proposedContent,
+      });
+      dispatch({ type: "pane/proposalApproved", pane: id, file: saved });
+    } catch (err) {
+      dispatch({ type: "pane/proposalApproveError", pane: id, message: errorMessage(err) });
+    }
   }
 
   function startResize(event: React.MouseEvent<HTMLDivElement>) {
@@ -435,6 +541,24 @@ export function FilesView({ client, config }: FilesViewProps) {
                 }
                 onSave={() => void saveFile(pane.id)}
                 onIngest={() => void ingestSelected(pane.id)}
+                sparkleOpen={pane.sparkleOpen}
+                sparkleQuery={pane.sparkleQuery}
+                proposal={pane.proposal}
+                proposalState={pane.proposalState}
+                proposalErrorMessage={pane.proposalErrorMessage}
+                onSparkleToggle={() =>
+                  dispatch(
+                    pane.sparkleOpen
+                      ? { type: "pane/sparkleClose", pane: pane.id }
+                      : { type: "pane/sparkleOpen", pane: pane.id },
+                  )
+                }
+                onSparkleQueryChange={(value) =>
+                  dispatch({ type: "pane/sparkleQueryChange", pane: pane.id, query: value })
+                }
+                onSparkleSubmit={() => void submitSparkleQuery(pane.id)}
+                onProposalDeny={() => dispatch({ type: "pane/proposalDeny", pane: pane.id })}
+                onProposalApprove={() => void approveProposal(pane.id)}
               />
             ) : null}
           </div>
@@ -550,6 +674,16 @@ function FilePreview({
   onDraftChange,
   onSave,
   onIngest,
+  sparkleOpen,
+  sparkleQuery,
+  proposal,
+  proposalState,
+  proposalErrorMessage,
+  onSparkleToggle,
+  onSparkleQueryChange,
+  onSparkleSubmit,
+  onProposalDeny,
+  onProposalApprove,
 }: {
   selectedPath: string;
   modifiedUnix?: number | null;
@@ -564,6 +698,16 @@ function FilePreview({
   onDraftChange: (value: string) => void;
   onSave: () => void;
   onIngest: () => void;
+  sparkleOpen: boolean;
+  sparkleQuery: string;
+  proposal: AiEditProposal | null;
+  proposalState: FilesPane["proposalState"];
+  proposalErrorMessage: string | null;
+  onSparkleToggle: () => void;
+  onSparkleQueryChange: (value: string) => void;
+  onSparkleSubmit: () => void;
+  onProposalDeny: () => void;
+  onProposalApprove: () => void;
 }) {
   const name = selectedPath.split("/").pop() ?? selectedPath;
   return (
@@ -588,6 +732,16 @@ function FilePreview({
             <>
               <Button variant="ghost" size="sm" type="button" onClick={onEdit}>
                 Edit
+              </Button>
+              <Button
+                variant="plain"
+                size="unstyled"
+                type="button"
+                title="Edit with the model"
+                aria-label="Edit with the model"
+                onClick={onSparkleToggle}
+              >
+                <Sparkles size={14} />
               </Button>
               {canIngest && (
                 <Button
@@ -624,6 +778,78 @@ function FilePreview({
           <code>{file.content}</code>
         </pre>
       )}
+      {proposal ? (
+        <div className="files-ai-edit-review">
+          <p className="files-ai-edit-heading">
+            Proposed edit · {proposal.diff.filter((l) => l.kind !== "same").length} lines
+          </p>
+          <pre className="files-ai-edit-body">
+            {/* Diff lines have no stable identity of their own — line text can
+                repeat, and the rendered order never reorders after the
+                proposal is set — so an index key is safe here. */}
+            {proposal.diff.map((line, index) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: see comment above.
+              <div key={index} className={`files-ai-edit-line files-ai-edit-${line.kind}`}>
+                <span className="files-ai-edit-marker">
+                  {line.kind === "added" ? "+" : line.kind === "removed" ? "-" : " "}
+                </span>
+                {line.text}
+              </div>
+            ))}
+          </pre>
+          {proposalState === "error" && proposalErrorMessage && (
+            <p className="files-ai-edit-error">{proposalErrorMessage}</p>
+          )}
+          <div className="files-ai-edit-actions">
+            <span className="files-ai-edit-note">The model proposes this edit — review it.</span>
+            <Button variant="ghost" size="sm" type="button" onClick={onProposalDeny}>
+              Deny
+            </Button>
+            <Button
+              variant="rose"
+              size="sm"
+              type="button"
+              onClick={onProposalApprove}
+              disabled={proposalState === "approving"}
+            >
+              {proposalState === "approving" ? "Applying..." : "Approve"}
+            </Button>
+          </div>
+        </div>
+      ) : sparkleOpen ? (
+        <div className="files-ai-edit-prompt">
+          <Sparkles size={14} />
+          {/* Autofocus is intentional here: this input only mounts when the
+              user explicitly clicks "Edit with the model", so focusing it
+              immediately (like a command-palette input opening) is expected,
+              not a surprise page-load autofocus. */}
+          <input
+            // biome-ignore lint/a11y/noAutofocus: see comment above the input.
+            autoFocus
+            value={sparkleQuery}
+            placeholder="Describe the edit — the model rewrites the file…"
+            onChange={(event) => onSparkleQueryChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && sparkleQuery.trim()) onSparkleSubmit();
+              if (event.key === "Escape") onSparkleToggle();
+            }}
+          />
+          <Button
+            variant="rose"
+            size="icon"
+            title="Generate edit"
+            aria-label="Generate edit"
+            type="button"
+            onClick={onSparkleSubmit}
+            disabled={proposalState === "pending"}
+          >
+            <Sparkles size={14} />
+          </Button>
+          {proposalState === "error" && proposalErrorMessage && (
+            <p className="files-ai-edit-error">{proposalErrorMessage}</p>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

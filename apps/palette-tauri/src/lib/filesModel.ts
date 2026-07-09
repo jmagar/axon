@@ -2,6 +2,8 @@
 // component per the palette convention: business logic lives in src/lib/*,
 // components stay thin renderers over props/state.
 
+import type { AiEditProposal } from "./aiEditModel";
+
 export interface FileEntry {
   name: string;
   /** Path relative to the allowed files root (forward-slash separated). */
@@ -182,6 +184,14 @@ export interface FilesPane {
   editing: boolean;
   draft: string;
   saving: boolean;
+  /** Whether the "Edit with the model" inline instruction prompt is open. */
+  sparkleOpen: boolean;
+  /** Current text typed into the sparkle instruction prompt. */
+  sparkleQuery: string;
+  /** The most recently generated (not yet approved/denied) AI-edit proposal. */
+  proposal: AiEditProposal | null;
+  proposalState: "idle" | "pending" | "ready" | "approving" | "error";
+  proposalErrorMessage: string | null;
 }
 
 export function createPane(id: PaneId, cwd = ""): FilesPane {
@@ -194,6 +204,11 @@ export function createPane(id: PaneId, cwd = ""): FilesPane {
     editing: false,
     draft: "",
     saving: false,
+    sparkleOpen: false,
+    sparkleQuery: "",
+    proposal: null,
+    proposalState: "idle",
+    proposalErrorMessage: null,
   };
 }
 

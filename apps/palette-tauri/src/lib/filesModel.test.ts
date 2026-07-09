@@ -157,6 +157,11 @@ describe("createPane", () => {
       editing: false,
       draft: "",
       saving: false,
+      sparkleOpen: false,
+      sparkleQuery: "",
+      proposal: null,
+      proposalState: "idle",
+      proposalErrorMessage: null,
     });
   });
 

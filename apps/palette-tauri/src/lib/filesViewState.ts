@@ -5,6 +5,7 @@
 // adds new `FilesViewAction` members and reducer cases here instead of new
 // `useState` calls and prop-drilled setters in the component.
 
+import type { AiEditProposal } from "./aiEditModel";
 import {
   type CheckedPaths,
   checkAllIn,
@@ -60,7 +61,17 @@ export type FilesViewAction =
   | { type: "treeWidth/set"; width: number }
   | { type: "checked/toggle"; path: string }
   | { type: "checked/checkAll"; paths: string[] }
-  | { type: "checked/clear" };
+  | { type: "checked/clear" }
+  | { type: "pane/sparkleOpen"; pane: PaneId }
+  | { type: "pane/sparkleClose"; pane: PaneId }
+  | { type: "pane/sparkleQueryChange"; pane: PaneId; query: string }
+  | { type: "pane/proposalPending"; pane: PaneId }
+  | { type: "pane/proposalReady"; pane: PaneId; proposal: AiEditProposal }
+  | { type: "pane/proposalError"; pane: PaneId; message: string }
+  | { type: "pane/proposalDeny"; pane: PaneId }
+  | { type: "pane/proposalApproveStart"; pane: PaneId }
+  | { type: "pane/proposalApproved"; pane: PaneId; file: FileContents }
+  | { type: "pane/proposalApproveError"; pane: PaneId; message: string };
 
 function updatePane(
   panes: FilesViewState["panes"],
@@ -164,6 +175,81 @@ export function filesViewReducer(state: FilesViewState, action: FilesViewAction)
       return { ...state, checked: checkAllIn(state.checked, action.paths) };
     case "checked/clear":
       return { ...state, checked: clearChecked() };
+    case "pane/sparkleOpen":
+      return { ...state, panes: updatePane(state.panes, action.pane, { sparkleOpen: true }) };
+    case "pane/sparkleClose":
+      return {
+        ...state,
+        panes: updatePane(state.panes, action.pane, { sparkleOpen: false, sparkleQuery: "" }),
+      };
+    case "pane/sparkleQueryChange":
+      return {
+        ...state,
+        panes: updatePane(state.panes, action.pane, { sparkleQuery: action.query }),
+      };
+    case "pane/proposalPending":
+      return {
+        ...state,
+        panes: updatePane(state.panes, action.pane, {
+          proposalState: "pending",
+          proposalErrorMessage: null,
+        }),
+      };
+    case "pane/proposalReady":
+      return {
+        ...state,
+        panes: updatePane(state.panes, action.pane, {
+          proposal: action.proposal,
+          proposalState: "ready",
+          proposalErrorMessage: null,
+          sparkleOpen: false,
+          sparkleQuery: "",
+        }),
+      };
+    case "pane/proposalError":
+      return {
+        ...state,
+        panes: updatePane(state.panes, action.pane, {
+          proposalState: "error",
+          proposalErrorMessage: action.message,
+        }),
+      };
+    case "pane/proposalDeny":
+      return {
+        ...state,
+        panes: updatePane(state.panes, action.pane, {
+          proposal: null,
+          proposalState: "idle",
+          proposalErrorMessage: null,
+        }),
+      };
+    case "pane/proposalApproveStart":
+      return {
+        ...state,
+        panes: updatePane(state.panes, action.pane, {
+          proposalState: "approving",
+          proposalErrorMessage: null,
+        }),
+      };
+    case "pane/proposalApproved":
+      return {
+        ...state,
+        panes: updatePane(state.panes, action.pane, {
+          file: { kind: "loaded", value: action.file },
+          draft: action.file.content,
+          proposal: null,
+          proposalState: "idle",
+          proposalErrorMessage: null,
+        }),
+      };
+    case "pane/proposalApproveError":
+      return {
+        ...state,
+        panes: updatePane(state.panes, action.pane, {
+          proposalState: "error",
+          proposalErrorMessage: action.message,
+        }),
+      };
     default:
       return state;
   }

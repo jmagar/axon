@@ -447,3 +447,170 @@ describe("FilesView — bulk selection and ingest", () => {
     await waitFor(() => expect(screen.queryByText(/selected/i)).not.toBeInTheDocument());
   });
 });
+
+describe("FilesView — AI-assisted edit proposal", () => {
+  beforeEach(() => {
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "files_list_dir") return Promise.resolve(rootListing);
+      if (command === "files_read_file") return Promise.resolve(readmeContents);
+      throw new Error(`unexpected command: ${command}`);
+    });
+  });
+
+  it("shows an 'Edit with the model' button separate from the manual Edit button", async () => {
+    render(<FilesView client={client} config={config} />);
+    await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("README.md"));
+    await waitFor(() => expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: /edit with the model/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
+  });
+
+  it("opens an inline instruction prompt on sparkle click", async () => {
+    render(<FilesView client={client} config={config} />);
+    await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("README.md"));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /edit with the model/i })).toBeInTheDocument(),
+    );
+    await userEvent.click(screen.getByRole("button", { name: /edit with the model/i }));
+    expect(screen.getByPlaceholderText(/describe the edit/i)).toBeInTheDocument();
+  });
+
+  it("submits the instruction via chat and shows a proposed diff with Deny/Approve", async () => {
+    invokeMock.mockImplementation((command: string, args?: Record<string, unknown>) => {
+      if (command === "files_list_dir") return Promise.resolve(rootListing);
+      if (command === "files_read_file") return Promise.resolve(readmeContents);
+      if (command === "axon_http_request") {
+        const request = args?.request as { path: string; body: { message: string } };
+        expect(request.path).toBe("/v1/chat");
+        expect(request.body.message).toContain("rewrite the intro");
+        expect(request.body.message).toContain(readmeContents.content);
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          path: "/v1/chat",
+          method: "POST",
+          payload: { answer: "# Title\n\nrewritten body", message: "" },
+        });
+      }
+      throw new Error(`unexpected command: ${command}`);
+    });
+
+    render(<FilesView client={client} config={config} />);
+    await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("README.md"));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /edit with the model/i })).toBeInTheDocument(),
+    );
+    await userEvent.click(screen.getByRole("button", { name: /edit with the model/i }));
+    await userEvent.type(screen.getByPlaceholderText(/describe the edit/i), "rewrite the intro{Enter}");
+    expect(await screen.findByText(/proposed edit/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /deny/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /approve/i })).toBeInTheDocument();
+  });
+
+  it("Deny discards the proposal without writing", async () => {
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "files_list_dir") return Promise.resolve(rootListing);
+      if (command === "files_read_file") return Promise.resolve(readmeContents);
+      if (command === "axon_http_request") {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          path: "/v1/chat",
+          method: "POST",
+          payload: { answer: "rewritten", message: "" },
+        });
+      }
+      throw new Error(`unexpected command: ${command}`);
+    });
+
+    render(<FilesView client={client} config={config} />);
+    await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("README.md"));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /edit with the model/i })).toBeInTheDocument(),
+    );
+    await userEvent.click(screen.getByRole("button", { name: /edit with the model/i }));
+    await userEvent.type(screen.getByPlaceholderText(/describe the edit/i), "rewrite{Enter}");
+    await screen.findByText(/proposed edit/i);
+    await userEvent.click(screen.getByRole("button", { name: /deny/i }));
+    expect(screen.queryByText(/proposed edit/i)).not.toBeInTheDocument();
+    expect(invokeMock).not.toHaveBeenCalledWith("files_write_file", expect.anything());
+  });
+
+  it("Approve writes the proposed content via files_write_file", async () => {
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "files_list_dir") return Promise.resolve(rootListing);
+      if (command === "files_read_file") return Promise.resolve(readmeContents);
+      if (command === "axon_http_request") {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          path: "/v1/chat",
+          method: "POST",
+          payload: { answer: "rewritten", message: "" },
+        });
+      }
+      if (command === "files_write_file") {
+        return Promise.resolve({ path: "README.md", content: "rewritten", size: 9 });
+      }
+      throw new Error(`unexpected command: ${command}`);
+    });
+
+    render(<FilesView client={client} config={config} />);
+    await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("README.md"));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /edit with the model/i })).toBeInTheDocument(),
+    );
+    await userEvent.click(screen.getByRole("button", { name: /edit with the model/i }));
+    await userEvent.type(screen.getByPlaceholderText(/describe the edit/i), "rewrite{Enter}");
+    await screen.findByText(/proposed edit/i);
+    await userEvent.click(screen.getByRole("button", { name: /approve/i }));
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("files_write_file", {
+        path: "README.md",
+        content: "rewritten",
+      }),
+    );
+  });
+
+  it("Approve fails with a clear error when the file changed on disk since the proposal", async () => {
+    let readCount = 0;
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "files_list_dir") return Promise.resolve(rootListing);
+      if (command === "files_read_file") {
+        readCount += 1;
+        // First read is the initial file-open; second is Approve's
+        // disk-staleness re-check, which observes a since-changed file.
+        return Promise.resolve(
+          readCount === 1 ? readmeContents : { ...readmeContents, content: "changed elsewhere" },
+        );
+      }
+      if (command === "axon_http_request") {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          path: "/v1/chat",
+          method: "POST",
+          payload: { answer: "rewritten", message: "" },
+        });
+      }
+      throw new Error(`unexpected command: ${command}`);
+    });
+
+    render(<FilesView client={client} config={config} />);
+    await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("README.md"));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /edit with the model/i })).toBeInTheDocument(),
+    );
+    await userEvent.click(screen.getByRole("button", { name: /edit with the model/i }));
+    await userEvent.type(screen.getByPlaceholderText(/describe the edit/i), "rewrite{Enter}");
+    await screen.findByText(/proposed edit/i);
+    await userEvent.click(screen.getByRole("button", { name: /approve/i }));
+    expect(await screen.findByText(/changed on disk/i)).toBeInTheDocument();
+  });
+});
