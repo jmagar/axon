@@ -1073,14 +1073,13 @@ async fn write_reset_receipt(pool: &sqlx::SqlitePool, message: &str) {
 /// tables are created by `apply_all_migrations` in `open_sqlite_pool`).
 async fn store_with_observe() -> (
     SqliteUnifiedJobStore,
-    std::sync::Arc<axon_observe::sink::SqliteObservabilitySink>,
+    Arc<axon_observe::sink::SqliteObservabilitySink>,
 ) {
     let pool = open_sqlite_pool(":memory:").await.expect("open sqlite");
     seed_source(&pool).await;
-    let sink = std::sync::Arc::new(
-        axon_observe::sink::SqliteObservabilitySink::from_migrated_pool(pool.clone()),
-    );
-    let store = SqliteUnifiedJobStore::with_observe_sink(pool, std::sync::Arc::clone(&sink));
+    let sink =
+        Arc::new(axon_observe::sink::SqliteObservabilitySink::from_migrated_pool(pool.clone()));
+    let store = SqliteUnifiedJobStore::with_observe_sink(pool, Arc::clone(&sink));
     (store, sink)
 }
 
@@ -1148,9 +1147,8 @@ async fn observe_sink_absent_leaves_status_updates_working() {
     // still succeed and nothing is persisted to the observe tables.
     let pool = open_sqlite_pool(":memory:").await.expect("open sqlite");
     seed_source(&pool).await;
-    let sink = std::sync::Arc::new(
-        axon_observe::sink::SqliteObservabilitySink::from_migrated_pool(pool.clone()),
-    );
+    let sink =
+        Arc::new(axon_observe::sink::SqliteObservabilitySink::from_migrated_pool(pool.clone()));
     let store = SqliteUnifiedJobStore::new(pool);
     let job = store.create(create_request()).await.expect("create job");
 
