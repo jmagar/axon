@@ -29,7 +29,13 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-export type FeedBadge = { type: "diff"; add: number; del: number } | { type: "label"; value: string };
+// Only the status-label case is ever constructed by the Rust normalizer
+// (`github_feed.rs::normalize_event`) — the Events API has no single-call
+// additions/deletions source for any event type this plan sources, so the
+// `{ type: "diff"; add; del }` case was removed rather than kept as an
+// unproducible union member. Reintroduce it if a future normalizer gains a
+// reliable diff-stat source.
+export type FeedBadge = { type: "label"; value: string };
 
 export interface FeedItem {
   /** One of: "pr" | "merge" | "review" | "comment" | "conflict" | "deps" | "issue" | "push" | "release". */
