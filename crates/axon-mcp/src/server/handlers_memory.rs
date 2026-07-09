@@ -38,6 +38,8 @@ fn memory_subaction_label(subaction: MemorySubaction) -> &'static str {
         MemorySubaction::Forget => "forget",
         MemorySubaction::Review => "review",
         MemorySubaction::Compact => "compact",
+        MemorySubaction::Import => "import",
+        MemorySubaction::Export => "export",
     }
 }
 
@@ -52,3 +54,7 @@ fn map_memory_error(err: ClientActionError) -> ErrorData {
         invalid_params(message)
     }
 }
+
+#[cfg(test)]
+#[path = "handlers_memory_tests.rs"]
+mod tests;
