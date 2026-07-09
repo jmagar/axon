@@ -17,6 +17,7 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut,
 
 mod axon_bridge;
 mod diag;
+mod files_bridge;
 mod oauth;
 mod persistence;
 mod stream;
@@ -482,7 +483,11 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             axon_http_stream_request,
             oauth::axon_oauth_login,
             oauth::axon_oauth_logout,
-            oauth::axon_oauth_status
+            oauth::axon_oauth_status,
+            files_bridge::files_list_dir,
+            files_bridge::files_read_file,
+            files_bridge::files_write_file,
+            files_bridge::files_get_root
         ])
         .manage(BlurDismiss(AtomicBool::new(true)))
         .manage(ActiveShortcut(Mutex::new(None)))
