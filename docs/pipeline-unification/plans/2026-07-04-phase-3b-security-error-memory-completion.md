@@ -384,6 +384,24 @@ git commit -m "feat: propagate structured pipeline errors"
 
 ### Task 4: Shared Redaction Boundary And Fail-Closed Public Writes
 
+> **DONE** (2026-07-09). The shared boundary already covered vector payloads,
+> job events, graph evidence, memory rows, and MCP/REST error responses. The
+> three remaining chokepoints — CLI JSON output, artifact metadata writes, and
+> trace/log fields — were closed in
+> [`docs/pipeline-unification/plans/2026-07-08-redaction-boundary-extension.md`](2026-07-08-redaction-boundary-extension.md):
+> `RedactionContext::cli_json()` gating the CLI `--json` render path
+> (`crates/axon-cli/src/json.rs`), `RedactionContext::artifact_metadata()`
+> gating the previously-ungated `watch` `url-change` artifact write
+> (`crates/axon-jobs/src/watch/report.rs`), and a new `JsonFormat` event
+> formatter (`crates/axon-core/src/logging/json_format.rs`) closing a gap
+> where the file JSON log sink bypassed the console layer's
+> `redact_event_fields` scrub. The actual gate API differs from this task's
+> illustrative sketch below — see the extension plan's Task 1 findings for the
+> real function names/signatures. **Caveat:** the extension plan's Task 4 was
+> an explicit best-effort manual-grep pass over trace/log call sites, not a
+> completeness guarantee; CI/lint enforcement is tracked separately as bead
+> `axon_rust-l6amm` ("Add CI-enforced redaction call-site lint").
+
 **Files:**
 - Create: `crates/axon-core/src/redaction.rs` if absent
 - Modify: `crates/axon-core/src/lib.rs`
