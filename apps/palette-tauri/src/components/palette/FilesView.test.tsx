@@ -331,3 +331,119 @@ describe("FilesView — split view", () => {
     expect(leftPreview).toHaveTextContent(/select a file/i);
   });
 });
+
+describe("FilesView — bulk selection and ingest", () => {
+  beforeEach(() => {
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "files_list_dir") return Promise.resolve(rootListing);
+      if (command === "files_read_file") return Promise.resolve(readmeContents);
+      if (command === "axon_http_request") {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          path: "/v1/embed",
+          method: "POST",
+          payload: { job_id: "abc" },
+        });
+      }
+      throw new Error(`unexpected command: ${command}`);
+    });
+  });
+
+  it("shows a checkbox on each file row with the generic bulk-ingest label", async () => {
+    render(<FilesView client={client} config={config} />);
+    await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
+    const checkboxes = screen.getAllByRole("checkbox", { name: "Select for bulk ingest" });
+    expect(checkboxes.length).toBeGreaterThan(0);
+  });
+
+  it("shows no bulk bar when nothing is checked", async () => {
+    render(<FilesView client={client} config={config} />);
+    await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
+    expect(screen.queryByText(/selected/i)).not.toBeInTheDocument();
+  });
+
+  it("shows 'N selected' and 'Ingest all' after checking files", async () => {
+    render(<FilesView client={client} config={config} />);
+    await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
+    const checkboxes = screen.getAllByRole("checkbox", { name: "Select for bulk ingest" });
+    await userEvent.click(checkboxes[0]);
+    await userEvent.click(checkboxes[1]);
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /ingest all/i })).toBeInTheDocument();
+  });
+
+  it("queues one sequential ingest call per checked file when 'Ingest all' is clicked", async () => {
+    render(<FilesView client={client} config={config} />);
+    await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
+    const checkboxes = screen.getAllByRole("checkbox", { name: "Select for bulk ingest" });
+    await userEvent.click(checkboxes[0]);
+    await userEvent.click(checkboxes[1]);
+    await userEvent.click(screen.getByRole("button", { name: /ingest all/i }));
+    await waitFor(() =>
+      expect(invokeMock.mock.calls.filter((call) => call[0] === "axon_http_request")).toHaveLength(2),
+    );
+  });
+
+  it("shows a per-item progress line while ingesting", async () => {
+    const resolvers: Array<() => void> = [];
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "files_list_dir") return Promise.resolve(rootListing);
+      if (command === "files_read_file") return Promise.resolve(readmeContents);
+      if (command === "axon_http_request") {
+        return new Promise((resolve) => {
+          resolvers.push(() =>
+            resolve({ ok: true, status: 200, path: "/v1/embed", method: "POST", payload: {} }),
+          );
+        });
+      }
+      throw new Error(`unexpected command: ${command}`);
+    });
+
+    render(<FilesView client={client} config={config} />);
+    await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
+    const checkboxes = screen.getAllByRole("checkbox", { name: "Select for bulk ingest" });
+    await userEvent.click(checkboxes[0]);
+    await userEvent.click(checkboxes[1]);
+    await userEvent.click(screen.getByRole("button", { name: /ingest all/i }));
+    await waitFor(() => expect(screen.getByText(/ingesting 1\/2/i)).toBeInTheDocument());
+    resolvers[0]?.();
+  });
+
+  it("shows a Cancel affordance while running and stops after the in-flight item", async () => {
+    const resolvers: Array<() => void> = [];
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "files_list_dir") return Promise.resolve(rootListing);
+      if (command === "files_read_file") return Promise.resolve(readmeContents);
+      if (command === "axon_http_request") {
+        return new Promise((resolve) => {
+          resolvers.push(() =>
+            resolve({ ok: true, status: 200, path: "/v1/embed", method: "POST", payload: {} }),
+          );
+        });
+      }
+      throw new Error(`unexpected command: ${command}`);
+    });
+
+    render(<FilesView client={client} config={config} />);
+    await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
+    const checkboxes = screen.getAllByRole("checkbox", { name: "Select for bulk ingest" });
+    await userEvent.click(checkboxes[0]);
+    await userEvent.click(checkboxes[1]);
+    await userEvent.click(screen.getByRole("button", { name: /ingest all/i }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /cancel/i })).toBeInTheDocument());
+    await userEvent.click(screen.getByRole("button", { name: /cancel/i }));
+    resolvers[0]?.();
+    await waitFor(() => expect(screen.getByText(/cancelled after 1\/2/i)).toBeInTheDocument());
+    expect(resolvers).toHaveLength(1);
+  });
+
+  it("clears the checked set after a successful bulk ingest", async () => {
+    render(<FilesView client={client} config={config} />);
+    await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
+    const checkboxes = screen.getAllByRole("checkbox", { name: "Select for bulk ingest" });
+    await userEvent.click(checkboxes[0]);
+    await userEvent.click(screen.getByRole("button", { name: /ingest all/i }));
+    await waitFor(() => expect(screen.queryByText(/selected/i)).not.toBeInTheDocument());
+  });
+});

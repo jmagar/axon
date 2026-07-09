@@ -26,6 +26,7 @@ import {
   fileKind,
   formatBytes,
   formatModified,
+  isChecked,
   isIngestable,
   isMarkdownLike,
   joinSegments,
@@ -51,6 +52,12 @@ type IngestState =
   | { kind: "running" }
   | { kind: "done"; ok: boolean; message: string };
 
+type BulkIngestState =
+  | { kind: "idle" }
+  | { kind: "running"; done: number; total: number }
+  | { kind: "done"; succeeded: number; failed: number }
+  | { kind: "cancelled"; done: number; total: number };
+
 /**
  * Local filesystem browser + preview/edit + ingest. Owns its own
  * navigation/selection/edit state via `filesViewReducer` (see
@@ -72,6 +79,12 @@ export function FilesView({ client, config }: FilesViewProps) {
     left: { kind: "idle" },
     right: { kind: "idle" },
   });
+  // Bulk-ingest progress is kept as component-local state (not a reducer
+  // action) since it's a one-shot async operation's progress rather than a
+  // persistent UI mode — the reducer models durable view state (panes,
+  // selection, checked set), not ephemeral in-flight operation feedback.
+  const [bulkIngestState, setBulkIngestState] = useState<BulkIngestState>({ kind: "idle" });
+  const bulkIngestCancelRef = useRef(false);
   const splitOpen = state.panes.length === 2;
 
   const loadDir = useCallback((id: PaneId, path: string) => {
@@ -188,6 +201,42 @@ export function FilesView({ client, config }: FilesViewProps) {
         `Ingest failed (HTTP ${result.status}).`;
       setIngestResult(id, { kind: "done", ok: false, message });
     }
+  }
+
+  async function bulkIngest() {
+    if (!client || !config) return;
+    const embedAction = resolveEmbedAction();
+    if (!embedAction) return;
+    const leftListing = state.listings.left;
+    const root = leftListing.kind === "loaded" ? leftListing.value.root : "";
+    const paths = Array.from(state.checked);
+    bulkIngestCancelRef.current = false;
+    setBulkIngestState({ kind: "running", done: 0, total: paths.length });
+    let succeeded = 0;
+    let failed = 0;
+    let done = 0;
+    for (const [index, path] of paths.entries()) {
+      if (bulkIngestCancelRef.current) {
+        setBulkIngestState({ kind: "cancelled", done, total: paths.length });
+        return;
+      }
+      // Show the in-flight item (1-indexed) as "done" while its request is
+      // outstanding, not just after it resolves — "Ingesting 1/2..." means
+      // "working on item 1 of 2", matching the mock's progress-label shape.
+      setBulkIngestState({ kind: "running", done: index + 1, total: paths.length });
+      const absolutePath = `${root.replace(/\/+$/, "")}/${path}`;
+      // Sequential (concurrency 1) is the deliberate v1 choice — the embed
+      // endpoint is confirmed synchronous server-side (see the
+      // axon-phase10-source-migration-gaps memory note), so a naive
+      // concurrency guess would just queue requests the server processes one
+      // at a time anyway. Revisit only after a real load test.
+      const result = await executeAction(client, embedAction, absolutePath, config);
+      if (result.ok) succeeded += 1;
+      else failed += 1;
+      done += 1;
+    }
+    setBulkIngestState({ kind: "done", succeeded, failed });
+    dispatch({ type: "checked/clear" });
   }
 
   function startResize(event: React.MouseEvent<HTMLDivElement>) {
@@ -331,6 +380,16 @@ export function FilesView({ client, config }: FilesViewProps) {
                   className={`files-row${pane.selected?.path === entry.path ? " files-row-active" : ""}`}
                   onClick={() => openEntry(pane.id, entry)}
                 >
+                  {!entry.isDir && (
+                    <input
+                      type="checkbox"
+                      className="files-row-checkbox"
+                      aria-label="Select for bulk ingest"
+                      checked={isChecked(state.checked, entry.path)}
+                      onClick={(event) => event.stopPropagation()}
+                      onChange={() => dispatch({ type: "checked/toggle", path: entry.path })}
+                    />
+                  )}
                   <EntryIcon entry={entry} />
                   <span className="files-row-name">{entry.name}</span>
                   {!entry.isDir && (
@@ -386,6 +445,50 @@ export function FilesView({ client, config }: FilesViewProps) {
 
   return (
     <div className="output-body operation-view files-view">
+      {state.checked.size > 0 && (
+        <div className="files-bulk-bar">
+          <span>{state.checked.size} selected</span>
+          {bulkIngestState.kind !== "running" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              onClick={() => dispatch({ type: "checked/clear" })}
+            >
+              Clear
+            </Button>
+          )}
+          <Button
+            variant="aurora"
+            size="sm"
+            type="button"
+            onClick={() => void bulkIngest()}
+            disabled={bulkIngestState.kind === "running" || !client || !config}
+          >
+            <Upload size={13} />
+            {bulkIngestState.kind === "running"
+              ? `Ingesting ${bulkIngestState.done}/${bulkIngestState.total}...`
+              : "Ingest all"}
+          </Button>
+          {bulkIngestState.kind === "running" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              onClick={() => {
+                bulkIngestCancelRef.current = true;
+              }}
+            >
+              Cancel
+            </Button>
+          )}
+          {bulkIngestState.kind === "cancelled" && (
+            <span className="files-bulk-status">
+              Cancelled after {bulkIngestState.done}/{bulkIngestState.total}
+            </span>
+          )}
+        </div>
+      )}
       <div className="files-split-container">
         {/* A semantic <hr> can't carry pointer-drag/keyboard-resize handlers
             or aria-valuenow, so this stays a div with an explicit separator

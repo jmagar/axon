@@ -5946,3 +5946,24 @@ textarea {
 .files-pane + .files-pane {
   border-left: 1px solid var(--aurora-border);
 }
+
+.files-row-checkbox {
+  accent-color: var(--aurora-accent-primary);
+  margin-right: 4px;
+}
+
+.files-bulk-bar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--aurora-surface-raised, var(--aurora-control-surface));
+  border-bottom: 1px solid var(--aurora-border);
+}
+
+.files-bulk-status {
+  color: var(--aurora-text-muted);
+  font-size: 12px;
+}
