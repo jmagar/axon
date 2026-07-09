@@ -65,6 +65,10 @@ Thumbs.db
 
 # ── Rust ─────────────────────────────────────────────────────────────────────
 /target/
+# The directory-only `/target/` pattern above does not match a symlink named
+# `target` (e.g. the worktree-setup skill's cache symlink pointing at the
+# primary checkout's target/) — a bare `/target` entry covers that case too.
+/target
 # Nested cargo target dirs from per-workspace builds (e.g. apps/palette-tauri).
 apps/*/target/
 apps/*/*/target/
