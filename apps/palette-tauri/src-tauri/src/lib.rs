@@ -16,6 +16,7 @@ use tauri::{
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 mod axon_bridge;
+mod date_math;
 mod diag;
 mod files_bridge;
 mod github_bridge;

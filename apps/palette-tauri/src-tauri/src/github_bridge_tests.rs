@@ -29,22 +29,12 @@ fn rejects_unknown_kind() {
     assert!(parse_kind("bogus").is_err());
 }
 
-#[test]
-fn feed_kind_builds_per_repo_events_url() {
-    let request = req("feed", "jmagar", Some("axon"), None, None);
-    let url = build_request_url(&request, GitHubRequestKind::Feed).unwrap();
-    assert_eq!(
-        url,
-        "https://api.github.com/repos/jmagar/axon/events?per_page=30"
-    );
-}
-
-#[test]
-fn feed_kind_requires_repo() {
-    let request = req("feed", "jmagar", None, None, None);
-    let result = build_request_url(&request, GitHubRequestKind::Feed);
-    assert!(result.is_err());
-}
+// Note: `GitHubRequestKind::Feed` is intentionally NOT exercised against
+// `build_request_url` here — that arm is unreachable in production (see its
+// `unreachable!()` body and doc comment above) because `github_browse`
+// special-cases `Feed` and routes to `github_feed::github_browse_feed`
+// before `build_request_url` is ever called for that kind. Feed's URL
+// construction is covered by `github_feed_tests.rs` instead.
 
 #[test]
 fn parse_kind_accepts_feed() {
@@ -199,10 +189,11 @@ fn rejects_branch_with_query_injection() {
 #[test]
 fn describes_rate_limit_error_with_reset_time() {
     let payload = serde_json::json!({ "message": "API rate limit exceeded" });
-    let message = describe_error(
+    let message = describe_error_with_retry_after(
         reqwest::StatusCode::FORBIDDEN,
         Some(0),
         Some(1_700_000_000),
+        None,
         &payload,
     );
     assert!(message.contains("rate limited"));
@@ -212,37 +203,75 @@ fn describes_rate_limit_error_with_reset_time() {
 #[test]
 fn describes_rate_limit_error_without_reset_time() {
     let payload = serde_json::json!({});
-    let message = describe_error(reqwest::StatusCode::FORBIDDEN, Some(0), None, &payload);
+    let message = describe_error_with_retry_after(
+        reqwest::StatusCode::FORBIDDEN,
+        Some(0),
+        None,
+        None,
+        &payload,
+    );
     assert!(message.contains("rate limited"));
 }
 
 #[test]
 fn describes_forbidden_without_exhausted_quota_as_generic_error() {
     let payload = serde_json::json!({ "message": "Resource not accessible" });
-    let message = describe_error(reqwest::StatusCode::FORBIDDEN, Some(10), None, &payload);
+    let message = describe_error_with_retry_after(
+        reqwest::StatusCode::FORBIDDEN,
+        Some(10),
+        None,
+        None,
+        &payload,
+    );
     assert!(message.contains("Resource not accessible"));
     assert!(!message.contains("rate limited"));
 }
 
 #[test]
+fn describes_secondary_rate_limit_with_retry_after_despite_nonzero_remaining() {
+    // GitHub's secondary/abuse-detection limiter returns 403 with
+    // `Retry-After` set but does NOT necessarily zero out the primary
+    // `x-ratelimit-remaining` count — this must still be recognized as a
+    // rate limit, not fall through to a generic 403 message.
+    let payload = serde_json::json!({ "message": "You have exceeded a secondary rate limit" });
+    let message = describe_error_with_retry_after(
+        reqwest::StatusCode::FORBIDDEN,
+        Some(42),
+        None,
+        Some(30),
+        &payload,
+    );
+    assert!(message.contains("secondary rate limit"));
+    assert!(message.contains("30"));
+}
+
+#[test]
 fn describes_not_found_error() {
     let payload = serde_json::json!({});
-    let message = describe_error(reqwest::StatusCode::NOT_FOUND, None, None, &payload);
+    let message =
+        describe_error_with_retry_after(reqwest::StatusCode::NOT_FOUND, None, None, None, &payload);
     assert_eq!(message, "not found on GitHub");
 }
 
 #[test]
 fn describes_generic_error_with_github_message() {
     let payload = serde_json::json!({ "message": "Bad credentials" });
-    let message = describe_error(reqwest::StatusCode::UNAUTHORIZED, None, None, &payload);
+    let message = describe_error_with_retry_after(
+        reqwest::StatusCode::UNAUTHORIZED,
+        None,
+        None,
+        None,
+        &payload,
+    );
     assert!(message.contains("Bad credentials"));
 }
 
 #[test]
 fn describes_generic_error_without_github_message() {
     let payload = serde_json::json!({});
-    let message = describe_error(
+    let message = describe_error_with_retry_after(
         reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+        None,
         None,
         None,
         &payload,

@@ -295,8 +295,9 @@ fn extract_backtick_path(message: &str) -> Option<String> {
 
 /// Parse an RFC 3339 / ISO 8601 UTC timestamp (`2024-01-15T10:00:00Z`, the
 /// exact shape GitHub's API sends) into Unix seconds, without pulling in a
-/// chrono dependency — mirrors `github_bridge.rs`'s existing
-/// dependency-free-time-math precedent (`civil_from_days`/`format_unix_time`).
+/// chrono dependency — uses the shared `crate::date_math::days_from_civil`
+/// (the exact inverse of `civil_from_days`, which `github_bridge.rs` uses for
+/// its rate-limit "retry at" formatting).
 fn parse_iso8601_to_unix(input: &str) -> Option<i64> {
     let bytes = input.as_bytes();
     if bytes.len() < 19 {
@@ -309,19 +310,6 @@ fn parse_iso8601_to_unix(input: &str) -> Option<i64> {
     let minute: i64 = input.get(14..16)?.parse().ok()?;
     let second: i64 = input.get(17..19)?.parse().ok()?;
 
-    let days = days_from_civil(year, month, day);
+    let days = crate::date_math::days_from_civil(year, month, day);
     Some(days * 86_400 + hour * 3600 + minute * 60 + second)
-}
-
-/// Inverse of `github_bridge.rs::civil_from_days` — proleptic Gregorian
-/// (year, month, day) to days-since-epoch. Same Howard Hinnant algorithm
-/// family, kept local to avoid a cross-module `pub(crate)` for a two-line
-/// helper only this file needs.
-fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = if y >= 0 { y } else { y - 399 } / 400;
-    let yoe = y - era * 400;
-    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146_097 + doe - 719_468
 }

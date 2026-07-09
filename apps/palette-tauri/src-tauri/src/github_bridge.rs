@@ -177,7 +177,7 @@ fn validate_file_path(value: &str) -> Result<&str, String> {
     Ok(trimmed)
 }
 
-fn build_request_url(
+pub(crate) fn build_request_url(
     request: &GitHubBrowseRequest,
     kind: GitHubRequestKind,
 ) -> Result<String, String> {
@@ -220,12 +220,79 @@ fn build_request_url(
             Ok(url)
         }
         GitHubRequestKind::Feed => {
-            let repo = validate_segment(request.repo.as_deref().unwrap_or_default(), "repo")?;
-            Ok(format!(
-                "{GITHUB_API_BASE}/repos/{owner}/{repo}/events?per_page=30"
-            ))
+            // Unreachable in practice: `github_browse` special-cases
+            // `GitHubRequestKind::Feed` and routes to
+            // `github_feed::github_browse_feed` before this function is ever
+            // called for that kind (see `GitHubRequestKind::Feed`'s doc
+            // comment above and `github_browse` below). Kept as an explicit
+            // arm — rather than a `_ =>` catch-all — so this match stays
+            // exhaustive and self-documenting if `GitHubRequestKind` grows a
+            // new variant later.
+            unreachable!(
+                "GitHubRequestKind::Feed is dispatched directly to github_feed::github_browse_feed \
+                 and never reaches build_request_url"
+            )
         }
     }
+}
+
+/// Result of a single unauthenticated-or-bearer GitHub GET request: the raw
+/// (already status/JSON-parsed) response plus the bits every call site needs
+/// to build a `GitHubBrowseResult` — status code, rate-limit headers, and the
+/// parsed JSON body. Shared by `github_browse`'s main HTTP path and every
+/// `github_feed.rs` call site (`github_browse_feed`'s repo-list fetch,
+/// `fetch_repo_events`) so header parsing and error/JSON handling live in
+/// exactly one place.
+pub(crate) struct GitHubFetch {
+    pub(crate) status: reqwest::StatusCode,
+    pub(crate) rate_limit_remaining: Option<u32>,
+    pub(crate) rate_limit_reset: Option<i64>,
+    /// `Retry-After` header (seconds), when GitHub's secondary/abuse-detection
+    /// rate limiter sent one — see `describe_error_with_retry_after`.
+    pub(crate) retry_after_secs: Option<u64>,
+    /// Parsed JSON body. `Value::Null` for an empty body; a `Value::String`
+    /// fallback when the body isn't valid JSON (mirrors the previous
+    /// `github_browse` inline handling).
+    pub(crate) payload: serde_json::Value,
+}
+
+/// Issue a single GET against `url` with the standard GitHub REST headers,
+/// optionally attaching a bearer `token`, and collect status + rate-limit
+/// headers + parsed JSON body. Does not itself branch on success/failure —
+/// callers use `status.is_success()` (or `describe_error`) to decide.
+pub(crate) async fn fetch_github_json(
+    client: &reqwest::Client,
+    url: &str,
+    token: Option<&str>,
+) -> Result<GitHubFetch, String> {
+    let mut builder = client
+        .get(url)
+        .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28");
+    if let Some(token) = token {
+        builder = builder.bearer_auth(token);
+    }
+
+    let response = builder.send().await.map_err(|err| err.to_string())?;
+    let status = response.status();
+    let rate_limit_remaining = header_u32(&response, "x-ratelimit-remaining");
+    let rate_limit_reset = header_i64(&response, "x-ratelimit-reset");
+    let retry_after = retry_after_secs(&response);
+
+    let text = response.text().await.map_err(|err| err.to_string())?;
+    let payload: serde_json::Value = if text.trim().is_empty() {
+        serde_json::Value::Null
+    } else {
+        serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text))
+    };
+
+    Ok(GitHubFetch {
+        status,
+        rate_limit_remaining,
+        rate_limit_reset,
+        retry_after_secs: retry_after,
+        payload,
+    })
 }
 
 #[tauri::command]
@@ -252,26 +319,14 @@ pub(crate) async fn github_browse(
     }
 
     let url = build_request_url(&request, kind)?;
-    let mut builder = (*client)
-        .client()
-        .get(&url)
-        .header(reqwest::header::ACCEPT, "application/vnd.github+json")
-        .header("X-GitHub-Api-Version", "2022-11-28");
-    if let Some(token) = token.as_deref() {
-        builder = builder.bearer_auth(token);
-    }
-
-    let response = builder.send().await.map_err(|err| err.to_string())?;
-    let status = response.status();
-    let rate_limit_remaining = header_u32(&response, "x-ratelimit-remaining");
-    let rate_limit_reset = header_i64(&response, "x-ratelimit-reset");
-
-    let text = response.text().await.map_err(|err| err.to_string())?;
-    let payload: serde_json::Value = if text.trim().is_empty() {
-        serde_json::Value::Null
-    } else {
-        serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text))
-    };
+    let fetch = fetch_github_json(client.client(), &url, token.as_deref()).await?;
+    let GitHubFetch {
+        status,
+        rate_limit_remaining,
+        rate_limit_reset,
+        retry_after_secs: retry_after,
+        payload,
+    } = fetch;
 
     if status.is_success() {
         let payload = if kind == GitHubRequestKind::FileContents {
@@ -295,7 +350,13 @@ pub(crate) async fn github_browse(
         });
     }
 
-    let error = describe_error(status, rate_limit_remaining, rate_limit_reset, &payload);
+    let error = describe_error_with_retry_after(
+        status,
+        rate_limit_remaining,
+        rate_limit_reset,
+        retry_after,
+        &payload,
+    );
     Ok(GitHubBrowseResult {
         ok: false,
         status: status.as_u16(),
@@ -346,10 +407,32 @@ pub(crate) fn header_i64(response: &reqwest::Response, name: &str) -> Option<i64
         .and_then(|value| value.parse::<i64>().ok())
 }
 
-pub(crate) fn describe_error(
+/// GitHub's secondary/abuse-detection rate limiter returns 403 with a
+/// `Retry-After` header (seconds) and, critically, does NOT necessarily zero
+/// out the primary `x-ratelimit-remaining` count the way the primary limiter
+/// does. `retry_after_secs` reads that header when present.
+pub(crate) fn retry_after_secs(response: &reqwest::Response) -> Option<u64> {
+    response
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+}
+
+/// Describe a non-success GitHub API response as a human-readable error,
+/// including a `retry_after` (seconds) reading of the `Retry-After` header —
+/// GitHub's secondary/abuse-detection limiter returns 403 with `Retry-After`
+/// set but the primary `x-ratelimit-remaining` count UNCHANGED, so without
+/// this it would otherwise fall through to a generic "GitHub API error (403)"
+/// message that doesn't tell the caller it's a rate limit at all, let alone
+/// the secondary one (which is what the Feed tab's concurrent multi-repo
+/// fan-out is most likely to trigger — see
+/// `github_feed.rs::FEED_FANOUT_CHUNK_SIZE`'s doc comment).
+pub(crate) fn describe_error_with_retry_after(
     status: reqwest::StatusCode,
     remaining: Option<u32>,
     reset: Option<i64>,
+    retry_after: Option<u64>,
     payload: &serde_json::Value,
 ) -> String {
     let github_message = payload
@@ -367,6 +450,11 @@ pub(crate) fn describe_error(
         }
         return "GitHub API rate limited — retry later".to_string();
     }
+    if status == reqwest::StatusCode::FORBIDDEN
+        && let Some(seconds) = retry_after
+    {
+        return format!("GitHub secondary rate limit hit — retry after {seconds}s");
+    }
     if status == reqwest::StatusCode::NOT_FOUND {
         return "not found on GitHub".to_string();
     }
@@ -383,28 +471,11 @@ fn format_unix_time(epoch_seconds: i64) -> String {
     const SECONDS_PER_DAY: i64 = 86_400;
     let days_since_epoch = epoch_seconds.div_euclid(SECONDS_PER_DAY);
     let seconds_of_day = epoch_seconds.rem_euclid(SECONDS_PER_DAY);
-    let (year, month, day) = civil_from_days(days_since_epoch);
+    let (year, month, day) = crate::date_math::civil_from_days(days_since_epoch);
     let hour = seconds_of_day / 3600;
     let minute = (seconds_of_day % 3600) / 60;
     let second = seconds_of_day % 60;
     format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02} UTC")
-}
-
-/// Howard Hinnant's `civil_from_days` algorithm — days-since-epoch to
-/// proleptic Gregorian (year, month, day). Avoids pulling in a chrono
-/// dependency just for one rate-limit error string.
-fn civil_from_days(z: i64) -> (i64, u32, u32) {
-    let z = z + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = (z - era * 146_097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
-    let year = if m <= 2 { y + 1 } else { y };
-    (year, m, d)
 }
 
 #[cfg(test)]
