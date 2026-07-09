@@ -60,3 +60,33 @@ fn file_json_log_layer_redacts_secret_before_write() {
     );
     assert!(written.contains(crate::redact::REDACTION_PLACEHOLDER));
 }
+
+#[test]
+fn file_json_log_layer_redacts_span_fields() {
+    // Fix 1 counterpart for the file JSON sink: span-level fields flow into
+    // the JSON "spans" array via the same `collect_span_fields` helper the
+    // console formatter uses. Prove a secret-shaped span field never reaches
+    // the on-disk JSON line either.
+    let buf = BufWriter::default();
+    let layer = tracing_subscriber::fmt::layer()
+        .event_format(JsonFormat)
+        .with_ansi(false)
+        .with_writer(buf.clone());
+    let subscriber = tracing_subscriber::registry().with(layer);
+
+    tracing::subscriber::with_default(subscriber, || {
+        let span = tracing::info_span!(
+            "request",
+            header = "Authorization: Bearer abcdef0123456789abcdef"
+        );
+        let _guard = span.enter();
+        tracing::warn!("handling request");
+    });
+
+    let written = String::from_utf8(buf.0.lock().unwrap().clone()).unwrap();
+    assert!(
+        !written.contains("abcdef0123456789abcdef"),
+        "secret leaked into file JSON log spans: {written}"
+    );
+    assert!(written.contains(crate::redact::REDACTION_PLACEHOLDER));
+}

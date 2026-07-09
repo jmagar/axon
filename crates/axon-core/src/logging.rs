@@ -89,6 +89,29 @@ impl Visit for EventVisitor {
     }
 }
 
+/// Upper bound on a single message/field value scanned by the logging
+/// redaction path. Mirrors `redact::boundary::MAX_REDACTABLE_TEXT_BYTES` —
+/// the durable-write boundary fails closed above this size because
+/// unbounded regex scanning over attacker-controlled text is itself a DoS
+/// surface. The logging path can't fail closed the same way (a log call
+/// can't block or error out the caller), so instead it replaces oversized
+/// values with a placeholder before scanning, capping the work per log
+/// call regardless of how large a caller's field value is.
+const MAX_LOGGED_FIELD_BYTES: usize = super::redact::MAX_REDACTABLE_TEXT_BYTES;
+
+const OVERSIZED_FIELD_PLACEHOLDER: &str = "<oversized field omitted>";
+
+/// Redact `value` for the logging path, capping the scan cost: values over
+/// [`MAX_LOGGED_FIELD_BYTES`] are replaced with a placeholder instead of
+/// being scanned at all.
+fn redact_logged_text(redactor: &impl super::redact::Redactor, value: &str) -> String {
+    let context = super::redact::RedactionContext::transport_response();
+    if value.len() > MAX_LOGGED_FIELD_BYTES {
+        return OVERSIZED_FIELD_PLACEHOLDER.to_string();
+    }
+    redactor.redact_text(value, &context)
+}
+
 /// Fail-closed redaction boundary: scrub every console log line's message and
 /// structured fields before they're written to stderr. Every `tracing::*!`
 /// call site in the codebase funnels through here — this is the one place
@@ -97,12 +120,10 @@ impl Visit for EventVisitor {
 /// Shared by both `CliFormat` (console) and `json_format::JsonFormat` (file
 /// log sink) so a secret is scrubbed identically on every log destination.
 pub(crate) fn redact_event_fields(v: &mut EventVisitor) {
-    use super::redact::Redactor;
     let redactor = super::redact::DefaultRedactor::new();
-    let context = super::redact::RedactionContext::transport_response();
-    v.message = redactor.redact_text(&v.message, &context);
+    v.message = redact_logged_text(&redactor, &v.message);
     for (_, value) in v.extra.iter_mut() {
-        *value = redactor.redact_text(value, &context);
+        *value = redact_logged_text(&redactor, value);
     }
 }
 
@@ -150,11 +171,21 @@ fn write_level(writer: &mut Writer<'_>, level: tracing::Level, ansi: bool) -> fm
 ///
 /// clone() on fields.fields is required — extensions() returns a temporary guard that
 /// drops at the end of each loop iteration, so we cannot borrow &str across iterations.
+///
+/// Each collected field string is routed through the same fail-closed
+/// redaction boundary as event-level fields (see `redact_event_fields`)
+/// before being returned — span fields (e.g. a future
+/// `#[tracing::instrument(fields(url = %url, header = %h))]`) are just as
+/// capable of carrying a secret as an event field, and both `CliFormat`
+/// (console) and `json_format::JsonFormat` (file log sink) write this
+/// output directly, so scrubbing it here covers both sinks for free.
 pub(crate) fn collect_span_fields<S, N>(ctx: &FmtContext<'_, S, N>) -> Vec<String>
 where
     S: tracing::Subscriber + for<'a> LookupSpan<'a>,
     N: for<'a> FormatFields<'a> + 'static,
 {
+    use super::redact::DefaultRedactor;
+
     let mut fields: Vec<String> = Vec::new();
     let mut current = ctx.lookup_current();
     while let Some(span) = current {
@@ -166,7 +197,12 @@ where
         current = span.parent();
     }
     fields.reverse();
+
+    let redactor = DefaultRedactor::new();
     fields
+        .iter()
+        .map(|f| redact_logged_text(&redactor, f))
+        .collect()
 }
 
 /// Determine whether to emit ANSI escape codes. Explicit `--color` choices win
