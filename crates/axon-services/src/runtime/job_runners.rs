@@ -37,7 +37,9 @@ use axon_memory::store::MemoryStore;
 use tokio_util::sync::CancellationToken;
 
 mod crawl_runner;
+mod ingest_runner;
 use crawl_runner::CrawlRunner;
+use ingest_runner::IngestRunner;
 
 /// Build the [`JobRunnerRegistry`] handed to the unified worker at
 /// composition time. Additive by design — any kind not registered here keeps
@@ -70,6 +72,12 @@ pub fn build_registry(cfg: &Arc<Config>) -> Result<JobRunnerRegistry, ApiError> 
     registry.register(
         JobKind::Crawl,
         Arc::new(CrawlRunner {
+            cfg: Arc::clone(cfg),
+        }),
+    );
+    registry.register(
+        JobKind::Ingest,
+        Arc::new(IngestRunner {
             cfg: Arc::clone(cfg),
         }),
     );

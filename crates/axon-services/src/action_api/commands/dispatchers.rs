@@ -285,10 +285,14 @@ pub async fn dispatch_ingest(
     match req.subaction.unwrap_or(IngestSubaction::Start) {
         IngestSubaction::Start => {
             let source = parse_ingest_source(&req, service_context.cfg.as_ref())?;
+            // No per-caller auth identity is threaded through the generic
+            // client-action dispatch path today — this is a genuinely
+            // internal call site, made explicit by passing `None`.
             let outcome = ingest_svc::ingest_start_with_context(
                 service_context.cfg.as_ref(),
                 source,
                 service_context,
+                None,
             )
             .await
             .map_err(internal_error)?;

@@ -20,6 +20,7 @@ use axon_observe::sink::SqliteObservabilitySink;
 mod crawl_bridge;
 mod embed_bridge;
 mod extract_bridge;
+mod ingest_bridge;
 
 pub struct SqliteServiceRuntime {
     pub(crate) cfg: Arc<Config>,
@@ -122,6 +123,10 @@ impl ServiceJobRuntime for SqliteServiceRuntime {
             let store = self.unified_store();
             return crawl_bridge::list(&store, pagination.limit, pagination.offset).await;
         }
+        if kind == JobKind::Ingest {
+            let store = self.unified_store();
+            return ingest_bridge::list(&store, pagination.limit, pagination.offset).await;
+        }
         Ok(job_query::list_service_jobs(
             self.backend.pool(),
             kind,
@@ -161,6 +166,9 @@ impl ServiceJobRuntime for SqliteServiceRuntime {
         if kind == JobKind::Crawl {
             return crawl_bridge::status(&self.unified_store(), id).await;
         }
+        if kind == JobKind::Ingest {
+            return ingest_bridge::status(&self.unified_store(), id).await;
+        }
         Ok(job_query::service_job(self.backend.pool(), kind, id).await?)
     }
 
@@ -177,6 +185,9 @@ impl ServiceJobRuntime for SqliteServiceRuntime {
         }
         if kind == JobKind::Crawl {
             return crawl_bridge::cancel(&self.unified_store(), id).await;
+        }
+        if kind == JobKind::Ingest {
+            return ingest_bridge::cancel(&self.unified_store(), id).await;
         }
         Ok(self
             .backend
@@ -195,6 +206,9 @@ impl ServiceJobRuntime for SqliteServiceRuntime {
         if kind == JobKind::Crawl {
             return crawl_bridge::cleanup(&self.unified_store()).await;
         }
+        if kind == JobKind::Ingest {
+            return ingest_bridge::cleanup(&self.unified_store()).await;
+        }
         Ok(job_query::cleanup_jobs(self.backend.pool(), kind).await?)
     }
 
@@ -207,6 +221,9 @@ impl ServiceJobRuntime for SqliteServiceRuntime {
         }
         if kind == JobKind::Crawl {
             return crawl_bridge::clear(&self.unified_store()).await;
+        }
+        if kind == JobKind::Ingest {
+            return ingest_bridge::clear(&self.unified_store()).await;
         }
         Ok(job_query::clear_jobs(self.backend.pool(), kind).await?)
     }
@@ -224,6 +241,9 @@ impl ServiceJobRuntime for SqliteServiceRuntime {
         }
         if kind == JobKind::Crawl {
             return crawl_bridge::recover(&self.unified_store(), stale_threshold_ms).await;
+        }
+        if kind == JobKind::Ingest {
+            return ingest_bridge::recover(&self.unified_store(), stale_threshold_ms).await;
         }
         Ok(reclaim_stale_running_jobs_for_table(
             self.backend.pool(),
