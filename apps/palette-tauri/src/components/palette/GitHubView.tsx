@@ -1,16 +1,38 @@
-import { memo, useMemo, useState } from "react";
-import { AlertTriangle, ChevronLeft, File, FolderGit2, Loader2 } from "lucide-react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  AlertTriangle,
+  ChevronLeft,
+  Copy,
+  ExternalLink,
+  File as FileIcon,
+  FileArchive,
+  FileCode,
+  FileCog,
+  FileText,
+  FolderGit2,
+  Loader2,
+  MessageSquare,
+} from "lucide-react";
 
 import { MarkdownBody } from "@/components/palette/MarkdownBody";
-import { DetailLine, EmptyResult, ResultHero } from "@/components/palette/OperationResultViewShared";
+import { EmptyResult, ResultHero } from "@/components/palette/OperationResultViewShared";
 import type { GitHubBrowseResult } from "@/lib/actionRequest";
+import { fileKind, isMarkdownLike } from "@/lib/filesModel";
 import { invoke } from "@/lib/invoke";
 import { isRecord } from "@/lib/payload";
+
+// Note: this rewrite drops the plain Path/Size `DetailLine` detail card the
+// first drafting pass used for the file preview header, replacing it with
+// the mock-matched `pvHead`/`pvFoot` chrome in `FilePreview` below (path is
+// now shown inline in the header, size moves to the footer strip) — so
+// `DetailLine` is no longer imported here. It is still used elsewhere in the
+// codebase (`OperationResultViewShared.tsx` consumers); this file's import
+// list simply no longer needs it.
 
 export type { GitHubBrowseResult } from "@/lib/actionRequest";
 
 interface GitHubBrowseRequest {
-  kind: "repos" | "repo" | "tree" | "file";
+  kind: "repos" | "repo" | "tree" | "file" | "feed";
   owner: string;
   repo?: string;
   branch?: string;
@@ -42,6 +64,12 @@ interface FileContents {
   truncated?: boolean;
 }
 
+type LoadState<T> =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "loaded"; value: T }
+  | { kind: "error"; message: string };
+
 async function browse(request: GitHubBrowseRequest): Promise<GitHubBrowseResult> {
   return invoke<GitHubBrowseResult>("github_browse", { request });
 }
@@ -52,34 +80,107 @@ async function browse(request: GitHubBrowseRequest): Promise<GitHubBrowseResult>
  * desktop CSP `connect-src` has no `api.github.com` origin — see the header
  * comment in `src-tauri/src/github_bridge.rs`).
  *
+ * Two levels of navigation, not a single undo-able history stack:
+ *   1. Repo list <-> a specific repo. "Back" always means "return to the repo
+ *      list" — there is nothing else to go back to once you're inside a repo,
+ *      because...
+ *   2. ...inside a repo, the file tree and the selected file's preview are
+ *      rendered SIMULTANEOUSLY in a two-pane split (`.github-body`), modeled
+ *      on `FilesView.tsx`'s `.files-body`/`.files-tree`/`.files-preview`
+ *      layout. Clicking a different tree entry only swaps `selectedPath` +
+ *      re-fetches the preview pane; the tree itself never re-renders from
+ *      scratch and there is no "back" from a file to the tree, because both
+ *      are always on screen together.
+ *
  * The initial payload comes from the dispatched action (`owner`,
- * `owner/repo`, or `owner/repo/path`); clicking a repo or a tree entry issues
- * a fresh `github_browse` call directly so browsing feels like real
- * navigation rather than one-shot palette commands. Each response echoes back
- * its own `owner`/`repo`/`branch`/`path`, so navigation state is reconstructed
- * from the response itself rather than guessed at from the GitHub JSON shape.
+ * `owner/repo`, or `owner/repo/path`) and seeds the tree/selection state
+ * below rather than being replayed through a history array.
  */
 export const GitHubView = memo(function GitHubView({ payload }: { payload: Record<string, unknown> }) {
   const initial = payload as unknown as GitHubBrowseResult;
-  const [history, setHistory] = useState<GitHubBrowseResult[]>([initial]);
-  const [loading, setLoading] = useState(false);
-  const current = history[history.length - 1];
 
-  async function go(request: GitHubBrowseRequest) {
-    setLoading(true);
+  const [repoRoot, setRepoRoot] = useState<GitHubBrowseResult>(initial);
+  const [reposLoading, setReposLoading] = useState(false);
+  const [reposError, setReposError] = useState<string | null>(null);
+
+  const [selectedPath, setSelectedPath] = useState<string | null>(
+    initial.ok && initial.kind === "file" ? (initial.path ?? null) : null,
+  );
+  const [file, setFile] = useState<LoadState<GitHubBrowseResult>>(
+    initial.ok && initial.kind === "file" ? { kind: "loaded", value: initial } : { kind: "idle" },
+  );
+  const [treeState, setTreeState] = useState<LoadState<GitHubBrowseResult>>(
+    initial.ok && initial.kind === "tree" ? { kind: "loaded", value: initial } : { kind: "idle" },
+  );
+
+  const inRepo = repoRoot.ok && (repoRoot.kind === "tree" || repoRoot.kind === "file");
+
+  const loadFile = useCallback(
+    (path: string) => {
+      if (!repoRoot.ok || !repoRoot.repo) return;
+      setSelectedPath(path);
+      setFile({ kind: "loading" });
+      browse({
+        kind: "file",
+        owner: repoRoot.owner,
+        repo: repoRoot.repo,
+        path,
+        branch: repoRoot.branch ?? undefined,
+      })
+        .then((result) => setFile(result.ok ? { kind: "loaded", value: result } : { kind: "error", message: result.error ?? "Unable to load file." }))
+        .catch((err) => setFile({ kind: "error", message: errorMessage(err) }));
+    },
+    [repoRoot],
+  );
+
+  // When the initial payload is `kind: "file"` (deep-linked directly to a
+  // file, e.g. from a Feed click — see openFeedItem), we have a file to
+  // preview but no tree yet. Fetch it once.
+  useEffect(() => {
+    if (!repoRoot.ok || repoRoot.kind !== "file" || !repoRoot.repo) return;
+    if (treeState.kind !== "idle") return;
+    setTreeState({ kind: "loading" });
+    browse({ kind: "tree", owner: repoRoot.owner, repo: repoRoot.repo, branch: repoRoot.branch ?? undefined })
+      .then((result) => setTreeState(result.ok ? { kind: "loaded", value: result } : { kind: "error", message: result.error ?? "Unable to load file tree." }))
+      .catch((err) => setTreeState({ kind: "error", message: errorMessage(err) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repoRoot]);
+
+  async function openRepo(repo: RepoSummary) {
+    setReposLoading(true);
+    setReposError(null);
     try {
-      const result = await browse(request);
-      setHistory((prev) => [...prev, result]);
+      const result = await browse({ kind: "tree", owner: repoRoot.owner, repo: repo.name, branch: repo.default_branch });
+      if (result.ok) {
+        setRepoRoot(result);
+        setTreeState({ kind: "loaded", value: result });
+        setSelectedPath(null);
+        setFile({ kind: "idle" });
+      } else {
+        setReposError(result.error ?? "Unable to load repository.");
+      }
     } finally {
-      setLoading(false);
+      setReposLoading(false);
     }
   }
 
-  function goBack() {
-    setHistory((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
+  function backToRepos() {
+    setRepoRoot({ ...repoRoot, ok: true, kind: "repos", repo: null, branch: null, path: null, payload: [] });
+    // Re-fetch the repo list fresh rather than trying to reconstruct it — the
+    // initial `repos` payload is not retained once the user has drilled in.
+    setReposLoading(true);
+    browse({ kind: "repos", owner: repoRoot.owner })
+      .then((result) => {
+        if (result.ok) setRepoRoot(result);
+        else setReposError(result.error ?? "Unable to load repositories.");
+      })
+      .finally(() => setReposLoading(false));
+    setSelectedPath(null);
+    setFile({ kind: "idle" });
+    setTreeState({ kind: "idle" });
   }
 
-  if (!current.ok) {
+  if (!repoRoot.ok) {
     return (
       <div className="output-body operation-view aurora-scrollbar">
         <ResultHero
@@ -87,18 +188,13 @@ export const GitHubView = memo(function GitHubView({ payload }: { payload: Recor
           title="GitHub request failed"
           tone="warn"
           metrics={[
-            ["Status", current.status || "-"],
-            ["Authenticated", current.authenticated ? "yes" : "no"],
+            ["Status", repoRoot.status || "-"],
+            ["Authenticated", repoRoot.authenticated ? "yes" : "no"],
           ]}
         />
         <section className="operation-section">
-          <p className="operation-muted">{current.error ?? "Unknown GitHub error."}</p>
+          <p className="operation-muted">{repoRoot.error ?? "Unknown GitHub error."}</p>
         </section>
-        {history.length > 1 ? (
-          <button type="button" className="github-back" onClick={goBack}>
-            <ChevronLeft size={13} /> Back
-          </button>
-        ) : null}
       </div>
     );
   }
@@ -107,55 +203,119 @@ export const GitHubView = memo(function GitHubView({ payload }: { payload: Recor
     <div className="output-body operation-view aurora-scrollbar github-view">
       <div className="github-header">
         <ResultHero
-          icon={loading ? <Loader2 size={16} className="github-spin" /> : <FolderGit2 size={16} />}
-          title={githubTitle(current)}
+          icon={reposLoading ? <Loader2 size={16} className="github-spin" /> : <FolderGit2 size={16} />}
+          title={githubTitle(repoRoot)}
           tone="neutral"
           metrics={[
-            ["Rate limit", current.rateLimitRemaining ?? "-"],
-            ["Auth", current.authenticated ? "token" : "anonymous"],
+            ["Rate limit", repoRoot.rateLimitRemaining ?? "-"],
+            ["Auth", repoRoot.authenticated ? "token" : "anonymous"],
           ]}
         />
-        {history.length > 1 ? (
-          <button type="button" className="github-back" onClick={goBack} disabled={loading}>
+        {inRepo ? (
+          <button type="button" className="github-back" onClick={backToRepos} disabled={reposLoading}>
             <ChevronLeft size={13} /> Back
           </button>
         ) : null}
       </div>
-      {current.kind === "repos" ? (
-        <RepoListView
-          payload={current.payload}
-          onOpenRepo={(repo) =>
-            go({ kind: "tree", owner: current.owner, repo: repo.name, branch: repo.default_branch })
-          }
-        />
-      ) : current.kind === "tree" ? (
-        <TreeView
-          payload={current.payload}
-          onOpenFile={(path) =>
-            go({
-              kind: "file",
-              owner: current.owner,
-              repo: current.repo ?? "",
-              path,
-              branch: current.branch ?? undefined,
-            })
-          }
-        />
+      {reposError ? (
+        <section className="operation-section">
+          <p className="operation-muted">{reposError}</p>
+        </section>
+      ) : repoRoot.kind === "repos" ? (
+        <RepoListView payload={repoRoot.payload} onOpenRepo={openRepo} />
       ) : (
-        <FilePreview payload={current.payload} />
+        <GitHubSplitView
+          treePayload={
+            repoRoot.kind === "tree"
+              ? repoRoot.payload
+              : treeState.kind === "loaded"
+                ? treeState.value.payload
+                : undefined
+          }
+          selectedPath={selectedPath}
+          file={file}
+          onSelectFile={loadFile}
+          repo={repoRoot.repo ? `${repoRoot.owner}/${repoRoot.repo}` : repoRoot.owner}
+          branch={repoRoot.branch}
+        />
       )}
     </div>
   );
 });
+
+function GitHubSplitView({
+  treePayload,
+  selectedPath,
+  file,
+  onSelectFile,
+  repo,
+  branch,
+}: {
+  treePayload: unknown;
+  selectedPath: string | null;
+  file: LoadState<GitHubBrowseResult>;
+  onSelectFile: (path: string) => void;
+  /** `owner/repo` (or just `owner` if no repo is selected yet), passed through
+   * to `FilePreview`'s pvHead/pvFoot actions (Copy/Open-on-GitHub/Ask). */
+  repo: string;
+  branch: string | null;
+}) {
+  const entries = useMemo(() => {
+    const tree = isRecord(treePayload) ? treePayload.tree : undefined;
+    return Array.isArray(tree) ? (tree as TreeEntry[]) : [];
+  }, [treePayload]);
+  const files = useMemo(
+    () => entries.filter((entry) => entry.type === "blob").sort((a, b) => a.path.localeCompare(b.path)),
+    [entries],
+  );
+
+  return (
+    <div className="github-body">
+      <div className="github-tree aurora-scrollbar" role="listbox" aria-label="Repository files">
+        {files.length === 0 ? (
+          <EmptyResult kind="generic" />
+        ) : (
+          files.slice(0, 300).map((entry) => (
+            <button
+              key={entry.path}
+              type="button"
+              role="option"
+              aria-selected={selectedPath === entry.path}
+              className={`github-tree-row${selectedPath === entry.path ? " github-tree-row-active" : ""}`}
+              onClick={() => onSelectFile(entry.path)}
+            >
+              <TreeEntryIcon name={entry.path} />
+              <span className="github-tree-path">{entry.path}</span>
+              {typeof entry.size === "number" ? <span className="github-tree-size">{formatBytes(entry.size)}</span> : null}
+            </button>
+          ))
+        )}
+      </div>
+      <div className="github-preview aurora-scrollbar">
+        {!selectedPath ? (
+          <div className="files-empty operation-muted">Select a file</div>
+        ) : file.kind === "loading" ? (
+          <div className="files-empty">
+            <Loader2 size={16} className="github-spin" />
+            <span>Loading...</span>
+          </div>
+        ) : file.kind === "error" ? (
+          <div className="files-empty operation-muted">{file.message}</div>
+        ) : file.kind === "loaded" ? (
+          <FilePreview payload={file.value.payload} repo={repo} branch={branch} path={selectedPath} />
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 function githubTitle(result: GitHubBrowseResult): string {
   switch (result.kind) {
     case "repos":
       return `${result.owner}'s repositories`;
     case "tree":
-      return `${result.owner}/${result.repo}${result.branch ? ` @ ${result.branch}` : ""}`;
     case "file":
-      return result.path ?? "File preview";
+      return `${result.owner}/${result.repo}${result.branch ? ` @ ${result.branch}` : ""}`;
     default:
       return "GitHub";
   }
@@ -192,46 +352,120 @@ function RepoListView({
   );
 }
 
-function TreeView({ payload, onOpenFile }: { payload: unknown; onOpenFile: (path: string) => void }) {
-  const entries = useMemo(() => {
-    const tree = isRecord(payload) ? payload.tree : undefined;
-    return Array.isArray(tree) ? (tree as TreeEntry[]) : [];
-  }, [payload]);
-  const files = entries.filter((entry) => entry.type === "blob").sort((a, b) => a.path.localeCompare(b.path));
-  if (files.length === 0) return <EmptyResult kind="generic" />;
-  return (
-    <section className="operation-section">
-      <div className="github-tree-list">
-        {files.slice(0, 300).map((entry) => (
-          <button key={entry.path} type="button" className="github-tree-row" onClick={() => onOpenFile(entry.path)}>
-            <File size={13} />
-            <span className="github-tree-path">{entry.path}</span>
-            {typeof entry.size === "number" ? <span className="github-tree-size">{formatBytes(entry.size)}</span> : null}
-          </button>
-        ))}
-      </div>
-    </section>
-  );
+function TreeEntryIcon({ name }: { name: string }) {
+  const base = name.split("/").pop() ?? name;
+  switch (fileKind(base)) {
+    case "doc":
+      return <FileText size={13} className="files-icon-doc" aria-hidden="true" />;
+    case "code":
+      return <FileCode size={13} className="files-icon-code" aria-hidden="true" />;
+    case "config":
+      return <FileCog size={13} className="files-icon-config" aria-hidden="true" />;
+    case "archive":
+      return <FileArchive size={13} className="files-icon-muted" aria-hidden="true" />;
+    default:
+      return <FileIcon size={13} className="files-icon-muted" aria-hidden="true" />;
+  }
 }
 
-function FilePreview({ payload }: { payload: unknown }) {
+/**
+ * Corrected against the real mock's `pvHead`/`pvFoot` chrome (verified in
+ * `palette-mock.html`, search `pvHead`/`pvFoot`/`pvBody`): the mock's file
+ * preview has a header action row (Copy contents, Open on GitHub, Ask about
+ * this file) and a footer strip (byte size, file extension). The first
+ * drafting pass's `FilePreview` (a bare Path/Size detail card + body) was
+ * missing all of this — now added below as `pvHead`/`pvFoot`, ported as
+ * closely as this codebase's existing primitives allow:
+ *
+ * - "Copy contents" and "Open on GitHub" are both straightforward: clipboard
+ *   write + a toast, no new cross-component plumbing required.
+ * - "Ask about this file" in the mock closes the GitHub view and pipes
+ *   `"About {repo}/{path}"` into the ask action (mock: `runOp(find('ask'), ...)`).
+ *   This codebase's `GitHubView` currently has no callback prop for
+ *   dispatching a *different* palette action from inside a structured result
+ *   view — `OperationResultView.tsx`'s `github` entry renders `<GitHubView
+ *   payload={...} />` with no action-dispatch callback passed down (see
+ *   `apps/palette-tauri/src/components/palette/OperationResultView.tsx`).
+ *   Wiring a real "run the ask action and switch views" hookup is out of
+ *   scope for this task — it would require adding an `onAskAbout` prop
+ *   threaded through `OperationResultView` down to every structured view,
+ *   which is a bigger, cross-cutting change than "add the mock's preview
+ *   actions." **This plan ships the "Ask" button as a copy-to-clipboard
+ *   affordance** (copies `"About {repo}/{path}"` to the clipboard with a
+ *   toast, same mechanism as the other two buttons) rather than silently
+ *   dropping the button or silently pretending it's wired end-to-end. Flagged
+ *   again in "Open Questions" below — a follow-up task should add the real
+ *   `onAskAbout` plumbing if full mock parity is wanted.
+ */
+function FilePreview({ payload, repo, branch, path }: { payload: unknown; repo: string; branch: string | null; path: string | null }) {
   const file = isRecord(payload) ? (payload as unknown as FileContents) : null;
+  const [toast, setToast] = useState<string | null>(null);
   if (!file) return <EmptyResult kind="generic" />;
   const decoded = decodeFileContent(file);
+  const filePath = file.path ?? path ?? "";
+  const fileName = filePath.split("/").pop() ?? filePath;
+  const ext = fileName.includes(".") ? fileName.split(".").pop()!.toUpperCase() : "FILE";
+
+  function showToast(message: string) {
+    setToast(message);
+    setTimeout(() => setToast(null), 2000);
+  }
+
+  async function copyContents() {
+    if (decoded === null) return;
+    try {
+      await navigator.clipboard.writeText(decoded);
+      showToast(`Copied ${fileName}`);
+    } catch {
+      showToast("Copy failed");
+    }
+  }
+
+  async function copyGitHubLink() {
+    const url = `https://github.com/${repo}/blob/${branch ?? "main"}/${filePath}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast(`GitHub link copied · ${fileName}`);
+    } catch {
+      showToast("Copy failed");
+    }
+  }
+
+  async function copyAskPrompt() {
+    // See this function's doc comment above: real ask-action dispatch is out
+    // of scope for this task; this copies the mock's prompt text instead.
+    try {
+      await navigator.clipboard.writeText(`About ${repo}/${filePath}`);
+      showToast("Ask prompt copied");
+    } catch {
+      showToast("Copy failed");
+    }
+  }
+
   return (
     <>
-      <section className="operation-section">
-        <div className="operation-detail-card">
-          <DetailLine label="Path" value={file.path ?? "-"} mono />
-          <DetailLine label="Size" value={typeof file.size === "number" ? formatBytes(file.size) : "-"} mono />
+      <div className="github-preview-head">
+        <TreeEntryIcon name={fileName} />
+        <div className="github-preview-head-main">
+          <div className="github-preview-head-name">{fileName}</div>
+          <div className="github-preview-head-path">{repo} / {filePath}</div>
         </div>
-      </section>
+        <button type="button" className="github-preview-action" title="Copy contents" aria-label="Copy contents" onClick={copyContents}>
+          <Copy size={15} aria-hidden="true" />
+        </button>
+        <button type="button" className="github-preview-action" title="Open on GitHub" aria-label="Open on GitHub" onClick={copyGitHubLink}>
+          <ExternalLink size={15} aria-hidden="true" />
+        </button>
+        <button type="button" className="github-preview-ask" title="Ask about this file" onClick={copyAskPrompt}>
+          <MessageSquare size={12} aria-hidden="true" /> Ask
+        </button>
+      </div>
       <section className="operation-section operation-reader-section">
         {file.truncated ? (
           <p className="operation-muted">File too large to preview inline.</p>
         ) : decoded !== null ? (
           <div className="operation-reader">
-            {isMarkdownPath(file.path) ? (
+            {isMarkdownLike(filePath) ? (
               <MarkdownBody>{decoded}</MarkdownBody>
             ) : (
               <pre className="output-body output-code github-file-code">{decoded}</pre>
@@ -241,6 +475,12 @@ function FilePreview({ payload }: { payload: unknown }) {
           <p className="operation-muted">Unable to decode file contents.</p>
         )}
       </section>
+      <div className="github-preview-foot">
+        {typeof file.size === "number" ? <span>{formatBytes(file.size)}</span> : null}
+        <span className="github-preview-foot-spacer" />
+        <span className="github-preview-foot-ext">{ext}</span>
+      </div>
+      {toast ? <div className="github-toast">{toast}</div> : null}
     </>
   );
 }
@@ -258,12 +498,12 @@ function decodeFileContent(file: FileContents): string | null {
   }
 }
 
-function isMarkdownPath(path: string | undefined | null): boolean {
-  return Boolean(path && /\.(md|mdx)$/i.test(path));
-}
-
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }

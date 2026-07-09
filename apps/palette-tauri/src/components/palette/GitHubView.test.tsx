@@ -158,13 +158,53 @@ describe("GitHubView", () => {
     expect(screen.getByText(/rate limited/)).toBeInTheDocument();
   });
 
-  it("shows a Back button after drilling and returns to the previous view", async () => {
+  it("shows a Back-to-repos button once inside a repo, and returns to the repo list", async () => {
     invokeMock.mockResolvedValueOnce(treeResult);
+    // backToRepos() re-fetches the repo list fresh (see GitHubView.tsx) — mock
+    // a second response for that follow-up call.
+    invokeMock.mockResolvedValueOnce(reposResult);
     render(<GitHubView payload={reposResult} />);
     fireEvent.click(screen.getByText("jmagar/axon"));
     await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
     const backButton = screen.getByRole("button", { name: /back/i });
     fireEvent.click(backButton);
     await waitFor(() => expect(screen.getByText("jmagar/axon")).toBeInTheDocument());
+    // Back from the repo-list view (the top level) does not show a Back button.
+    expect(screen.queryByRole("button", { name: /back/i })).not.toBeInTheDocument();
+  });
+
+  it("renders the tree and a file's preview simultaneously in a split view", async () => {
+    invokeMock.mockResolvedValueOnce(fileResult);
+    render(<GitHubView payload={treeResult} />);
+    fireEvent.click(screen.getByText("README.md"));
+    await waitFor(() => expect(screen.getByText(/hello/)).toBeInTheDocument());
+    // The tree is still visible alongside the preview — this is the split-pane
+    // behavior replacing the old sequential "tree screen -> separate preview
+    // screen" navigation. "README.md" appears in both the tree row and the
+    // preview pane's header, so assert presence via getAllByText rather than
+    // getByText (same pattern as the existing "renders a decoded file preview
+    // directly..." test above).
+    expect(screen.getAllByText("README.md").length).toBeGreaterThan(0);
+    expect(screen.getByText("src/main.rs")).toBeInTheDocument();
+    expect(screen.getByText(/hello/)).toBeInTheDocument();
+  });
+
+  it("selecting a different file only swaps the preview pane, tree stays put", async () => {
+    invokeMock.mockResolvedValueOnce(fileResult);
+    render(<GitHubView payload={treeResult} />);
+    fireEvent.click(screen.getByText("README.md"));
+    await waitFor(() => expect(screen.getByText(/hello/)).toBeInTheDocument());
+
+    const secondFileResult = {
+      ...fileResult,
+      path: "src/main.rs",
+      payload: { path: "src/main.rs", content: btoa("fn main() {}"), encoding: "base64", size: 12 },
+    };
+    invokeMock.mockResolvedValueOnce(secondFileResult);
+    fireEvent.click(screen.getByText("src/main.rs"));
+    await waitFor(() => expect(screen.getByText(/fn main/)).toBeInTheDocument());
+    // Tree entries for BOTH files are still visible — no navigation occurred.
+    expect(screen.getAllByText("README.md").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("src/main.rs").length).toBeGreaterThan(0);
   });
 });
