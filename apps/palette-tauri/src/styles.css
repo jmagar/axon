@@ -6198,3 +6198,130 @@ textarea {
   padding: 7px 14px;
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
 }
+
+.github-feed-loading,
+.github-feed-error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--aurora-text-muted);
+}
+
+.github-feed-day + .github-feed-day {
+  margin-top: 1rem;
+}
+
+.github-feed-partial {
+  margin-bottom: 0.5rem;
+}
+
+.github-feed-row {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+/* feedRow chrome corrected against the real mock (see FeedRow's doc comment
+ * in Task 7): icon swatch, header line (repo/kind/num), title, meta line
+ * (actor chip + meta + badge), right-aligned relative time. */
+.github-feed-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--aurora-accent-primary);
+  background: color-mix(in srgb, var(--aurora-accent-primary) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--aurora-accent-primary) 28%, var(--aurora-border-default));
+}
+
+.github-feed-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.github-feed-kind {
+  font-size: 0.65625rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--aurora-accent-primary);
+}
+
+.github-feed-num {
+  font-size: 0.71875rem;
+  color: var(--aurora-text-muted);
+}
+
+.github-feed-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+  flex-wrap: wrap;
+  font-size: 0.71875rem;
+  color: var(--aurora-text-muted);
+}
+
+.github-feed-actor {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.github-feed-actor-chip {
+  width: 15px;
+  height: 15px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--aurora-accent-primary) 22%, var(--aurora-control-surface));
+  color: var(--aurora-accent-primary);
+  font-size: 0.53125rem;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+
+.github-feed-dot {
+  opacity: 0.45;
+}
+
+.github-feed-diff {
+  display: inline-flex;
+  gap: 7px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.github-feed-diff-add {
+  color: var(--aurora-success);
+}
+
+.github-feed-diff-del {
+  color: var(--aurora-error);
+}
+
+.github-feed-badge {
+  font-size: 0.65625rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--aurora-text-muted);
+  background: color-mix(in srgb, var(--aurora-text-muted) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--aurora-text-muted) 30%, transparent);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.github-feed-time {
+  font-size: 0.6875rem;
+  color: var(--aurora-text-muted);
+  flex: 0 0 auto;
+  white-space: nowrap;
+  margin-top: 2px;
+}
