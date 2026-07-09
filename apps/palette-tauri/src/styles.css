@@ -6325,3 +6325,34 @@ textarea {
   white-space: nowrap;
   margin-top: 2px;
 }
+
+/* Feed/Browse segmented pill control — matches the real mock's ghSeg(),
+ * not an underlined tab bar (see the note above this render block in
+ * GitHubView.tsx's Task 8 edit). */
+.github-seg {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--aurora-control-surface);
+  border: 1px solid var(--aurora-border-default);
+  flex: 0 0 auto;
+  margin: 0 0.75rem 0.5rem;
+}
+
+.github-seg-btn {
+  appearance: none;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: none;
+  color: var(--aurora-text-muted);
+  background: transparent;
+}
+
+.github-seg-btn-active {
+  color: var(--aurora-text-primary);
+  background: color-mix(in srgb, var(--aurora-accent-primary) 18%, transparent);
+}

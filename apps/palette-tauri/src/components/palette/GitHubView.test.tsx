@@ -207,4 +207,68 @@ describe("GitHubView", () => {
     expect(screen.getAllByText("README.md").length).toBeGreaterThan(0);
     expect(screen.getAllByText("src/main.rs").length).toBeGreaterThan(0);
   });
+
+  it("shows a Feed tab and switches to it, fetching the owner's activity feed", async () => {
+    const feedResult = {
+      ok: true,
+      status: 200,
+      kind: "feed",
+      owner: "jmagar",
+      repo: null,
+      branch: null,
+      path: null,
+      payload: { items: [], partial: false, errors: [] },
+      error: null,
+      rateLimitRemaining: 55,
+      rateLimitReset: null,
+      authenticated: false,
+    };
+    invokeMock.mockResolvedValueOnce(feedResult);
+    render(<GitHubView payload={reposResult} />);
+    fireEvent.click(screen.getByRole("tab", { name: /feed/i }));
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("github_browse", { request: { kind: "feed", owner: "jmagar" } }),
+    );
+  });
+
+  it("clicking a Feed item with a path jumps into the split view at that file", async () => {
+    const feedItem = {
+      kind: "push",
+      repo: "jmagar/axon",
+      actor: "jmagar",
+      title: "fix: bug in `README.md`",
+      url: "https://github.com/jmagar/axon/commits",
+      path: "README.md",
+      num: null,
+      meta: "1 commits · main",
+      badge: null,
+      timestampUnix: Math.floor(Date.now() / 1000),
+    };
+    const feedResult = {
+      ok: true,
+      status: 200,
+      kind: "feed",
+      owner: "jmagar",
+      repo: null,
+      branch: null,
+      path: null,
+      payload: { items: [feedItem], partial: false, errors: [] },
+      error: null,
+      rateLimitRemaining: 55,
+      rateLimitReset: null,
+      authenticated: false,
+    };
+    invokeMock.mockResolvedValueOnce(feedResult); // feed fetch
+    invokeMock.mockResolvedValueOnce(treeResult); // tree fetch for jmagar/axon
+    invokeMock.mockResolvedValueOnce(fileResult); // file fetch for README.md
+
+    render(<GitHubView payload={reposResult} />);
+    fireEvent.click(screen.getByRole("tab", { name: /feed/i }));
+    await waitFor(() => expect(screen.getByText(/fix: bug/)).toBeInTheDocument());
+    fireEvent.click(screen.getByText(/fix: bug/));
+
+    await waitFor(() => expect(screen.getByText(/hello/)).toBeInTheDocument());
+    // Landed in the split view with the tree visible alongside the preview.
+    expect(screen.getByText("src/main.rs")).toBeInTheDocument();
+  });
 });

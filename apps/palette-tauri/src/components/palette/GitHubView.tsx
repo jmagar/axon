@@ -14,10 +14,12 @@ import {
   MessageSquare,
 } from "lucide-react";
 
+import { GitHubFeedView } from "@/components/palette/GitHubFeedView";
 import { MarkdownBody } from "@/components/palette/MarkdownBody";
 import { EmptyResult, ResultHero } from "@/components/palette/OperationResultViewShared";
 import type { GitHubBrowseResult } from "@/lib/actionRequest";
 import { fileKind, isMarkdownLike } from "@/lib/filesModel";
+import type { FeedItem } from "@/lib/githubFeed";
 import { invoke } from "@/lib/invoke";
 import { isRecord } from "@/lib/payload";
 
@@ -112,6 +114,7 @@ export const GitHubView = memo(function GitHubView({ payload }: { payload: Recor
   const [treeState, setTreeState] = useState<LoadState<GitHubBrowseResult>>(
     initial.ok && initial.kind === "tree" ? { kind: "loaded", value: initial } : { kind: "idle" },
   );
+  const [activeTab, setActiveTab] = useState<"browse" | "feed">("browse");
 
   const inRepo = repoRoot.ok && (repoRoot.kind === "tree" || repoRoot.kind === "file");
 
@@ -145,6 +148,43 @@ export const GitHubView = memo(function GitHubView({ payload }: { payload: Recor
       .catch((err) => setTreeState({ kind: "error", message: errorMessage(err) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repoRoot]);
+
+  // Note: this does NOT reuse `loadFile` — `loadFile` closes over `repoRoot`,
+  // which hasn't updated to the newly-opened repo yet at the point this
+  // callback would invoke it (React state updates from `setRepoRoot` are
+  // async). Fetching the file inline here avoids that stale-closure bug.
+  const openFeedItem = useCallback((item: FeedItem) => {
+    const [feedOwner, feedRepo] = item.repo.split("/");
+    if (!feedOwner || !feedRepo) return;
+    setActiveTab("browse");
+    setReposLoading(true);
+    browse({ kind: "tree", owner: feedOwner, repo: feedRepo })
+      .then((result) => {
+        if (!result.ok) {
+          setReposError(result.error ?? "Unable to load repository.");
+          return;
+        }
+        setRepoRoot(result);
+        setTreeState({ kind: "loaded", value: result });
+        if (item.path) {
+          setSelectedPath(item.path);
+          setFile({ kind: "loading" });
+          browse({ kind: "file", owner: feedOwner, repo: feedRepo, path: item.path, branch: result.branch ?? undefined })
+            .then((fileResult) =>
+              setFile(
+                fileResult.ok
+                  ? { kind: "loaded", value: fileResult }
+                  : { kind: "error", message: fileResult.error ?? "Unable to load file." },
+              ),
+            )
+            .catch((err) => setFile({ kind: "error", message: errorMessage(err) }));
+        } else {
+          setSelectedPath(null);
+          setFile({ kind: "idle" });
+        }
+      })
+      .finally(() => setReposLoading(false));
+  }, []);
 
   async function openRepo(repo: RepoSummary) {
     setReposLoading(true);
@@ -217,7 +257,29 @@ export const GitHubView = memo(function GitHubView({ payload }: { payload: Recor
           </button>
         ) : null}
       </div>
-      {reposError ? (
+      <div className="github-seg" role="tablist" aria-label="GitHub view">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "browse"}
+          className={`github-seg-btn${activeTab === "browse" ? " github-seg-btn-active" : ""}`}
+          onClick={() => setActiveTab("browse")}
+        >
+          Browse
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "feed"}
+          className={`github-seg-btn${activeTab === "feed" ? " github-seg-btn-active" : ""}`}
+          onClick={() => setActiveTab("feed")}
+        >
+          Feed
+        </button>
+      </div>
+      {activeTab === "feed" ? (
+        <GitHubFeedView owner={repoRoot.owner} onOpenItem={openFeedItem} />
+      ) : reposError ? (
         <section className="operation-section">
           <p className="operation-muted">{reposError}</p>
         </section>
