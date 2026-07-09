@@ -30,6 +30,28 @@ fn rejects_unknown_kind() {
 }
 
 #[test]
+fn feed_kind_builds_per_repo_events_url() {
+    let request = req("feed", "jmagar", Some("axon"), None, None);
+    let url = build_request_url(&request, GitHubRequestKind::Feed).unwrap();
+    assert_eq!(
+        url,
+        "https://api.github.com/repos/jmagar/axon/events?per_page=30"
+    );
+}
+
+#[test]
+fn feed_kind_requires_repo() {
+    let request = req("feed", "jmagar", None, None, None);
+    let result = build_request_url(&request, GitHubRequestKind::Feed);
+    assert!(result.is_err());
+}
+
+#[test]
+fn parse_kind_accepts_feed() {
+    assert_eq!(parse_kind("feed").unwrap(), GitHubRequestKind::Feed);
+}
+
+#[test]
 fn builds_list_repos_url() {
     let request = req("repos", "jmagar", None, None, None);
     let url = build_request_url(&request, GitHubRequestKind::ListRepos).unwrap();

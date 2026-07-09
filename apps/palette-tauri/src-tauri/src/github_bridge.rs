@@ -67,6 +67,13 @@ pub(crate) enum GitHubRequestKind {
     Tree,
     /// `GET /repos/{owner}/{repo}/contents/{path}` — a single file (base64 content).
     FileContents,
+    /// `GET /repos/{owner}/{repo}/events` — one repo's public event timeline, the
+    /// building block for the cross-repo Feed. Unlike the other three variants,
+    /// a single `Feed` browse request fans this out across every repo the owner
+    /// has (see `github_feed.rs::fetch_feed`) rather than hitting one URL — so
+    /// `build_request_url` below returns the single-repo URL shape used by that
+    /// fan-out helper, not a URL `github_browse` calls directly for this kind.
+    Feed,
 }
 
 #[derive(Debug, Deserialize)]
@@ -125,6 +132,7 @@ fn parse_kind(raw: &str) -> Result<GitHubRequestKind, String> {
         "repo" => Ok(GitHubRequestKind::RepoInfo),
         "tree" => Ok(GitHubRequestKind::Tree),
         "file" => Ok(GitHubRequestKind::FileContents),
+        "feed" => Ok(GitHubRequestKind::Feed),
         other => Err(format!("unknown GitHub browse kind: {other}")),
     }
 }
@@ -210,6 +218,12 @@ fn build_request_url(
                 url = format!("{url}?ref={encoded_branch}");
             }
             Ok(url)
+        }
+        GitHubRequestKind::Feed => {
+            let repo = validate_segment(request.repo.as_deref().unwrap_or_default(), "repo")?;
+            Ok(format!(
+                "{GITHUB_API_BASE}/repos/{owner}/{repo}/events?per_page=30"
+            ))
         }
     }
 }
