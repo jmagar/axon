@@ -1,6 +1,6 @@
 use super::enums::{
-    CommandKind, EvaluateResponsesMode, MapFallback, McpTransport, PerformanceProfile, RedditSort,
-    RedditTime, RenderMode, ScrapeFormat,
+    CommandKind, ConfigValueSource, EvaluateResponsesMode, MapFallback, McpTransport,
+    PerformanceProfile, RedditSort, RedditTime, RenderMode, ScrapeFormat,
 };
 use crate::llm::LlmBackendKind;
 use std::path::PathBuf;
@@ -258,6 +258,20 @@ pub struct Config {
 
     /// Optional reusable plan id for destructive reset execution.
     pub reset_plan_id: Option<String>,
+
+    /// Explicit, per-invocation confirmation that `axon reset` may wipe
+    /// non-empty legacy family job tables it detected. Flag: `reset
+    /// --confirm-legacy-wipe`. **CLI-flag-only** — never settable via
+    /// `config.toml` or an environment variable (see
+    /// `reset_confirm_legacy_wipe_source`); a config-file value could be set
+    /// once and permanently defeat the distinct-confirmation guarantee this
+    /// flag exists to provide.
+    pub reset_confirm_legacy_wipe: bool,
+
+    /// Where `reset_confirm_legacy_wipe` was actually sourced from. `reset()`
+    /// refuses to honor a `true` value unless this is `ConfigValueSource::
+    /// CliFlag` — see `crates/axon-services/src/reset.rs`.
+    pub reset_confirm_legacy_wipe_source: ConfigValueSource,
 
     /// Terminal color override. Flag: `--color=auto|always|never`.
     pub color_choice: super::enums::ColorChoice,
