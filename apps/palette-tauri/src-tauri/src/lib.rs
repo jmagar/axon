@@ -21,6 +21,7 @@ mod files_bridge;
 mod oauth;
 mod persistence;
 mod sftp_bridge;
+mod sftp_known_hosts;
 mod stream;
 mod window_events;
 
@@ -488,13 +489,20 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             files_bridge::files_list_dir,
             files_bridge::files_read_file,
             files_bridge::files_write_file,
-            files_bridge::files_get_root
+            files_bridge::files_get_root,
+            sftp_bridge::commands::sftp_connect,
+            sftp_bridge::commands::sftp_list_dir,
+            sftp_bridge::commands::sftp_read_file,
+            sftp_bridge::commands::sftp_disconnect,
+            sftp_bridge::commands::sftp_list_known_hosts,
+            sftp_bridge::commands::sftp_revoke_known_host
         ])
         .manage(BlurDismiss(AtomicBool::new(true)))
         .manage(ActiveShortcut(Mutex::new(None)))
         .manage(bridge_client)
         .manage(stream_client)
         .manage(oauth::OauthState::new())
+        .manage(sftp_bridge::SftpConnections::new())
         .setup(|app| {
             if let Err(err) = install_tray(app) {
                 log_palette_warning("failed to install tray icon", err);

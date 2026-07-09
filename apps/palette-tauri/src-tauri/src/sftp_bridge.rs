@@ -1,14 +1,16 @@
 //! SSH/SFTP client bridge for the Files view's remote-browsing feature.
 //!
-//! # Registration gate
+//! # Registration gate (now lifted)
 //!
-//! The `#[tauri::command]`s in this module are NOT added to `lib.rs`'s
-//! `invoke_handler!` until `sftp_known_hosts.rs`'s host-key verification
-//! (see that module) is implemented and its always-accept regression test
-//! passes. This is deliberate: it is impossible to accidentally ship a live,
-//! callable SFTP command surface with `check_server_key` stubbed to
-//! unconditionally accept any host key, because until that lands, nothing in
-//! the frontend can reach these commands at all.
+//! `check_server_key` (see `handler::SftpClientHandler`) calls
+//! `sftp_known_hosts::evaluate_host_key` and only accepts a `TrustedMatch` or
+//! a frontend-confirmed first-trust — every other outcome is rejected. The
+//! four SFTP commands plus the two known-hosts commands are registered in
+//! `lib.rs`'s `invoke_handler!` alongside this gate landing, not before —
+//! see this module's git history for the earlier commit that added this
+//! bridge without registering any command, specifically to make it
+//! impossible to ship a live, callable SFTP surface with an unconditionally
+//! accepting host-key check.
 //!
 //! # Threat model
 //!
@@ -25,6 +27,9 @@ use std::{collections::HashMap, path::Path};
 
 use tokio::sync::Mutex;
 
+pub(crate) mod commands;
+mod handler;
+
 pub(crate) type ConnectionId = String;
 
 /// Live SFTP sessions keyed by connection id, held as Tauri managed state.
@@ -34,7 +39,7 @@ pub(crate) type ConnectionId = String;
 /// `.await` blocks the async executor thread for the call's full latency —
 /// exactly what clippy's `await_holding_lock` lint exists to catch.
 pub(crate) struct SftpConnections(
-    #[allow(dead_code)] pub(crate) Mutex<HashMap<ConnectionId, russh_sftp::client::SftpSession>>,
+    pub(crate) Mutex<HashMap<ConnectionId, russh_sftp::client::SftpSession>>,
 );
 
 impl SftpConnections {
@@ -66,7 +71,6 @@ pub(crate) fn normalize_remote_path(path: &str) -> Result<String, String> {
 /// canonicalize/symlink/regular-file checks `files_bridge.rs` applies to its
 /// local root, unlike the rest of the SFTP surface which correctly has no
 /// local-root concept.
-#[allow(dead_code)]
 pub(crate) fn validate_private_key_path(path: &Path) -> Result<std::path::PathBuf, String> {
     let canonical = std::fs::canonicalize(path)
         .map_err(|err| format!("private key path {} is invalid: {err}", path.display()))?;
