@@ -8,6 +8,8 @@ import {
   FileText,
   Folder,
   Loader2,
+  Plug,
+  PlugZap,
   RefreshCw,
   Save,
   Sparkles,
@@ -43,6 +45,15 @@ import {
 } from "@/lib/filesViewState";
 import { invoke, isTauriRuntime } from "@/lib/invoke";
 import { strField, unwrapPayload } from "@/lib/payload";
+import {
+  createEmptyConnectionDraft,
+  type SftpConnectionDraft,
+  type SftpConnectionProfile,
+  type SftpEntry,
+  type SftpKnownHostEntry,
+} from "@/lib/sftpModel";
+import { SftpConnectionDialog } from "./SftpConnectionDialog";
+import { SftpTrustPrompt } from "./SftpTrustPrompt";
 
 interface FilesViewProps {
   client: Client | null;
@@ -87,6 +98,15 @@ export function FilesView({ client, config }: FilesViewProps) {
   // selection, checked set), not ephemeral in-flight operation feedback.
   const [bulkIngestState, setBulkIngestState] = useState<BulkIngestState>({ kind: "idle" });
   const bulkIngestCancelRef = useRef(false);
+  // SFTP is v1 read-only browsing: a single active connection at a time (see
+  // Task 5d's Open Question resolution — connecting a new profile
+  // disconnects the previous one), rendered as one extra tree section
+  // alongside the local tree. Kept as component-local state (not part of the
+  // reducer's per-pane state) since it's shared across both panes when
+  // split, mirroring `state.sftp`'s "global to the view" scope.
+  const [sftpCwd, setSftpCwd] = useState("");
+  const [sftpEntries, setSftpEntries] = useState<SftpEntry[]>([]);
+  const [sftpSelected, setSftpSelected] = useState<SftpEntry | null>(null);
   const splitOpen = state.panes.length === 2;
 
   const loadDir = useCallback((id: PaneId, path: string) => {
@@ -120,6 +140,105 @@ export function FilesView({ client, config }: FilesViewProps) {
       loadDir(pane.id, pane.cwd);
     }
   }, [state.panes.map((p) => `${p.id}:${p.cwd}`).join("|"), loadDir]);
+
+  const loadSftpDir = useCallback((connectionId: string, path: string) => {
+    invoke<{ path: string; entries: SftpEntry[] }>("sftp_list_dir", { connectionId, path: path || null })
+      .then((listing) => {
+        setSftpCwd(listing.path);
+        setSftpEntries(listing.entries);
+      })
+      .catch(() => {
+        setSftpEntries([]);
+      });
+  }, []);
+
+  async function connectSftp(draft: SftpConnectionDraft, trustNewHost = false) {
+    const result = await invoke<
+      | { kind: "connected"; connectionId: string }
+      | { kind: "pendingTrust"; entry: SftpKnownHostEntry }
+    >("sftp_connect", {
+      profile: {
+        host: draft.host,
+        port: draft.port,
+        username: draft.username,
+        privateKeyPath: draft.privateKeyPath,
+        trustNewHost,
+      },
+    }).catch((err) => {
+      dispatch({ type: "sftp/dialogClose" });
+      throw err;
+    });
+
+    if (result.kind === "pendingTrust") {
+      dispatch({ type: "sftp/pendingTrust", entry: result.entry });
+      return;
+    }
+
+    // Disconnect any previously active connection first — v1 supports one
+    // active SFTP connection at a time (see Task 5d's Open Question
+    // resolution): connecting a new profile replaces the previous session
+    // rather than stacking multiple live connections.
+    if (state.sftp.activeConnectionId) {
+      void invoke("sftp_disconnect", { connectionId: state.sftp.activeConnectionId }).catch(() => {});
+    }
+
+    const profile: SftpConnectionProfile = {
+      id: `${draft.host}:${draft.port}:${draft.username}`,
+      label: draft.label,
+      host: draft.host,
+      port: draft.port,
+      username: draft.username,
+      privateKeyPath: draft.privateKeyPath,
+    };
+    dispatch({ type: "sftp/connected", connectionId: result.connectionId, profile });
+    setSftpSelected(null);
+    loadSftpDir(result.connectionId, "");
+  }
+
+  function disconnectSftp() {
+    if (state.sftp.activeConnectionId) {
+      void invoke("sftp_disconnect", { connectionId: state.sftp.activeConnectionId }).catch(() => {});
+    }
+    dispatch({ type: "sftp/disconnect" });
+    setSftpCwd("");
+    setSftpEntries([]);
+    setSftpSelected(null);
+  }
+
+  function openSftpEntry(entry: SftpEntry) {
+    if (!state.sftp.activeConnectionId) return;
+    if (entry.isDir) {
+      loadSftpDir(state.sftp.activeConnectionId, entry.path);
+      setSftpSelected(null);
+      return;
+    }
+    setSftpSelected(entry);
+    invoke<{ path: string; content: string }>("sftp_read_file", {
+      connectionId: state.sftp.activeConnectionId,
+      path: entry.path,
+    })
+      .then((file) => {
+        dispatch({
+          type: "pane/select",
+          pane: state.activePane,
+          entry: { name: entry.name, path: entry.path, isDir: false, size: entry.size, origin: "sftp" },
+        });
+        dispatch({
+          type: "pane/fileLoaded",
+          pane: state.activePane,
+          loadGen: loadGenRef.current[state.activePane],
+          file: { path: entry.path, content: file.content, size: entry.size },
+        });
+      })
+      .catch((err) =>
+        dispatch({
+          type: "pane/fileError",
+          pane: state.activePane,
+          loadGen: loadGenRef.current[state.activePane],
+          message: errorMessage(err),
+        }),
+      );
+  }
 
   function openEntry(id: PaneId, entry: FileEntry) {
     if (entry.isDir) {
@@ -449,6 +568,22 @@ export function FilesView({ client, config }: FilesViewProps) {
               <Columns2 size={14} />
             </Button>
           )}
+          {pane.id === "left" && (
+            <Button
+              variant="plain"
+              size="unstyled"
+              type="button"
+              title={state.sftp.activeConnectionId ? "Disconnect SFTP" : "Connect SFTP"}
+              aria-label={state.sftp.activeConnectionId ? "Disconnect SFTP" : "Connect SFTP"}
+              onClick={() =>
+                state.sftp.activeConnectionId
+                  ? disconnectSftp()
+                  : dispatch({ type: "sftp/dialogOpen", draft: createEmptyConnectionDraft() })
+              }
+            >
+              {state.sftp.activeConnectionId ? <PlugZap size={14} /> : <Plug size={14} />}
+            </Button>
+          )}
           <Button
             variant="plain"
             size="unstyled"
@@ -504,6 +639,39 @@ export function FilesView({ client, config }: FilesViewProps) {
                 </button>
               ))
             )}
+            {pane.id === "left" && state.sftp.activeConnectionId && (
+              <div className="files-sftp-section">
+                <div className="files-sftp-section-header">
+                  <span
+                    className="files-sftp-connected-dot"
+                    aria-hidden="true"
+                    title="Connected"
+                  />
+                  SFTP · {state.sftp.connections.find((c) => c.id === state.sftp.activeConnectionId)?.label}
+                  {sftpCwd && <span className="files-sftp-cwd"> · /{sftpCwd}</span>}
+                </div>
+                {sftpEntries.length === 0 ? (
+                  <div className="files-empty operation-muted">Empty directory</div>
+                ) : (
+                  sftpEntries.map((entry) => (
+                    <button
+                      key={entry.path}
+                      type="button"
+                      role="option"
+                      aria-selected={sftpSelected?.path === entry.path}
+                      className={`files-row files-row-sftp${sftpSelected?.path === entry.path ? " files-row-active" : ""}`}
+                      onClick={() => openSftpEntry(entry)}
+                    >
+                      <EntryIcon entry={{ ...entry, origin: "sftp" }} />
+                      <span className="files-row-name">{entry.name}</span>
+                      {!entry.isDir && (
+                        <span className="files-row-size">{formatBytes(entry.size)}</span>
+                      )}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
           </div>
           <div className="files-preview aurora-scrollbar">
             {!pane.selected ? (
@@ -525,6 +693,7 @@ export function FilesView({ client, config }: FilesViewProps) {
                 saving={pane.saving}
                 ingest={ingest}
                 canIngest={Boolean(client && config) && isIngestable(pane.selected.name)}
+                canEdit={pane.selected.origin !== "sftp"}
                 onEdit={() => dispatch({ type: "pane/setEditing", pane: pane.id, editing: true })}
                 onCancelEdit={() => {
                   dispatch({ type: "pane/setEditing", pane: pane.id, editing: false });
@@ -639,6 +808,25 @@ export function FilesView({ client, config }: FilesViewProps) {
         {renderPane(state.panes[0])}
         {splitOpen && state.panes[1] && renderPane(state.panes[1])}
       </div>
+      {state.sftp.dialogOpen && state.sftp.editingProfile && (
+        <SftpConnectionDialog
+          draft={state.sftp.editingProfile}
+          onChange={(draft) => dispatch({ type: "sftp/dialogOpen", draft })}
+          onSubmit={(draft) => void connectSftp(draft)}
+          onClose={() => dispatch({ type: "sftp/dialogClose" })}
+        />
+      )}
+      {state.sftp.pendingTrust && (
+        <SftpTrustPrompt
+          entry={state.sftp.pendingTrust}
+          onTrust={() => {
+            const draft = state.sftp.editingProfile;
+            dispatch({ type: "sftp/trustConfirmed" });
+            if (draft) void connectSftp(draft, true);
+          }}
+          onCancel={() => dispatch({ type: "sftp/trustConfirmed" })}
+        />
+      )}
     </div>
   );
 }
@@ -669,6 +857,7 @@ function FilePreview({
   saving,
   ingest,
   canIngest,
+  canEdit,
   onEdit,
   onCancelEdit,
   onDraftChange,
@@ -693,6 +882,10 @@ function FilePreview({
   saving: boolean;
   ingest: IngestState;
   canIngest: boolean;
+  /** SFTP is v1 read-only browsing: both the manual Edit button and the
+   * "Edit with the model" sparkle button are hard-disabled (not rendered)
+   * for any file whose pane resolves to an SFTP-origin entry. */
+  canEdit: boolean;
   onEdit: () => void;
   onCancelEdit: () => void;
   onDraftChange: (value: string) => void;
@@ -730,19 +923,23 @@ function FilePreview({
             </>
           ) : (
             <>
-              <Button variant="ghost" size="sm" type="button" onClick={onEdit}>
-                Edit
-              </Button>
-              <Button
-                variant="plain"
-                size="unstyled"
-                type="button"
-                title="Edit with the model"
-                aria-label="Edit with the model"
-                onClick={onSparkleToggle}
-              >
-                <Sparkles size={14} />
-              </Button>
+              {canEdit && (
+                <Button variant="ghost" size="sm" type="button" onClick={onEdit}>
+                  Edit
+                </Button>
+              )}
+              {canEdit && (
+                <Button
+                  variant="plain"
+                  size="unstyled"
+                  type="button"
+                  title="Edit with the model"
+                  aria-label="Edit with the model"
+                  onClick={onSparkleToggle}
+                >
+                  <Sparkles size={14} />
+                </Button>
+              )}
               {canIngest && (
                 <Button
                   variant="aurora"

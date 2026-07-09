@@ -12,6 +12,12 @@ export interface FileEntry {
   size: number;
   /** Unix seconds since epoch, when the filesystem provided one. */
   modifiedUnix?: number | null;
+  /** Which filesystem this entry came from. Undefined/"local" entries are the
+   * default (allowed-root local filesystem, via files_bridge.rs); "sftp"
+   * entries come from a connected SFTP profile's tree and gate out the
+   * manual Edit and "Edit with the model" actions (SFTP is read-only in v1 —
+   * see FilesView.tsx). */
+  origin?: "local" | "sftp";
 }
 
 export interface DirListing {

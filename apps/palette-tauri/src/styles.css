@@ -6032,3 +6032,76 @@ textarea {
 .files-ai-edit-prompt input {
   flex: 1;
 }
+
+.files-sftp-section {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--aurora-border);
+}
+
+.files-sftp-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: color-mix(in srgb, var(--aurora-accent-primary) 80%, var(--aurora-text-muted));
+}
+
+.files-sftp-cwd {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--aurora-text-muted);
+}
+
+.files-sftp-connected-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--aurora-success);
+  box-shadow: 0 0 4px var(--aurora-success);
+}
+
+.files-row-sftp {
+  color: color-mix(in srgb, var(--aurora-accent-primary) 12%, var(--aurora-text-primary));
+}
+
+.sftp-trust-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+}
+
+.sftp-trust-fingerprint {
+  font-family: var(--aurora-font-mono);
+  font-size: 12px;
+  color: var(--aurora-text-muted);
+}
+
+.sftp-trust-actions,
+.sftp-connection-dialog-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.sftp-connection-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+}
+
+.sftp-connection-dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--aurora-text-muted);
+}

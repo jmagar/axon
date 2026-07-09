@@ -20,10 +20,25 @@ import {
   type PaneId,
   toggleChecked,
 } from "./filesModel";
+import type { SftpConnectionDraft, SftpConnectionProfile, SftpKnownHostEntry } from "./sftpModel";
 
 export const MIN_TREE_WIDTH = 180;
 export const MAX_TREE_WIDTH = 460;
 const DEFAULT_TREE_WIDTH = 248;
+
+/** SFTP connection-management UI state: persisted profiles, which one (if
+ * any) is actively connected, the add/edit dialog's open/draft state, and a
+ * pending TOFU trust decision awaiting user confirmation. Kept as its own
+ * slice (not spread across pane state) since it's global to the view, not
+ * per-pane — a single active SFTP connection is shared across both panes
+ * when split. */
+export interface SftpUiState {
+  connections: SftpConnectionProfile[];
+  activeConnectionId: string | null;
+  dialogOpen: boolean;
+  editingProfile: SftpConnectionDraft | null;
+  pendingTrust: SftpKnownHostEntry | null;
+}
 
 export interface FilesViewState {
   panes: [FilesPane] | [FilesPane, FilesPane];
@@ -31,6 +46,7 @@ export interface FilesViewState {
   listings: Record<PaneId, LoadState<DirListing>>;
   treeWidth: number;
   checked: CheckedPaths;
+  sftp: SftpUiState;
 }
 
 export function createInitialState(): FilesViewState {
@@ -40,6 +56,13 @@ export function createInitialState(): FilesViewState {
     listings: { left: { kind: "idle" }, right: { kind: "idle" } },
     treeWidth: DEFAULT_TREE_WIDTH,
     checked: clearChecked(),
+    sftp: {
+      connections: [],
+      activeConnectionId: null,
+      dialogOpen: false,
+      editingProfile: null,
+      pendingTrust: null,
+    },
   };
 }
 
@@ -71,7 +94,15 @@ export type FilesViewAction =
   | { type: "pane/proposalDeny"; pane: PaneId }
   | { type: "pane/proposalApproveStart"; pane: PaneId }
   | { type: "pane/proposalApproved"; pane: PaneId; file: FileContents }
-  | { type: "pane/proposalApproveError"; pane: PaneId; message: string };
+  | { type: "pane/proposalApproveError"; pane: PaneId; message: string }
+  | { type: "sftp/dialogOpen"; draft: SftpConnectionDraft }
+  | { type: "sftp/dialogClose" }
+  | { type: "sftp/connectionsLoaded"; connections: SftpConnectionProfile[] }
+  | { type: "sftp/connectStart" }
+  | { type: "sftp/connected"; connectionId: string; profile: SftpConnectionProfile }
+  | { type: "sftp/pendingTrust"; entry: SftpKnownHostEntry }
+  | { type: "sftp/trustConfirmed" }
+  | { type: "sftp/disconnect" };
 
 function updatePane(
   panes: FilesViewState["panes"],
@@ -250,6 +281,45 @@ export function filesViewReducer(state: FilesViewState, action: FilesViewAction)
           proposalErrorMessage: action.message,
         }),
       };
+    case "sftp/dialogOpen":
+      return {
+        ...state,
+        sftp: { ...state.sftp, dialogOpen: true, editingProfile: action.draft },
+      };
+    case "sftp/dialogClose":
+      return { ...state, sftp: { ...state.sftp, dialogOpen: false, editingProfile: null } };
+    case "sftp/connectionsLoaded":
+      return { ...state, sftp: { ...state.sftp, connections: action.connections } };
+    case "sftp/connectStart":
+      return { ...state, sftp: { ...state.sftp, pendingTrust: null } };
+    case "sftp/connected": {
+      // Auto-persist-on-first-successful-connect (see Task 5d's Open
+      // Question resolution): the profile is added to the connections list
+      // the moment a connection actually succeeds, not behind a separate
+      // "save profile?" step.
+      const existingIndex = state.sftp.connections.findIndex((c) => c.id === action.profile.id);
+      const connections =
+        existingIndex >= 0
+          ? state.sftp.connections.map((c, i) => (i === existingIndex ? action.profile : c))
+          : [...state.sftp.connections, action.profile];
+      return {
+        ...state,
+        sftp: {
+          ...state.sftp,
+          connections,
+          activeConnectionId: action.connectionId,
+          dialogOpen: false,
+          editingProfile: null,
+          pendingTrust: null,
+        },
+      };
+    }
+    case "sftp/pendingTrust":
+      return { ...state, sftp: { ...state.sftp, pendingTrust: action.entry } };
+    case "sftp/trustConfirmed":
+      return { ...state, sftp: { ...state.sftp, pendingTrust: null } };
+    case "sftp/disconnect":
+      return { ...state, sftp: { ...state.sftp, activeConnectionId: null } };
     default:
       return state;
   }

@@ -614,3 +614,69 @@ describe("FilesView — AI-assisted edit proposal", () => {
     expect(await screen.findByText(/changed on disk/i)).toBeInTheDocument();
   });
 });
+
+describe("FilesView — SFTP toolbar affordance", () => {
+  it("shows a 'Connect SFTP' control in the toolbar", async () => {
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "files_list_dir") return Promise.resolve(rootListing);
+      if (command === "sftp_list_known_hosts") return Promise.resolve([]);
+      throw new Error(`unexpected command: ${command}`);
+    });
+    render(<FilesView client={client} config={config} />);
+    await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: /connect sftp/i })).toBeInTheDocument();
+  });
+});
+
+describe("FilesView — SFTP entries gate manual and AI-assisted edit", () => {
+  it("renders neither the Edit nor the Edit-with-the-model button for an SFTP-origin file, but both for local", async () => {
+    const connectedProfile = {
+      id: "conn-1",
+      label: "prod",
+      host: "example.com",
+      port: 22,
+      username: "deploy",
+      privateKeyPath: "/home/me/.ssh/id_ed25519",
+    };
+    const sftpListing = {
+      path: "",
+      entries: [{ name: "remote.md", path: "remote.md", isDir: false, size: 40, modifiedUnix: null }],
+    };
+    const sftpFile = { path: "remote.md", content: "# remote" };
+
+    invokeMock.mockImplementation((command: string, args?: Record<string, unknown>) => {
+      if (command === "files_list_dir") return Promise.resolve(rootListing);
+      if (command === "files_read_file") return Promise.resolve(readmeContents);
+      if (command === "sftp_list_known_hosts") return Promise.resolve([]);
+      if (command === "sftp_connect") {
+        return Promise.resolve({ kind: "connected", connectionId: "sftp-conn-1" });
+      }
+      if (command === "sftp_list_dir") return Promise.resolve(sftpListing);
+      if (command === "sftp_read_file") return Promise.resolve(sftpFile);
+      throw new Error(`unexpected command: ${command}, args: ${JSON.stringify(args)}`);
+    });
+
+    render(<FilesView client={client} config={config} />);
+    await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
+
+    // Local file: both Edit and Edit-with-the-model are present.
+    fireEvent.click(screen.getByText("README.md"));
+    await waitFor(() => expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: /edit with the model/i })).toBeInTheDocument();
+
+    // Connect an SFTP profile via the toolbar control + dialog.
+    await userEvent.click(screen.getByRole("button", { name: /connect sftp/i }));
+    await userEvent.type(screen.getByLabelText(/^label$/i), connectedProfile.label);
+    await userEvent.type(screen.getByLabelText(/^host$/i), connectedProfile.host);
+    await userEvent.type(screen.getByLabelText(/^username$/i), connectedProfile.username);
+    await userEvent.type(screen.getByLabelText(/private key path/i), connectedProfile.privateKeyPath);
+    await userEvent.click(screen.getByRole("button", { name: /^connect$/i }));
+
+    await waitFor(() => expect(screen.getByText("remote.md")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("remote.md"));
+    await waitFor(() => expect(screen.getByText(/# remote/)).toBeInTheDocument());
+
+    expect(screen.queryByRole("button", { name: /^edit$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /edit with the model/i })).not.toBeInTheDocument();
+  });
+});
