@@ -6,7 +6,8 @@
 // dispatches through `axon_http_request` with the same shape the `embed`
 // action would build (POST /v1/embed with the file's absolute path).
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const runtimeState = vi.hoisted(() => ({ isTauriRuntime: true }));
@@ -19,9 +20,9 @@ vi.mock("@/lib/invoke", () => ({
   invoke: invokeMock,
 }));
 
-import { FilesView } from "./FilesView";
 import { createAxonClient, type PaletteConfig } from "@/lib/axonClient";
 import type { DirListing, FileContents } from "@/lib/filesModel";
+import { FilesView } from "./FilesView";
 
 const config: PaletteConfig = {
   serverUrl: "http://127.0.0.1:8001",
@@ -94,7 +95,9 @@ describe("FilesView — directory listing", () => {
     const nestedListing: DirListing = {
       path: "notes",
       root: "/home/user",
-      entries: [{ name: "todo.txt", path: "notes/todo.txt", isDir: false, size: 12, modifiedUnix: null }],
+      entries: [
+        { name: "todo.txt", path: "notes/todo.txt", isDir: false, size: 12, modifiedUnix: null },
+      ],
     };
     invokeMock.mockImplementation((command: string, args?: Record<string, unknown>) => {
       if (command === "files_list_dir") {
@@ -114,7 +117,8 @@ describe("FilesView — directory listing", () => {
 
   it("shows an error message when listing fails", async () => {
     invokeMock.mockImplementation((command: string) => {
-      if (command === "files_list_dir") return Promise.reject(new Error("path escapes the allowed files root"));
+      if (command === "files_list_dir")
+        return Promise.reject(new Error("path escapes the allowed files root"));
       throw new Error(`unexpected command: ${command}`);
     });
 
@@ -136,7 +140,13 @@ describe("FilesView — real ingest wiring", () => {
         expect(request.method).toBe("POST");
         expect(request.path).toBe("/v1/embed");
         expect(request.body).toEqual({ input: "/home/user/README.md", collection: "axon" });
-        return Promise.resolve({ ok: true, status: 200, path: "/v1/embed", method: "POST", payload: { job_id: "abc" } });
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          path: "/v1/embed",
+          method: "POST",
+          payload: { job_id: "abc" },
+        });
       }
       throw new Error(`unexpected command: ${command}`);
     });
@@ -144,7 +154,9 @@ describe("FilesView — real ingest wiring", () => {
     render(<FilesView client={client} config={config} />);
     await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
     fireEvent.click(screen.getByText("README.md"));
-    await waitFor(() => expect(screen.getByRole("button", { name: /ingest/i })).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /ingest/i })).toBeInTheDocument(),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: /ingest/i }));
 
@@ -193,7 +205,9 @@ describe("FilesView — real ingest wiring", () => {
     render(<FilesView client={client} config={config} />);
     await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
     fireEvent.click(screen.getByText("README.md"));
-    await waitFor(() => expect(screen.getByRole("button", { name: /ingest/i })).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /ingest/i })).toBeInTheDocument(),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: /ingest/i }));
 
@@ -217,7 +231,9 @@ describe("FilesView — edit and save", () => {
     render(<FilesView client={client} config={config} />);
     await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
     fireEvent.click(screen.getByText("README.md"));
-    await waitFor(() => expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument(),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: /^edit$/i }));
     const textarea = screen.getByRole("textbox");
@@ -225,7 +241,93 @@ describe("FilesView — edit and save", () => {
     fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
 
     await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith("files_write_file", { path: "README.md", content: "# Edited" }),
+      expect(invokeMock).toHaveBeenCalledWith("files_write_file", {
+        path: "README.md",
+        content: "# Edited",
+      }),
     );
+  });
+});
+
+describe("FilesView — split view", () => {
+  beforeEach(() => {
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "files_list_dir") return Promise.resolve(rootListing);
+      if (command === "files_read_file") return Promise.resolve(readmeContents);
+      throw new Error(`unexpected command: ${command}`);
+    });
+  });
+
+  it("renders a single pane by default", async () => {
+    render(<FilesView client={client} config={config} />);
+    await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
+    expect(screen.queryAllByRole("listbox", { name: /directory entries/i })).toHaveLength(1);
+  });
+
+  it("shows a 'Split view' icon control that opens a second pane", async () => {
+    render(<FilesView client={client} config={config} />);
+    await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
+    const splitButton = screen.getByRole("button", { name: /split view/i });
+    await userEvent.click(splitButton);
+    await waitFor(() =>
+      expect(screen.getAllByRole("listbox", { name: /directory entries/i })).toHaveLength(2),
+    );
+  });
+
+  it("closes the second pane when 'Close split' is clicked", async () => {
+    render(<FilesView client={client} config={config} />);
+    await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
+    await userEvent.click(screen.getByRole("button", { name: /split view/i }));
+    const closeSplit = await screen.findByRole("button", { name: /close split/i });
+    await userEvent.click(closeSplit);
+    expect(screen.getAllByRole("listbox", { name: /directory entries/i })).toHaveLength(1);
+  });
+
+  it("renders a resize handle for the tree column", async () => {
+    render(<FilesView client={client} config={config} />);
+    await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
+    expect(screen.getByRole("separator", { name: /resize file tree/i })).toBeInTheDocument();
+  });
+
+  it("dragging the tree-resize handle updates the tree column width", async () => {
+    render(<FilesView client={client} config={config} />);
+    await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
+    const handle = screen.getByRole("separator", { name: /resize file tree/i });
+    const [tree] = screen.getAllByRole("listbox", { name: /directory entries/i });
+    fireEvent.mouseDown(handle, { clientX: 248 });
+    fireEvent.mouseMove(window, { clientX: 300 });
+    fireEvent.mouseUp(window);
+    expect(tree).toHaveStyle({ width: "300px" });
+  });
+
+  it("each pane tracks its own selected file independently", async () => {
+    render(<FilesView client={client} config={config} />);
+    await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
+    await userEvent.click(screen.getByRole("button", { name: /split view/i }));
+    await waitFor(() =>
+      expect(screen.getAllByRole("listbox", { name: /directory entries/i })).toHaveLength(2),
+    );
+    const [leftTree, rightTree] = screen.getAllByRole("listbox", { name: /directory entries/i });
+    const leftEntry = within(leftTree).getByText("README.md");
+    await userEvent.click(leftEntry);
+    const rightPreview = rightTree.closest(".files-body")?.querySelector(".files-preview");
+    expect(rightPreview).toHaveTextContent(/select a file/i);
+  });
+
+  it("clicking inside the right pane makes it active", async () => {
+    render(<FilesView client={client} config={config} />);
+    await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
+    await userEvent.click(screen.getByRole("button", { name: /split view/i }));
+    await waitFor(() =>
+      expect(screen.getAllByRole("listbox", { name: /directory entries/i })).toHaveLength(2),
+    );
+    const [, rightTree] = screen.getAllByRole("listbox", { name: /directory entries/i });
+    await userEvent.click(rightTree);
+    const rightEntry = within(rightTree).getByText("README.md");
+    await userEvent.click(rightEntry);
+    const [leftPreview] = screen
+      .getAllByRole("listbox", { name: /directory entries/i })
+      .map((tree) => tree.closest(".files-body")?.querySelector(".files-preview"));
+    expect(leftPreview).toHaveTextContent(/select a file/i);
   });
 });

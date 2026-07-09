@@ -5925,3 +5925,24 @@ textarea {
     transform: rotate(360deg);
   }
 }
+
+.files-split-container {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.files-tree-resize {
+  cursor: col-resize;
+  flex: 0 0 4px;
+  background: var(--aurora-border);
+}
+
+.files-tree-resize:hover,
+.files-tree-resize:active {
+  background: var(--aurora-accent-primary);
+}
+
+.files-pane + .files-pane {
+  border-left: 1px solid var(--aurora-border);
+}

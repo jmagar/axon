@@ -20,8 +20,8 @@ import {
   toggleChecked,
 } from "./filesModel";
 
-const MIN_TREE_WIDTH = 180;
-const MAX_TREE_WIDTH = 460;
+export const MIN_TREE_WIDTH = 180;
+export const MAX_TREE_WIDTH = 460;
 const DEFAULT_TREE_WIDTH = 248;
 
 export interface FilesViewState {
