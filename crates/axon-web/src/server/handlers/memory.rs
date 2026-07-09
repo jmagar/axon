@@ -48,11 +48,19 @@ pub(crate) async fn memory(
     Json(req): Json<MemoryRequest>,
 ) -> Response {
     tracing::warn!("POST /v1/memory is deprecated; migrate to the per-verb /v1/memories routes");
-    let mut response = services::memory::dispatch(&state.service_context, req.into())
-        .await
-        .map(Json)
-        .map_err(memory_error)
-        .into_response();
+    // `RestMemorySubaction` (the type accepted by this deprecated passthrough)
+    // has no `Import` variant, so `MemoryAuthz::anonymous()` is safe here —
+    // none of the reachable subactions consult it. Import/export are separate
+    // typed routes (`import_memories`/`export_memories`).
+    let mut response = services::memory::dispatch(
+        &state.service_context,
+        req.into(),
+        &services::memory::MemoryAuthz::anonymous(),
+    )
+    .await
+    .map(Json)
+    .map_err(memory_error)
+    .into_response();
     // Set on both success and error responses — deprecation is a route-level
     // property of `POST /v1/memory` itself, not conditional on the payload
     // being valid.

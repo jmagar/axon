@@ -163,3 +163,60 @@ async fn rest_exposes_import_and_export_routes_with_size_limit() {
 
     stop(shutdown, handle).await;
 }
+
+// ── `mode: replace_scope` requires `axon:admin` (Fix 1) ────────────────────
+//
+// `AuthPolicy::Mounted { auth_state: None }` (bearer-only mode, used by every
+// test above) grants the static operator token full read/write/admin scopes
+// (see `axon_authz::http::build_auth_layer`), so it cannot exercise the
+// write-only-denied path over real HTTP without also standing up an OAuth
+// `AuthState` and minting a scoped JWT — heavier machinery than this repo's
+// existing admin-gate tests use. `admin_tests.rs`'s
+// `write_only_scope_does_not_grant_prune_authz` establishes the same
+// precedent: verify the scope-derivation logic directly. The full
+// enforcement path (deny without admin, allow with admin) is covered
+// end-to-end against a real SQLite-backed store in
+// `axon-services::memory::tests::import_replace_scope_*`.
+
+#[tokio::test]
+#[serial]
+async fn admin_token_can_use_replace_scope_import_over_http() {
+    let _env = EnvGuard::set(Some("secret"));
+    let (base, shutdown, handle) =
+        spawn_full_test_server(AuthPolicy::Mounted { auth_state: None }).await;
+    let client = reqwest::Client::new();
+
+    // The bearer-only static token is granted axon:read/write/admin (see
+    // module docs above), so a replace_scope import must not be rejected as
+    // forbidden — any non-403 status proves the admin gate did not fire.
+    let response = client
+        .post(format!("{base}/v1/memories/import"))
+        .bearer_auth("secret")
+        .json(&serde_json::json!({ "records": [], "mode": "replace_scope", "dry_run": true }))
+        .send()
+        .await
+        .expect("replace_scope import request");
+    assert_ne!(
+        response.status(),
+        StatusCode::FORBIDDEN,
+        "an admin-scoped caller must not be denied replace_scope"
+    );
+
+    stop(shutdown, handle).await;
+}
+
+#[test]
+fn write_only_scope_does_not_grant_memory_admin_authz() {
+    // Per the auth contract, axon:write does NOT imply axon:admin — mirrors
+    // admin_tests.rs's `write_only_scope_does_not_grant_prune_authz`.
+    let scopes = vec!["axon:write".to_string()];
+    let is_admin = axon_authz::scope_satisfies(&scopes, axon_authz::AXON_ADMIN_SCOPE);
+    assert!(!is_admin);
+}
+
+#[test]
+fn admin_scope_present_grants_memory_admin_authz() {
+    let scopes = vec!["axon:admin".to_string()];
+    let is_admin = axon_authz::scope_satisfies(&scopes, axon_authz::AXON_ADMIN_SCOPE);
+    assert!(is_admin);
+}

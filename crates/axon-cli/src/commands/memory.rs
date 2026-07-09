@@ -18,7 +18,10 @@ pub async fn run_memory(
         return import_export::run_export(&cfg.positional, service_context).await;
     }
     let req = request_from_positionals(&cfg.positional)?;
-    let value = memory_svc::dispatch(service_context, req)
+    // CLI is a local-trust transport (matching `axon prune`'s
+    // `PruneAuthz::admin()` rationale in `axon-cli/src/commands/prune.rs`) —
+    // there is no bearer/OAuth caller identity to derive scopes from.
+    let value = memory_svc::dispatch(service_context, req, &memory_svc::MemoryAuthz::admin())
         .await
         .map_err(|err| format!("memory failed: {}", err.message))?;
     println!("{}", serde_json::to_string_pretty(&value)?);

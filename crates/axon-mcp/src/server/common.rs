@@ -27,6 +27,19 @@ tokio::task_local! {
     /// trait methods). Task-locals are per-async-task, so concurrent MCP
     /// calls on the shared `AxonMcpServer` never observe each other's value.
     pub(super) static CURRENT_PRUNE_AUTHZ: axon_services::prune::PruneAuthz;
+
+    /// The [`axon_services::memory::MemoryAuthz`] resolved for the in-flight
+    /// `axon` tool call, when the action is `memory`.
+    ///
+    /// Mirrors [`CURRENT_PRUNE_AUTHZ`]'s rationale: `memory`'s router-level
+    /// scope gate only requires `axon:write` (see `MCP_ACTION_SPECS`), but
+    /// `MemorySubaction::Import` with `mode: replace_scope` additionally
+    /// requires `axon:admin` per the documented import-mode contract
+    /// (`axon_api::source::MemoryImportMode::ReplaceScope`). `call_tool`
+    /// resolves the caller's real `AuthContext` scopes and scopes this
+    /// task-local around the `tool_router` call so `handle_memory` can read
+    /// the honest, per-request authorization.
+    pub(super) static CURRENT_MEMORY_AUTHZ: axon_services::memory::MemoryAuthz;
 }
 
 // --- Error constructors ---

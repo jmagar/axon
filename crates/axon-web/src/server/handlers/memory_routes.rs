@@ -7,8 +7,11 @@
 //! `axon:write` gate is already enforced by the router's scope middleware
 //! (`routing::protect_routes`); the per-handler `CallerContext` construction
 //! is Task 2's defense-in-depth/observability parity requirement, matching
-//! `sources.rs`'s pattern even though today no per-memory-route fine-grained
-//! scope check consumes it yet.
+//! `sources.rs`'s pattern. `import_memories` is the one route with a real
+//! per-request fine-grained scope check today: `mode: replace_scope` derives
+//! `axon_services::memory::MemoryAuthz` from the caller's resolved scopes and
+//! requires `axon:admin`, mirroring `admin::prune_exec`'s `PruneAuthz`
+//! derivation.
 
 use axon_api::source::{
     CallerContext, MemoryExportRequest, MemoryImportRequest, TransportKind, Visibility,
@@ -28,10 +31,13 @@ use super::memory_error;
 type WebState = (super::super::super::state::AppState, Arc<Config>);
 
 /// Build the [`CallerContext`] for a memory request the same way
-/// `handlers::sources::caller_context_from_auth` does. Currently
-/// observability-only for memory routes (no per-source `SafetyClass` to
-/// classify), kept as its own function so a future fine-grained memory scope
-/// check has a single call site to extend.
+/// `handlers::sources::caller_context_from_auth` does. Observability-only for
+/// most memory routes (no per-source `SafetyClass` to classify); the one
+/// route with a real fine-grained decision (`import_memories`'s
+/// `replace_scope` admin gate) derives its own `MemoryAuthz` directly from
+/// `AuthContext` rather than through this `CallerContext`, so this helper
+/// stays available for logging/parity and any future per-route check that
+/// wants the fuller shape.
 fn caller_context_from_auth(auth: &AuthContext) -> CallerContext {
     CallerContext {
         actor: Some(auth.sub.clone()),
@@ -42,9 +48,10 @@ fn caller_context_from_auth(auth: &AuthContext) -> CallerContext {
 }
 
 /// Log the caller context so the per-handler auth extraction is observable
-/// even though it doesn't (yet) gate anything beyond the router's scope
-/// layer. Mirrors `sources.rs`'s `tracing::warn!` on denial, minus the denial
-/// (there is nothing to deny at this granularity today).
+/// on every memory route, independent of whether that specific route also
+/// gates on it (only `import_memories`'s `replace_scope` mode does today).
+/// Mirrors `sources.rs`'s `tracing::warn!` on denial, minus the denial itself
+/// (`import_memories` logs/returns its own 403 directly).
 fn log_caller(route: &'static str, auth: Option<&Extension<AuthContext>>) {
     if let Some(Extension(auth)) = auth {
         let caller = caller_context_from_auth(auth);
@@ -58,7 +65,16 @@ async fn dispatch_subaction(
     subaction: axon_services::client_contract::RestMemorySubaction,
 ) -> Result<serde_json::Value, ClientActionError> {
     req.subaction = Some(subaction);
-    services::memory::dispatch(&state.service_context, req.into()).await
+    // `RestMemorySubaction` has no `Import` variant (import/export are
+    // separate typed routes — see `import_memories`/`export_memories`
+    // below), so `MemoryAuthz::anonymous()` is safe here: none of the
+    // subactions reachable through this dispatcher consult it.
+    services::memory::dispatch(
+        &state.service_context,
+        req.into(),
+        &services::memory::MemoryAuthz::anonymous(),
+    )
+    .await
 }
 
 macro_rules! memory_route {
@@ -271,6 +287,7 @@ pub(crate) async fn forget_memory(
     responses(
         (status = 200, description = "Import result", body = axon_api::source::MemoryImportResult),
         (status = 400, description = "Invalid import request", body = crate::server::error::ErrorBody),
+        (status = 403, description = "mode=replace_scope requires axon:admin", body = crate::server::error::ErrorBody),
         (status = 413, description = "Import payload exceeds the size limit", body = crate::server::error::ErrorBody),
         (status = 502, description = "Upstream vector or embedding service unavailable", body = crate::server::error::ErrorBody)
     ),
@@ -282,7 +299,28 @@ pub(crate) async fn import_memories(
     Json(req): Json<MemoryImportRequest>,
 ) -> Result<Json<axon_api::source::MemoryImportResult>, HttpError> {
     log_caller("/v1/memories/import", auth.as_ref());
-    services::memory::import(&state.service_context, req)
+    // `mode: replace_scope` archives every existing memory in the target
+    // scope before importing and is documented as requiring `axon:admin`
+    // (`axon_api::source::MemoryImportMode::ReplaceScope`). The router's
+    // `memory_bulk_routes` layer only enforces `axon:write` for this route,
+    // so this is the actual enforcement point for the elevated mode —
+    // derived from the caller's real resolved scopes, never hardcoded.
+    // `LoopbackDev` has no `AuthContext` at all and is locally-trusted,
+    // matching `prune_exec`'s and the CLI's own local-trust rationale.
+    let authz = match auth.as_ref() {
+        Some(Extension(auth_ctx)) => services::memory::MemoryAuthz {
+            is_admin: axon_authz::scope_satisfies(&auth_ctx.scopes, axon_authz::AXON_ADMIN_SCOPE),
+        },
+        None => services::memory::MemoryAuthz::admin(),
+    };
+    if req.mode == axon_api::source::MemoryImportMode::ReplaceScope && !authz.is_admin {
+        return Err(HttpError::new(
+            axum::http::StatusCode::FORBIDDEN,
+            "forbidden",
+            "memory import mode 'replace_scope' requires axon:admin",
+        ));
+    }
+    services::memory::import(&state.service_context, req, &authz)
         .await
         .map(Json)
         .map_err(anyhow_to_http_error)

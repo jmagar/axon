@@ -41,6 +41,11 @@ pub(super) async fn run_import(
     let records = serde_json::from_str(&raw)
         .map_err(|err| format!("failed to parse {path} as a memory record array: {err}"))?;
 
+    // CLI is a local-trust transport (matching `axon prune`'s
+    // `PruneAuthz::admin()` rationale in `axon-cli/src/commands/prune.rs`) —
+    // there is no bearer/OAuth caller identity to derive scopes from, so
+    // `replace_scope` is allowed the same way it always has been for local
+    // CLI callers.
     let result = memory_svc::import(
         service_context,
         MemoryImportRequest {
@@ -48,6 +53,7 @@ pub(super) async fn run_import(
             mode,
             dry_run,
         },
+        &memory_svc::MemoryAuthz::admin(),
     )
     .await
     .map_err(|err| format!("memory import failed: {err}"))?;

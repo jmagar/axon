@@ -39,7 +39,7 @@ mod runtime_metadata;
 mod store;
 
 pub use compact::compact;
-pub use import_export::{export, import};
+pub use import_export::{MAX_MEMORY_IMPORT_RECORDS, MemoryAuthz, export, import};
 use store::memory_store;
 #[cfg(test)]
 mod tests;
@@ -56,9 +56,18 @@ const MAX_LIMIT: usize = 100;
 const DEFAULT_CONTEXT_TOKEN_BUDGET: usize = 2_000;
 const MAX_CONTEXT_TOKEN_BUDGET: usize = 16_000;
 
+/// Dispatch a flat CLI/MCP `memory` subaction.
+///
+/// `authz` gates [`MemorySubaction::Import`] when the request's `import_mode`
+/// is `replace_scope` (see [`MemoryAuthz`]). Every other subaction ignores
+/// it. Callers without a meaningful auth boundary (CLI: local-trust; MCP
+/// `LoopbackDev`) should pass [`MemoryAuthz::admin`]; transports with a real
+/// caller identity (MCP `Mounted`, REST) must derive it from the caller's
+/// resolved scopes.
 pub async fn dispatch(
     ctx: &ServiceContext,
     req: MemoryRequest,
+    authz: &MemoryAuthz,
 ) -> Result<serde_json::Value, ClientActionError> {
     match req.subaction.unwrap_or(MemorySubaction::Remember) {
         MemorySubaction::Remember => {
@@ -123,7 +132,7 @@ pub async fn dispatch(
         }
         MemorySubaction::Import => {
             let import_req = import_export::import_request_from_flat(req).map_err(memory_error)?;
-            let result = import(ctx, import_req).await.map_err(memory_error)?;
+            let result = import(ctx, import_req, authz).await.map_err(memory_error)?;
             Ok(serde_json::to_value(result).unwrap_or(json!({})))
         }
         MemorySubaction::Export => {
