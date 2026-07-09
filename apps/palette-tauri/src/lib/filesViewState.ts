@@ -109,8 +109,14 @@ function updatePane(
   id: PaneId,
   patch: Partial<FilesPane>,
 ): FilesViewState["panes"] {
-  const mapped = panes.map((pane) => (pane.id === id ? { ...pane, ...patch } : pane));
-  return mapped as FilesViewState["panes"];
+  // Reconstruct as a literal tuple (not Array.prototype.map + a cast back to
+  // the tuple type) so `tsc` actually verifies the 1-or-2-length invariant —
+  // a `.map(...) as FilesViewState["panes"]` cast would silently accept a
+  // future regression that produced e.g. a 3-length array.
+  const first = panes[0].id === id ? { ...panes[0], ...patch } : panes[0];
+  if (panes.length === 1) return [first];
+  const second = panes[1].id === id ? { ...panes[1], ...patch } : panes[1];
+  return [first, second];
 }
 
 function findPane(panes: FilesViewState["panes"], id: PaneId): FilesPane | undefined {
