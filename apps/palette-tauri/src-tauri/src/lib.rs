@@ -44,6 +44,29 @@ struct PaletteSettings {
     show_footer_hints: bool,
     env_values: HashMap<String, serde_json::Value>,
     config_values: HashMap<String, serde_json::Value>,
+    /// Persisted SFTP connection profiles (host/username/local-key-path
+    /// triples — never a password or key material). See
+    /// `persistence::write_settings`'s blast-radius note: settings.json is
+    /// tightened to 0600 whenever this is non-empty, since it centralizes
+    /// every remote host this palette can reach plus which local key unlocks
+    /// each one.
+    #[serde(default)]
+    sftp_connections: Vec<SftpConnectionProfile>,
+}
+
+/// A persisted SFTP connection profile. Deliberately excludes any password
+/// or key *material* — `private_key_path` is a reference to a key file
+/// already on disk (see `sftp_bridge::validate_private_key_path`), not the
+/// key itself.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SftpConnectionProfile {
+    pub id: String,
+    pub label: String,
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub private_key_path: String,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
@@ -202,6 +225,7 @@ fn merge_settings(persisted: PartialPaletteSettings, defaults: PaletteSettings) 
         show_footer_hints: persisted.show_footer_hints.unwrap_or(false),
         env_values: defaults.env_values,
         config_values: defaults.config_values,
+        sftp_connections: persisted.sftp_connections.unwrap_or_default(),
     })
 }
 
@@ -234,6 +258,7 @@ fn default_settings(env_entries: &[(String, String)]) -> PaletteSettings {
             .map(|(key, value)| (key.clone(), serde_json::Value::String(value.clone())))
             .collect(),
         config_values: read_default_config_values(),
+        sftp_connections: Vec::new(),
     }
 }
 
@@ -250,6 +275,7 @@ struct PartialPaletteSettings {
     open_results_inline: Option<bool>,
     agent_bubbles: Option<bool>,
     show_footer_hints: Option<bool>,
+    sftp_connections: Option<Vec<SftpConnectionProfile>>,
 }
 
 fn normalize_settings(mut settings: PaletteSettings) -> PaletteSettings {
