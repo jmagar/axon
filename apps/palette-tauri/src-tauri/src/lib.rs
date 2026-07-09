@@ -550,6 +550,18 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         })
         .on_window_event(window_events::handle_window_event)
-        .run(tauri::generate_context!())
-        .map_err(|err| format!("error while running Axon Palette: {err}").into())
+        .build(tauri::generate_context!())
+        .map_err(|err| format!("error while building Axon Palette: {err}"))?
+        .run(|app_handle, event| {
+            // Close any still-open SFTP sessions on app exit rather than
+            // leaking them (and their underlying SSH channels/sockets) —
+            // there is otherwise no cleanup path once the process exits, and
+            // relying on OS socket teardown alone skips the SFTP subsystem's
+            // own close handshake.
+            if let tauri::RunEvent::Exit = event {
+                let connections = app_handle.state::<sftp_bridge::SftpConnections>();
+                tauri::async_runtime::block_on(connections.close_all());
+            }
+        });
+    Ok(())
 }

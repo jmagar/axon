@@ -99,3 +99,57 @@ fn revoke_host_key_removes_the_matching_entry() {
     revoke_host_key(&mut store, "example.com", 22);
     assert!(store.0.is_empty());
 }
+
+#[test]
+fn evaluate_host_key_normalizes_hostname_case_and_trailing_dot() {
+    let mut store = KnownHostsStore(Vec::new());
+    pin_host_key(
+        &mut store,
+        KnownHostEntry {
+            host: "example.com".to_string(),
+            port: 22,
+            key_type: "ssh-ed25519".to_string(),
+            fingerprint: "AAAA...fingerprint".to_string(),
+            first_seen_unix: 0,
+        },
+    );
+    // Different case and a trailing dot are the same pinned identity — must
+    // not each trigger their own "new host" TOFU prompt.
+    assert!(matches!(
+        evaluate_host_key(
+            &store,
+            "EXAMPLE.COM",
+            22,
+            "ssh-ed25519",
+            "AAAA...fingerprint"
+        ),
+        HostKeyDecision::TrustedMatch
+    ));
+    assert!(matches!(
+        evaluate_host_key(
+            &store,
+            "example.com.",
+            22,
+            "ssh-ed25519",
+            "AAAA...fingerprint"
+        ),
+        HostKeyDecision::TrustedMatch
+    ));
+}
+
+#[test]
+fn revoke_host_key_normalizes_hostname_before_matching() {
+    let mut store = KnownHostsStore(Vec::new());
+    pin_host_key(
+        &mut store,
+        KnownHostEntry {
+            host: "Example.COM".to_string(),
+            port: 22,
+            key_type: "ssh-ed25519".to_string(),
+            fingerprint: "AAAA...fingerprint".to_string(),
+            first_seen_unix: 0,
+        },
+    );
+    revoke_host_key(&mut store, "example.com", 22);
+    assert!(store.0.is_empty());
+}

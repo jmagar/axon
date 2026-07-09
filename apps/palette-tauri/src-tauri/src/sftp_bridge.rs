@@ -46,6 +46,17 @@ impl SftpConnections {
     pub(crate) fn new() -> Self {
         Self(Mutex::new(HashMap::new()))
     }
+
+    /// Closes every live SFTP session and clears the map. Called from the
+    /// `RunEvent::Exit` handler in `lib.rs::run` so sessions don't leak past
+    /// process exit — `sftp_disconnect` only ever closes one connection at a
+    /// time and there is no other app-exit hook that reaches this state.
+    pub(crate) async fn close_all(&self) {
+        let mut guard = self.0.lock().await;
+        for (_, sftp) in guard.drain() {
+            let _ = sftp.close().await;
+        }
+    }
 }
 
 /// A `uuid::Uuid::new_v4()`-backed connection id, not a monotonic counter —

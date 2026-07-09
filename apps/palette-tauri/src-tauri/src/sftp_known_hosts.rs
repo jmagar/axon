@@ -62,6 +62,19 @@ pub(crate) enum HostKeyDecision {
     },
 }
 
+/// Normalizes a hostname for comparison/storage: lowercased, trailing dot
+/// stripped. Matches OpenSSH's own `known_hosts` case-insensitivity for DNS
+/// names so `example.com`, `EXAMPLE.COM`, and `example.com.` all pin to the
+/// same entry instead of each triggering their own "new host" TOFU prompt.
+///
+/// Deliberately does NOT attempt to unify an IP address with a hostname that
+/// happens to resolve to it — those remain intentionally distinct identities,
+/// matching OpenSSH's `known_hosts` behavior (a pinned hostname entry doesn't
+/// cover connecting by raw IP, and vice versa).
+fn normalize_host(host: &str) -> String {
+    host.trim().trim_end_matches('.').to_ascii_lowercase()
+}
+
 /// Evaluate a server-presented host key against the pinned store. Never
 /// mutates `store` — pinning only happens via an explicit `pin_host_key`
 /// call after the frontend confirms a `NewHostNeedsPrompt` decision.
@@ -72,10 +85,11 @@ pub(crate) fn evaluate_host_key(
     key_type: &str,
     fingerprint: &str,
 ) -> HostKeyDecision {
+    let normalized_host = normalize_host(host);
     match store
         .0
         .iter()
-        .find(|entry| entry.host == host && entry.port == port)
+        .find(|entry| normalize_host(&entry.host) == normalized_host && entry.port == port)
     {
         Some(entry) if entry.fingerprint == fingerprint => HostKeyDecision::TrustedMatch,
         Some(entry) => HostKeyDecision::Mismatch {
@@ -83,7 +97,7 @@ pub(crate) fn evaluate_host_key(
             seen_fingerprint: fingerprint.to_string(),
         },
         None => HostKeyDecision::NewHostNeedsPrompt(KnownHostEntry {
-            host: host.to_string(),
+            host: normalized_host,
             port,
             key_type: key_type.to_string(),
             fingerprint: fingerprint.to_string(),
@@ -96,16 +110,18 @@ pub(crate) fn evaluate_host_key(
 }
 
 pub(crate) fn pin_host_key(store: &mut KnownHostsStore, entry: KnownHostEntry) {
-    store
-        .0
-        .retain(|existing| !(existing.host == entry.host && existing.port == entry.port));
+    let normalized_host = normalize_host(&entry.host);
+    store.0.retain(|existing| {
+        !(normalize_host(&existing.host) == normalized_host && existing.port == entry.port)
+    });
     store.0.push(entry);
 }
 
 pub(crate) fn revoke_host_key(store: &mut KnownHostsStore, host: &str, port: u16) {
+    let normalized_host = normalize_host(host);
     store
         .0
-        .retain(|entry| !(entry.host == host && entry.port == port));
+        .retain(|entry| !(normalize_host(&entry.host) == normalized_host && entry.port == port));
 }
 
 fn known_hosts_path(app: &AppHandle) -> Result<PathBuf, String> {
