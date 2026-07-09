@@ -2,6 +2,8 @@
 // component per the palette convention: business logic lives in src/lib/*,
 // components stay thin renderers over props/state.
 
+import type { AiEditProposal } from "./aiEditModel";
+
 export interface FileEntry {
   name: string;
   /** Path relative to the allowed files root (forward-slash separated). */
@@ -10,6 +12,12 @@ export interface FileEntry {
   size: number;
   /** Unix seconds since epoch, when the filesystem provided one. */
   modifiedUnix?: number | null;
+  /** Which filesystem this entry came from. Undefined/"local" entries are the
+   * default (allowed-root local filesystem, via files_bridge.rs); "sftp"
+   * entries come from a connected SFTP profile's tree and gate out the
+   * manual Edit and "Edit with the model" actions (SFTP is read-only in v1 —
+   * see FilesView.tsx). */
+  origin?: "local" | "sftp";
 }
 
 export interface DirListing {
@@ -72,15 +80,46 @@ export function childPath(dirPath: string, name: string): string {
 }
 
 const CODE_EXTENSIONS = new Set([
-  "rs", "ts", "tsx", "js", "jsx", "py", "go", "css", "html", "sh", "bash", "toml",
+  "rs",
+  "ts",
+  "tsx",
+  "js",
+  "jsx",
+  "py",
+  "go",
+  "css",
+  "html",
+  "sh",
+  "bash",
+  "toml",
 ]);
 const DOC_EXTENSIONS = new Set(["md", "mdx", "txt", "rst"]);
 const CONFIG_EXTENSIONS = new Set(["json", "jsonl", "yaml", "yml", "ini", "env", "lock"]);
 const ARCHIVE_EXTENSIONS = new Set(["zip", "tar", "gz", "bz2", "xz", "7z"]);
 const KNOWN_BINARY_EXTENSIONS = new Set([
-  "png", "jpg", "jpeg", "gif", "webp", "avif", "ico", "bmp",
-  "pdf", "woff", "woff2", "ttf", "otf",
-  "mp3", "mp4", "mov", "avi", "wasm", "so", "dylib", "dll", "exe", "bin",
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+  "avif",
+  "ico",
+  "bmp",
+  "pdf",
+  "woff",
+  "woff2",
+  "ttf",
+  "otf",
+  "mp3",
+  "mp4",
+  "mov",
+  "avi",
+  "wasm",
+  "so",
+  "dylib",
+  "dll",
+  "exe",
+  "bin",
 ]);
 
 export type FileKind = "doc" | "code" | "config" | "archive" | "binary" | "text";
@@ -119,4 +158,92 @@ export function sortEntries(entries: FileEntry[]): FileEntry[] {
     if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
     return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
   });
+}
+
+/** Shared async-load state shape for a single fetched value (dir listing or
+ * file contents). Lifted here from FilesView.tsx so pane state can reuse it
+ * without a component→component import. */
+export type LoadState<T> =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "loaded"; value: T }
+  | { kind: "error"; message: string };
+
+export type PaneId = "left" | "right";
+
+/** One open file-browsing pane: its own cwd, selection, loaded file, and edit
+ * state. Two panes (left/right) enable the split view; single-pane mode is
+ * just "only the left pane is rendered."
+ *
+ * `loadGen` guards against out-of-order async resolution: every
+ * loadDir/loadFile dispatch increments it, and a resolved fetch is only
+ * applied if its captured generation still matches the pane's current one —
+ * otherwise a slower, superseded request is silently dropped instead of
+ * overwriting newer content. See filesViewState.ts's fileLoaded/fileError
+ * reducer cases. */
+export interface FilesPane {
+  id: PaneId;
+  cwd: string;
+  selected: FileEntry | null;
+  file: LoadState<FileContents>;
+  loadGen: number;
+  editing: boolean;
+  draft: string;
+  saving: boolean;
+  /** Whether the "Edit with the model" inline instruction prompt is open. */
+  sparkleOpen: boolean;
+  /** Current text typed into the sparkle instruction prompt. */
+  sparkleQuery: string;
+  /** The most recently generated (not yet approved/denied) AI-edit proposal. */
+  proposal: AiEditProposal | null;
+  proposalState: "idle" | "pending" | "ready" | "approving" | "error";
+  proposalErrorMessage: string | null;
+}
+
+export function createPane(id: PaneId, cwd = ""): FilesPane {
+  return {
+    id,
+    cwd,
+    selected: null,
+    file: { kind: "idle" },
+    loadGen: 0,
+    editing: false,
+    draft: "",
+    saving: false,
+    sparkleOpen: false,
+    sparkleQuery: "",
+    proposal: null,
+    proposalState: "idle",
+    proposalErrorMessage: null,
+  };
+}
+
+/** Set of root-relative paths currently checked for bulk actions. Kept as a
+ * plain `ReadonlySet<string>` (not a class) so it composes with the reducer's
+ * state shape without extra wrapper methods; helpers below return new sets
+ * (never mutate) to keep reducer updates predictable. */
+export type CheckedPaths = ReadonlySet<string>;
+
+export function toggleChecked(set: CheckedPaths, path: string): CheckedPaths {
+  const next = new Set(set);
+  if (next.has(path)) {
+    next.delete(path);
+  } else {
+    next.add(path);
+  }
+  return next;
+}
+
+export function checkAllIn(set: CheckedPaths, paths: string[]): CheckedPaths {
+  const next = new Set(set);
+  for (const path of paths) next.add(path);
+  return next;
+}
+
+export function clearChecked(): CheckedPaths {
+  return new Set();
+}
+
+export function isChecked(set: CheckedPaths, path: string): boolean {
+  return set.has(path);
 }

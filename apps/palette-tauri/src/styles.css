@@ -5926,6 +5926,186 @@ textarea {
   }
 }
 
+.files-split-container {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.files-tree-resize {
+  cursor: col-resize;
+  flex: 0 0 4px;
+  background: var(--aurora-border);
+}
+
+.files-tree-resize:hover,
+.files-tree-resize:active {
+  background: var(--aurora-accent-primary);
+}
+
+.files-pane + .files-pane {
+  border-left: 1px solid var(--aurora-border);
+}
+
+.files-row-checkbox {
+  accent-color: var(--aurora-accent-primary);
+  margin-right: 4px;
+}
+
+.files-bulk-bar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--aurora-surface-raised, var(--aurora-control-surface));
+  border-bottom: 1px solid var(--aurora-border);
+}
+
+.files-bulk-status {
+  color: var(--aurora-text-muted);
+  font-size: 12px;
+}
+
+.files-ai-edit-review {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--aurora-border);
+}
+
+.files-ai-edit-heading {
+  font-weight: 600;
+  color: var(--aurora-text-primary);
+}
+
+.files-ai-edit-body {
+  font-family: var(--aurora-font-mono);
+  font-size: 12px;
+  overflow: auto;
+  max-height: 240px;
+}
+
+.files-ai-edit-line {
+  padding: 0 4px;
+  white-space: pre;
+}
+.files-ai-edit-added {
+  background: color-mix(in srgb, var(--aurora-success) 15%, transparent);
+}
+.files-ai-edit-removed {
+  background: color-mix(in srgb, var(--aurora-error) 15%, transparent);
+}
+.files-ai-edit-marker {
+  display: inline-block;
+  width: 1.5ch;
+  opacity: 0.7;
+}
+
+.files-ai-edit-error {
+  color: var(--aurora-error);
+  font-size: 12px;
+}
+
+.files-ai-edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.files-ai-edit-note {
+  flex: 1;
+  color: var(--aurora-text-muted);
+  font-size: 11.5px;
+}
+
+.files-ai-edit-prompt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--aurora-border);
+}
+
+.files-ai-edit-prompt input {
+  flex: 1;
+}
+
+.files-sftp-section {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--aurora-border);
+}
+
+.files-sftp-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: color-mix(in srgb, var(--aurora-accent-primary) 80%, var(--aurora-text-muted));
+}
+
+.files-sftp-cwd {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--aurora-text-muted);
+}
+
+.files-sftp-connected-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--aurora-success);
+  box-shadow: 0 0 4px var(--aurora-success);
+}
+
+.files-row-sftp {
+  color: color-mix(in srgb, var(--aurora-accent-primary) 12%, var(--aurora-text-primary));
+}
+
+.sftp-trust-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+}
+
+.sftp-trust-fingerprint {
+  font-family: var(--aurora-font-mono);
+  font-size: 12px;
+  color: var(--aurora-text-muted);
+}
+
+.sftp-trust-actions,
+.sftp-connection-dialog-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.sftp-connection-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+}
+
+.sftp-connection-dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--aurora-text-muted);
+}
+
 /* GitHubView — structured view for the `github` palette action. */
 .github-header {
   display: flex;
