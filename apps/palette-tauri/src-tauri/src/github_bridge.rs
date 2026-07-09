@@ -234,7 +234,6 @@ pub(crate) async fn github_browse(
     request: GitHubBrowseRequest,
 ) -> Result<GitHubBrowseResult, String> {
     let kind = parse_kind(&request.kind)?;
-    let url = build_request_url(&request, kind)?;
     let token = github_token();
     let authenticated = token.is_some();
     let owner = request.owner.clone();
@@ -242,6 +241,11 @@ pub(crate) async fn github_browse(
     let branch = request.branch.clone();
     let path = request.path.clone();
 
+    if kind == GitHubRequestKind::Feed {
+        return github_browse_feed(&client, &request, token.as_deref(), authenticated).await;
+    }
+
+    let url = build_request_url(&request, kind)?;
     let mut builder = (*client)
         .client()
         .get(&url)
@@ -296,6 +300,104 @@ pub(crate) async fn github_browse(
         path,
         payload: serde_json::Value::Null,
         error: Some(error),
+        rate_limit_remaining,
+        rate_limit_reset,
+        authenticated,
+    })
+}
+
+fn build_feed_payload(fetch_result: crate::github_feed::FeedFetchResult) -> serde_json::Value {
+    serde_json::json!({
+        "items": fetch_result.items,
+        "partial": fetch_result.partial,
+        "errors": fetch_result.errors,
+    })
+}
+
+/// `Feed` branch of `github_browse`: resolves the repo list for `request.owner`
+/// (reusing the `ListRepos` URL/shape) unless the caller already supplied one
+/// via `request.repo` as a comma-separated list (not currently exercised by the
+/// frontend — see Task 7 — but supported here so a future caller can skip the
+/// extra `ListRepos` round trip when it already knows the repos), then fans
+/// events out across up to `MAX_FEED_REPOS` of them via `github_feed::fetch_feed`.
+async fn github_browse_feed(
+    client: &GitHubClient,
+    request: &GitHubBrowseRequest,
+    token: Option<&str>,
+    authenticated: bool,
+) -> Result<GitHubBrowseResult, String> {
+    let owner = validate_segment(&request.owner, "owner")?.to_string();
+
+    let repos: Vec<String> = if let Some(explicit) =
+        request.repo.as_deref().filter(|r| !r.trim().is_empty())
+    {
+        explicit
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    } else {
+        let list_url = format!("{GITHUB_API_BASE}/users/{owner}/repos?sort=updated&per_page=50");
+        let mut builder = client
+            .client()
+            .get(&list_url)
+            .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28");
+        if let Some(token) = token {
+            builder = builder.bearer_auth(token);
+        }
+        let response = builder.send().await.map_err(|err| err.to_string())?;
+        let status = response.status();
+        if !status.is_success() {
+            let rate_limit_remaining = header_u32(&response, "x-ratelimit-remaining");
+            let rate_limit_reset = header_i64(&response, "x-ratelimit-reset");
+            let text = response.text().await.unwrap_or_default();
+            let payload: serde_json::Value =
+                serde_json::from_str(&text).unwrap_or(serde_json::Value::Null);
+            let error = describe_error(status, rate_limit_remaining, rate_limit_reset, &payload);
+            return Ok(GitHubBrowseResult {
+                ok: false,
+                status: status.as_u16(),
+                kind: "feed".to_string(),
+                owner,
+                repo: None,
+                branch: None,
+                path: None,
+                payload: serde_json::Value::Null,
+                error: Some(error),
+                rate_limit_remaining,
+                rate_limit_reset,
+                authenticated,
+            });
+        }
+        let repos_json: serde_json::Value = response.json().await.map_err(|err| err.to_string())?;
+        repos_json
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|r| r.get("name").and_then(|n| n.as_str()).map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+
+    let capped = crate::github_feed::cap_repos_for_feed(&repos);
+    let fetch_result =
+        crate::github_feed::fetch_feed(client.client(), &owner, &capped, token).await;
+    let rate_limit_remaining = fetch_result.rate_limit_remaining;
+    let rate_limit_reset = fetch_result.rate_limit_reset;
+    let payload = build_feed_payload(fetch_result);
+
+    Ok(GitHubBrowseResult {
+        ok: true,
+        status: 200,
+        kind: "feed".to_string(),
+        owner,
+        repo: None,
+        branch: None,
+        path: None,
+        payload,
+        error: None,
         rate_limit_remaining,
         rate_limit_reset,
         authenticated,
