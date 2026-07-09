@@ -19,6 +19,7 @@ mod axon_bridge;
 mod diag;
 mod files_bridge;
 mod github_bridge;
+mod github_feed;
 mod oauth;
 mod persistence;
 mod stream;

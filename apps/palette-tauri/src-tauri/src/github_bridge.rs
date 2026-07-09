@@ -31,7 +31,7 @@ const PATH_SEGMENT_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'_')
     .remove(b'~');
 
-const GITHUB_API_BASE: &str = "https://api.github.com";
+pub(crate) const GITHUB_API_BASE: &str = "https://api.github.com";
 const GITHUB_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 const GITHUB_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 /// GitHub file-contents API rejects anything much larger than this anyway
