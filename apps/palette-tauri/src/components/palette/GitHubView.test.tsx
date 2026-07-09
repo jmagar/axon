@@ -18,11 +18,13 @@ vi.mock("@/lib/invoke", () => ({
   appWindow: { listen: () => Promise.resolve(() => {}) },
 }));
 
+import { __clearFeedCacheForTests } from "./GitHubFeedView";
 import { GitHubView } from "./GitHubView";
 
 afterEach(() => {
   cleanup();
   invokeMock.mockReset();
+  __clearFeedCacheForTests();
 });
 
 const reposResult = {

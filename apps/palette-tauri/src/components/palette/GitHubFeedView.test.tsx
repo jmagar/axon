@@ -10,11 +10,12 @@ vi.mock("@/lib/invoke", () => ({
   appWindow: { listen: () => Promise.resolve(() => {}) },
 }));
 
-import { GitHubFeedView } from "./GitHubFeedView";
+import { __clearFeedCacheForTests, GitHubFeedView } from "./GitHubFeedView";
 
 afterEach(() => {
   cleanup();
   invokeMock.mockReset();
+  __clearFeedCacheForTests();
 });
 
 const feedResult = {

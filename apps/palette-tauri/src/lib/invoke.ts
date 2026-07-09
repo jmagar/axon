@@ -11,11 +11,6 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 export const isTauriRuntime =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
-/** Dev-fallback-only cap — much smaller than the Rust bridge's MAX_FEED_REPOS
- * (10), because this path is always unauthenticated (60 req/hr total) and
- * shared with every other GitHub call the browser-dev session makes. */
-const DEV_FEED_MAX_REPOS = 3;
-
 // Shared Tauri window handle with a browser fallback. In the Tauri runtime it is
 // the real window (event listeners wired); under `vite dev` it is a no-op stub so
 // `appWindow.listen(...)` is always callable. Consumed by App's window-event
@@ -224,50 +219,43 @@ function numericHeader(resp: Response, name: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-/** Dev-only Feed fallback: fetches the owner's repo list, then fans out
- * `GET /repos/{owner}/{repo}/events` across the first `DEV_FEED_MAX_REPOS`
- * repos directly from the browser. Always unauthenticated — mirrors
- * `github_feed.rs::fetch_feed`'s normalization but is deliberately not a
- * byte-for-byte port (dev-only, small-N, no rate-limit retry/backoff). */
+/** Dev-only Feed fallback: fetches ONLY the target owner's own repo's events
+ * (`GET /repos/{owner}/{owner}/events`) — deliberately not a fan-out across
+ * the owner's repos, and deliberately not a port of the Rust normalizer's
+ * per-kind classification taxonomy (no dependabot/"Bump " → "deps"
+ * reclassification, no backtick path extraction, no per-kind `meta`/`badge`
+ * derivation). Every event is labeled with a single generic `"activity"`
+ * kind. This trades dev-preview fidelity with the real Feed tab (see
+ * `github_feed.rs::normalize_event`) for not maintaining a second normalizer;
+ * dev iteration only needs "the Feed tab renders something plausible without
+ * the desktop shell," not classification parity. Always unauthenticated. */
 async function githubFeedDevFallback(owner: string): Promise<GitHubBrowseDevResult> {
-  const reposResp = await fetch(
-    `https://api.github.com/users/${encodeURIComponent(owner)}/repos?sort=updated&per_page=50`,
+  const resp = await fetch(
+    `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(owner)}/events?per_page=30`,
     { headers: { accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" } },
   );
-  if (!reposResp.ok) {
+  const rateLimitRemaining = numericHeader(resp, "x-ratelimit-remaining");
+  const rateLimitReset = numericHeader(resp, "x-ratelimit-reset");
+  if (!resp.ok) {
     return {
       ok: false,
-      status: reposResp.status,
+      status: resp.status,
       kind: "feed",
       owner,
       repo: null,
       branch: null,
       path: null,
       payload: null,
-      error: `GitHub API error: ${reposResp.status}`,
-      rateLimitRemaining: numericHeader(reposResp, "x-ratelimit-remaining"),
-      rateLimitReset: numericHeader(reposResp, "x-ratelimit-reset"),
+      error: `GitHub API error: ${resp.status}`,
+      rateLimitRemaining,
+      rateLimitReset,
       authenticated: false,
     };
   }
-  const repos: Array<{ name: string }> = await reposResp.json();
-  const capped = repos.slice(0, DEV_FEED_MAX_REPOS);
 
-  const events = await Promise.all(
-    capped.map(async (repo) => {
-      const resp = await fetch(
-        `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo.name)}/events?per_page=30`,
-        { headers: { accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" } },
-      );
-      if (!resp.ok) return [];
-      const raw: unknown[] = await resp.json();
-      return raw;
-    }),
-  );
-
-  const items = events
-    .flat()
-    .map((raw) => normalizeDevFeedEvent(raw))
+  const raw: unknown[] = await resp.json();
+  const items = raw
+    .map((event) => normalizeDevFeedEvent(event))
     .filter((item): item is Record<string, unknown> => item !== null)
     .sort((a, b) => (b.timestampUnix as number) - (a.timestampUnix as number));
 
@@ -281,17 +269,16 @@ async function githubFeedDevFallback(owner: string): Promise<GitHubBrowseDevResu
     path: null,
     payload: { items, partial: false, errors: [] },
     error: null,
-    rateLimitRemaining: null,
-    rateLimitReset: null,
+    rateLimitRemaining,
+    rateLimitReset,
     authenticated: false,
   };
 }
 
-/** Minimal dev-fallback event normalizer — intentionally simpler than the Rust
- * bridge's `github_feed.rs::normalize_event` (no dependabot/"Bump " → "deps"
- * reclassification, no backtick path extraction, no per-kind `meta`/`badge`
- * derivation beyond a placeholder `meta`). Dev iteration only cares about
- * "the Feed tab renders something plausible without the desktop shell." */
+/** Minimal dev-fallback event normalizer — every event becomes a single
+ * generic `"activity"` kind rather than mirroring the Rust bridge's
+ * per-event-type classification (`github_feed.rs::normalize_event`). See
+ * `githubFeedDevFallback`'s doc comment for why. */
 function normalizeDevFeedEvent(raw: unknown): Record<string, unknown> | null {
   if (typeof raw !== "object" || raw === null) return null;
   const event = raw as Record<string, unknown>;
@@ -301,22 +288,8 @@ function normalizeDevFeedEvent(raw: unknown): Record<string, unknown> | null {
   const createdAt = event.created_at;
   if (typeof type !== "string" || typeof repoName !== "string" || typeof createdAt !== "string") return null;
 
-  // Kind names match the real mock's FEED_KIND taxonomy (pr/merge/review/
-  // comment/conflict/deps/issue/push/release) — "deps" not "dependency-bump".
-  // This dev fallback does not attempt the dependabot/"Bump " reclassification
-  // Task 3's Rust normalizer does; it always reports plain "push".
-  const kindMap: Record<string, string> = {
-    PushEvent: "push",
-    PullRequestEvent: "pr",
-    PullRequestReviewEvent: "review",
-    IssuesEvent: "issue",
-    ReleaseEvent: "release",
-  };
-  const kind = kindMap[type];
-  if (!kind) return null;
-
   return {
-    kind,
+    kind: "activity",
     repo: repoName,
     actor: typeof actorLogin === "string" ? actorLogin : "unknown",
     title: `${type} on ${repoName}`,

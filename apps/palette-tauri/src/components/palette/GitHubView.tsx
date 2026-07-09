@@ -21,6 +21,7 @@ import type { GitHubBrowseResult } from "@/lib/actionRequest";
 import { fileKind, isMarkdownLike } from "@/lib/filesModel";
 import type { FeedItem } from "@/lib/githubFeed";
 import { invoke } from "@/lib/invoke";
+import type { LoadState } from "@/lib/loadState";
 import { isRecord } from "@/lib/payload";
 
 // Note: this rewrite drops the plain Path/Size `DetailLine` detail card the
@@ -65,12 +66,6 @@ interface FileContents {
   size?: number;
   truncated?: boolean;
 }
-
-type LoadState<T> =
-  | { kind: "idle" }
-  | { kind: "loading" }
-  | { kind: "loaded"; value: T }
-  | { kind: "error"; message: string };
 
 async function browse(request: GitHubBrowseRequest): Promise<GitHubBrowseResult> {
   return invoke<GitHubBrowseResult>("github_browse", { request });
@@ -121,6 +116,10 @@ export const GitHubView = memo(function GitHubView({ payload }: { payload: Recor
   const loadFile = useCallback(
     (path: string) => {
       if (!repoRoot.ok || !repoRoot.repo) return;
+      // No-op when this path is already selected and loaded (or currently
+      // loading) — avoids redundant `github_browse` calls on double-clicks or
+      // repeated `onSelectFile` invocations for the same tree row.
+      if (selectedPath === path && (file.kind === "loading" || file.kind === "loaded")) return;
       setSelectedPath(path);
       setFile({ kind: "loading" });
       browse({
@@ -133,7 +132,7 @@ export const GitHubView = memo(function GitHubView({ payload }: { payload: Recor
         .then((result) => setFile(result.ok ? { kind: "loaded", value: result } : { kind: "error", message: result.error ?? "Unable to load file." }))
         .catch((err) => setFile({ kind: "error", message: errorMessage(err) }));
     },
-    [repoRoot],
+    [repoRoot, selectedPath, file.kind],
   );
 
   // When the initial payload is `kind: "file"` (deep-linked directly to a
@@ -182,6 +181,7 @@ export const GitHubView = memo(function GitHubView({ payload }: { payload: Recor
           setFile({ kind: "idle" });
         }
       })
+      .catch((err) => setReposError(errorMessage(err)))
       .finally(() => setReposLoading(false));
   }, []);
 
