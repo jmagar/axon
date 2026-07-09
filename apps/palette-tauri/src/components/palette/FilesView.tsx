@@ -15,7 +15,7 @@ import {
   Sparkles,
   Upload,
 } from "lucide-react";
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/aurora/button";
 import { computeLineDiff, type AiEditProposal } from "@/lib/aiEditModel";
@@ -55,6 +55,13 @@ import {
 import { SftpConnectionDialog } from "./SftpConnectionDialog";
 import { SftpTrustPrompt } from "./SftpTrustPrompt";
 
+/** Cap on rendered AI-edit diff lines — see the render site's comment (P2 #9). */
+const MAX_RENDERED_DIFF_LINES = 500;
+
+/** Mirrors `MAX_SFTP_DIR_ENTRIES` in sftp_bridge/commands.rs — used only for
+ * the truncation hint text, not enforcement (the backend is authoritative). */
+const MAX_SFTP_DIR_ENTRIES_HINT = 2000;
+
 interface FilesViewProps {
   client: Client | null;
   config: PaletteConfig | null;
@@ -68,8 +75,13 @@ type IngestState =
 type BulkIngestState =
   | { kind: "idle" }
   | { kind: "running"; done: number; total: number }
-  | { kind: "done"; succeeded: number; failed: number }
+  | { kind: "done"; succeeded: number; failed: number; failedPaths: string[] }
   | { kind: "cancelled"; done: number; total: number };
+
+/** Above this many checked files, `bulkIngest` asks for confirmation before
+ * running — a large batch that partially fails is hard to diagnose/retry, so
+ * this is a speed bump, not a hard limit (see P2 #11). */
+const BULK_INGEST_CONFIRM_THRESHOLD = 200;
 
 /**
  * Local filesystem browser + preview/edit + ingest. Owns its own
@@ -107,6 +119,10 @@ export function FilesView({ client, config }: FilesViewProps) {
   const [sftpCwd, setSftpCwd] = useState("");
   const [sftpEntries, setSftpEntries] = useState<SftpEntry[]>([]);
   const [sftpSelected, setSftpSelected] = useState<SftpEntry | null>(null);
+  // Set when the backend truncated a directory listing at MAX_SFTP_DIR_ENTRIES
+  // (see sftp_bridge/commands.rs) — surfaced so a truncated remote listing
+  // doesn't silently look like a complete one.
+  const [sftpTruncated, setSftpTruncated] = useState(false);
   const splitOpen = state.panes.length === 2;
 
   const loadDir = useCallback((id: PaneId, path: string) => {
@@ -141,18 +157,61 @@ export function FilesView({ client, config }: FilesViewProps) {
     }
   }, [state.panes.map((p) => `${p.id}:${p.cwd}`).join("|"), loadDir]);
 
+  // Hydrate persisted SFTP connection profiles from settings.json on mount
+  // (round-tripping the `sftp_connections` field the Rust side already
+  // persists — see lib.rs's `PaletteSettings`). Without this the reducer's
+  // `sftp/connectionsLoaded` action was dead code and every profile saved by
+  // a prior session was invisible until reconnect.
+  useEffect(() => {
+    if (config?.sftpConnections?.length) {
+      dispatch({ type: "sftp/connectionsLoaded", connections: config.sftpConnections });
+    }
+    // Only re-hydrate when the loaded config's connection list identity
+    // changes (e.g. settings reloaded), not on every unrelated config field
+    // edit — config is otherwise replaced wholesale on every settings save.
+  }, [config?.sftpConnections]);
+
+  const persistSftpConnections = useCallback(
+    async (connections: SftpConnectionProfile[]) => {
+      if (!isTauriRuntime || !config) return;
+      try {
+        await invoke("save_palette_settings", {
+          settings: { ...config, sftpConnections: connections },
+        });
+      } catch {
+        // Best-effort: a failed persist just means the profile won't survive
+        // a restart. The live connection itself is unaffected.
+      }
+    },
+    [config],
+  );
+
   const loadSftpDir = useCallback((connectionId: string, path: string) => {
-    invoke<{ path: string; entries: SftpEntry[] }>("sftp_list_dir", { connectionId, path: path || null })
+    invoke<{ path: string; entries: SftpEntry[]; truncated?: boolean }>("sftp_list_dir", {
+      connectionId,
+      path: path || null,
+    })
       .then((listing) => {
         setSftpCwd(listing.path);
         setSftpEntries(listing.entries);
+        setSftpTruncated(Boolean(listing.truncated));
       })
       .catch(() => {
         setSftpEntries([]);
+        setSftpTruncated(false);
       });
   }, []);
 
   async function connectSftp(draft: SftpConnectionDraft, trustNewHost = false) {
+    // Disconnect any previously active connection FIRST, and wait for it —
+    // v1 supports one active SFTP connection at a time (see Task 5d's Open
+    // Question resolution), and the Rust side now hard-rejects a new
+    // `sftp_connect` while a session is still open (see
+    // sftp_bridge/commands.rs). Disconnecting after would race that cap.
+    if (state.sftp.activeConnectionId) {
+      await invoke("sftp_disconnect", { connectionId: state.sftp.activeConnectionId }).catch(() => {});
+    }
+
     const result = await invoke<
       | { kind: "connected"; connectionId: string }
       | { kind: "pendingTrust"; entry: SftpKnownHostEntry }
@@ -174,14 +233,6 @@ export function FilesView({ client, config }: FilesViewProps) {
       return;
     }
 
-    // Disconnect any previously active connection first — v1 supports one
-    // active SFTP connection at a time (see Task 5d's Open Question
-    // resolution): connecting a new profile replaces the previous session
-    // rather than stacking multiple live connections.
-    if (state.sftp.activeConnectionId) {
-      void invoke("sftp_disconnect", { connectionId: state.sftp.activeConnectionId }).catch(() => {});
-    }
-
     const profile: SftpConnectionProfile = {
       id: `${draft.host}:${draft.port}:${draft.username}`,
       label: draft.label,
@@ -193,6 +244,13 @@ export function FilesView({ client, config }: FilesViewProps) {
     dispatch({ type: "sftp/connected", connectionId: result.connectionId, profile });
     setSftpSelected(null);
     loadSftpDir(result.connectionId, "");
+    // Persist the newly-connected profile so it survives an app restart (see
+    // fix for P1 #3) — save_palette_prefs merges/writes sftp_connections
+    // alongside the rest of settings.json.
+    void persistSftpConnections([
+      ...state.sftp.connections.filter((c) => c.id !== profile.id),
+      profile,
+    ]);
   }
 
   function disconnectSftp() {
@@ -213,6 +271,17 @@ export function FilesView({ client, config }: FilesViewProps) {
       return;
     }
     setSftpSelected(entry);
+    // Capture the target pane and bump/capture `gen` BEFORE the async read
+    // starts — mirrors `loadFile`'s exact pattern. Reading `loadGenRef`
+    // inside the `.then()` (the previous bug) reads whatever generation is
+    // current when the read *resolves*, not when it *started* — so a stale
+    // remote read that resolves after a newer local file was opened would
+    // read the newer gen and pass the staleness check, silently overwriting
+    // the newer selection instead of being dropped as superseded.
+    const pane = state.activePane;
+    const gen = loadGenRef.current[pane] + 1;
+    loadGenRef.current[pane] = gen;
+    dispatch({ type: "pane/fileLoading", pane, loadGen: gen });
     invoke<{ path: string; content: string }>("sftp_read_file", {
       connectionId: state.sftp.activeConnectionId,
       path: entry.path,
@@ -220,21 +289,21 @@ export function FilesView({ client, config }: FilesViewProps) {
       .then((file) => {
         dispatch({
           type: "pane/select",
-          pane: state.activePane,
+          pane,
           entry: { name: entry.name, path: entry.path, isDir: false, size: entry.size, origin: "sftp" },
         });
         dispatch({
           type: "pane/fileLoaded",
-          pane: state.activePane,
-          loadGen: loadGenRef.current[state.activePane],
+          pane,
+          loadGen: gen,
           file: { path: entry.path, content: file.content, size: entry.size },
         });
       })
       .catch((err) =>
         dispatch({
           type: "pane/fileError",
-          pane: state.activePane,
-          loadGen: loadGenRef.current[state.activePane],
+          pane,
+          loadGen: gen,
           message: errorMessage(err),
         }),
       );
@@ -356,11 +425,24 @@ export function FilesView({ client, config }: FilesViewProps) {
     const leftListing = state.listings.left;
     const root = leftListing.kind === "loaded" ? leftListing.value.root : "";
     const paths = Array.from(state.checked);
+    // A large batch that partially fails is hard to diagnose/retry — ask for
+    // confirmation above the threshold rather than silently kicking off a
+    // huge sequential run (see P2 #11). window.confirm is a deliberate
+    // minimal choice here — no new modal component for a one-off guard.
+    if (
+      paths.length > BULK_INGEST_CONFIRM_THRESHOLD &&
+      !window.confirm(
+        `Ingest ${paths.length} files? This runs sequentially and may take a while.`,
+      )
+    ) {
+      return;
+    }
     bulkIngestCancelRef.current = false;
     setBulkIngestState({ kind: "running", done: 0, total: paths.length });
     let succeeded = 0;
     let failed = 0;
     let done = 0;
+    const failedPaths: string[] = [];
     for (const [index, path] of paths.entries()) {
       if (bulkIngestCancelRef.current) {
         setBulkIngestState({ kind: "cancelled", done, total: paths.length });
@@ -377,11 +459,15 @@ export function FilesView({ client, config }: FilesViewProps) {
       // concurrency guess would just queue requests the server processes one
       // at a time anyway. Revisit only after a real load test.
       const result = await executeAction(client, embedAction, absolutePath, config);
-      if (result.ok) succeeded += 1;
-      else failed += 1;
+      if (result.ok) {
+        succeeded += 1;
+      } else {
+        failed += 1;
+        failedPaths.push(path);
+      }
       done += 1;
     }
-    setBulkIngestState({ kind: "done", succeeded, failed });
+    setBulkIngestState({ kind: "done", succeeded, failed, failedPaths });
     dispatch({ type: "checked/clear" });
   }
 
@@ -495,6 +581,25 @@ export function FilesView({ client, config }: FilesViewProps) {
     handle.addEventListener("mouseleave", stopIfNotDragging);
   }
 
+  // Sorting the (potentially 1,000+ entry) directory listing on every render
+  // — regardless of whether the listing itself changed — caused visible
+  // input lag elsewhere in the view (e.g. a checkbox toggle re-sorting the
+  // whole tree). Memoized per pane, keyed on the listing object reference
+  // (stable per the loadGen-guarded reducer, so this only recomputes when a
+  // pane's listing actually changes).
+  const sortedEntriesByPane: Record<PaneId, FileEntry[]> = {
+    left: useMemo(
+      () =>
+        state.listings.left.kind === "loaded" ? sortEntries(state.listings.left.value.entries) : [],
+      [state.listings.left],
+    ),
+    right: useMemo(
+      () =>
+        state.listings.right.kind === "loaded" ? sortEntries(state.listings.right.value.entries) : [],
+      [state.listings.right],
+    ),
+  };
+
   if (!isTauriRuntime) {
     return (
       <div className="output-body operation-view files-view aurora-scrollbar">
@@ -512,7 +617,7 @@ export function FilesView({ client, config }: FilesViewProps) {
 
   function renderPane(pane: FilesPane) {
     const listing = state.listings[pane.id];
-    const entries = listing.kind === "loaded" ? sortEntries(listing.value.entries) : [];
+    const entries = sortedEntriesByPane[pane.id];
     const segments = breadcrumbSegments(pane.cwd);
     const ingest = ingestByPane[pane.id];
 
@@ -670,6 +775,11 @@ export function FilesView({ client, config }: FilesViewProps) {
                     </button>
                   ))
                 )}
+                {sftpTruncated && (
+                  <div className="files-empty operation-muted">
+                    Listing truncated at {MAX_SFTP_DIR_ENTRIES_HINT} entries
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -780,6 +890,24 @@ export function FilesView({ client, config }: FilesViewProps) {
               Cancelled after {bulkIngestState.done}/{bulkIngestState.total}
             </span>
           )}
+          {bulkIngestState.kind === "done" && (
+            <span className="files-bulk-status">
+              {bulkIngestState.succeeded} succeeded
+              {bulkIngestState.failed > 0 && `, ${bulkIngestState.failed} failed`}
+            </span>
+          )}
+        </div>
+      )}
+      {bulkIngestState.kind === "done" && bulkIngestState.failedPaths.length > 0 && (
+        // Surfacing the actual failed paths (not just a bare count) so a
+        // partial-failure run can be diagnosed/retried — see P2 #11.
+        <div className="files-bulk-failures operation-muted">
+          <span>Failed to ingest:</span>
+          <ul>
+            {bulkIngestState.failedPaths.map((path) => (
+              <li key={path}>{path}</li>
+            ))}
+          </ul>
         </div>
       )}
       <div className="files-split-container">
@@ -984,7 +1112,13 @@ function FilePreview({
             {/* Diff lines have no stable identity of their own — line text can
                 repeat, and the rendered order never reorders after the
                 proposal is set — so an index key is safe here. */}
-            {proposal.diff.map((line, index) => (
+            {/* computeLineDiff is index-aligned, not LCS: a single top-of-file
+                insertion cascades into marking the entire remainder of the
+                file as removed+added. Without a cap, a several-thousand-line
+                file renders one <div> per line with no virtualization and
+                visibly janks. Capping the rendered count (not a full
+                virtualization rewrite) keeps this proportionate — see P2 #9. */}
+            {proposal.diff.slice(0, MAX_RENDERED_DIFF_LINES).map((line, index) => (
               // biome-ignore lint/suspicious/noArrayIndexKey: see comment above.
               <div key={index} className={`files-ai-edit-line files-ai-edit-${line.kind}`}>
                 <span className="files-ai-edit-marker">
@@ -993,6 +1127,11 @@ function FilePreview({
                 {line.text}
               </div>
             ))}
+            {proposal.diff.length > MAX_RENDERED_DIFF_LINES && (
+              <div className="files-ai-edit-line files-ai-edit-truncated operation-muted">
+                … {proposal.diff.length - MAX_RENDERED_DIFF_LINES} more lines not shown
+              </div>
+            )}
           </pre>
           {proposalState === "error" && proposalErrorMessage && (
             <p className="files-ai-edit-error">{proposalErrorMessage}</p>

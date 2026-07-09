@@ -680,3 +680,59 @@ describe("FilesView — SFTP entries gate manual and AI-assisted edit", () => {
     expect(screen.queryByRole("button", { name: /edit with the model/i })).not.toBeInTheDocument();
   });
 });
+
+describe("FilesView — SFTP open race (P2 #6 regression)", () => {
+  it("keeps a local file's content when it's opened before a slower SFTP read resolves", async () => {
+    const sftpListing = {
+      path: "",
+      entries: [{ name: "remote.md", path: "remote.md", isDir: false, size: 40, modifiedUnix: null }],
+    };
+    // The SFTP read never resolves during this test — it stands in for "a
+    // slow remote read still in flight when the user opens a different local
+    // file." If openSftpEntry captured `loadGen` after the await (the bug),
+    // this promise resolving later would still pass the (now-current) gen
+    // check and clobber the local file that was opened in the meantime.
+    let resolveSftpRead: (value: { path: string; content: string }) => void = () => {};
+    const sftpReadPromise = new Promise<{ path: string; content: string }>((resolve) => {
+      resolveSftpRead = resolve;
+    });
+
+    invokeMock.mockImplementation((command: string, args?: Record<string, unknown>) => {
+      if (command === "files_list_dir") return Promise.resolve(rootListing);
+      if (command === "files_read_file") return Promise.resolve(readmeContents);
+      if (command === "sftp_list_known_hosts") return Promise.resolve([]);
+      if (command === "sftp_connect") {
+        return Promise.resolve({ kind: "connected", connectionId: "sftp-conn-1" });
+      }
+      if (command === "sftp_list_dir") return Promise.resolve(sftpListing);
+      if (command === "sftp_read_file") return sftpReadPromise;
+      if (command === "save_palette_settings") return Promise.resolve(args?.settings);
+      throw new Error(`unexpected command: ${command}, args: ${JSON.stringify(args)}`);
+    });
+
+    render(<FilesView client={client} config={config} />);
+    await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole("button", { name: /connect sftp/i }));
+    await userEvent.type(screen.getByLabelText(/^host$/i), "example.com");
+    await userEvent.type(screen.getByLabelText(/^username$/i), "deploy");
+    await userEvent.type(screen.getByLabelText(/private key path/i), "/home/me/.ssh/id_ed25519");
+    await userEvent.click(screen.getByRole("button", { name: /^connect$/i }));
+    await waitFor(() => expect(screen.getByText("remote.md")).toBeInTheDocument());
+
+    // Start the (slow) SFTP read, then immediately open a local file before
+    // it resolves.
+    fireEvent.click(screen.getByText("remote.md"));
+    fireEvent.click(screen.getByText("README.md"));
+    await waitFor(() => expect(screen.getByText(/# Hello/)).toBeInTheDocument());
+
+    // Now let the stale SFTP read resolve — it must NOT overwrite the local
+    // file that was opened after it started.
+    resolveSftpRead({ path: "remote.md", content: "# remote (stale)" });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(screen.getByText(/# Hello/)).toBeInTheDocument();
+    expect(screen.queryByText(/# remote/)).not.toBeInTheDocument();
+  });
+});
