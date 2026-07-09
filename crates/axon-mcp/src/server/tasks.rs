@@ -238,11 +238,14 @@ async fn enqueue_supported_start(
                 .base_service_context()
                 .await
                 .map_err(|e| logged_internal_error("tasks.extract.start.context", e.as_ref()))?;
+            // Same as handlers_extract.rs: no per-request auth identity is
+            // threaded into this generic task-dispatch path today.
             let outcome = extract_svc::extract_start_with_context(
                 &cfg,
                 &urls,
                 cfg.query.clone(),
                 &service_context,
+                None,
                 None,
             )
             .await

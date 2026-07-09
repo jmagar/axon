@@ -142,10 +142,19 @@ pub async fn dispatch_extract(
                 embed: req.embed,
                 ..ConfigOverrides::default()
             });
-            let outcome =
-                extract_svc::extract_start_with_context(&cfg, &urls, prompt, service_context, None)
-                    .await
-                    .map_err(internal_error)?;
+            // No per-caller auth identity is threaded through the generic
+            // client-action dispatch path today — this is a genuinely
+            // internal call site, made explicit by passing `None`.
+            let outcome = extract_svc::extract_start_with_context(
+                &cfg,
+                &urls,
+                prompt,
+                service_context,
+                None,
+                None,
+            )
+            .await
+            .map_err(internal_error)?;
             Ok(serde_json::json!({ "job_id": outcome.result.job_id, "status": "pending" }))
         }
         ExtractSubaction::Status => {

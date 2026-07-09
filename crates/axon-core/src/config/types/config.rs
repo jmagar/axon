@@ -656,6 +656,15 @@ pub struct Config {
     /// Env: `AXON_EMBED_LANES`. TOML: `workers.embed-lanes`. Clamped 1–32. Default: 2.
     pub embed_lanes: usize,
 
+    /// Maximum number of unified-job-store jobs the single unified worker
+    /// runs concurrently (bounded via a semaphore around its claim loop).
+    /// Deliberately not auto-derived from `embed_lanes`/`ingest_lanes`: once
+    /// the crawl/embed/ingest cutover lands those fields stop being consumed
+    /// for job execution and become dead config, which a later cleanup pass
+    /// should remove.
+    /// Env: `AXON_UNIFIED_WORKER_CONCURRENCY`. TOML: `workers.unified-worker-concurrency`. Clamped 1–64. Default: 8.
+    pub unified_worker_concurrency: usize,
+
     /// Per-document embed timeout in seconds (used by the embed pipeline).
     /// Env: `AXON_EMBED_DOC_TIMEOUT_SECS`. TOML: `workers.embed-doc-timeout-secs`. Clamped 30–3600. Default: 300.
     pub embed_doc_timeout_secs: u64,

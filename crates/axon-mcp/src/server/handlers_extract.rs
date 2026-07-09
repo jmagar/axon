@@ -24,11 +24,15 @@ impl AxonMcpServer {
             .base_service_context()
             .await
             .map_err(|e| logged_internal_error("extract.start.context", e.as_ref()))?;
+        // MCP stdio/HTTP tool calls don't thread a per-request auth identity
+        // into this handler today — this is a genuinely internal call site,
+        // made explicit by passing `None`.
         let outcome = extract_svc::extract_start_with_context(
             &cfg,
             &urls,
             cfg.query.clone(),
             &service_context,
+            None,
             None,
         )
         .await

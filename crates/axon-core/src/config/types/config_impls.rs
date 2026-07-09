@@ -195,6 +195,7 @@ impl Default for Config {
             openai_embed_pool_max_inputs: 1024,
             ingest_lanes: 2,
             embed_lanes: 2,
+            unified_worker_concurrency: 8,
             embed_doc_timeout_secs: 300,
             queue_summary_secs: 30,
             freshness_tick_secs: 60,

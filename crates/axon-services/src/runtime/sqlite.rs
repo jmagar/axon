@@ -63,6 +63,10 @@ impl ServiceJobRuntime for SqliteServiceRuntime {
         )))
     }
 
+    fn notify_unified(&self) {
+        self.backend.notify_unified();
+    }
+
     async fn enqueue(&self, payload: JobPayload) -> BackendResult<Uuid> {
         self.backend.enqueue(payload).await
     }

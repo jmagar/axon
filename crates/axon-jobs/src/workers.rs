@@ -111,6 +111,7 @@ pub fn spawn_workers(
         Arc::clone(&unified_notify),
         shutdown.clone(),
         job_runner_registry,
+        cfg.unified_worker_concurrency,
     ));
 
     // Crawl: single lane (spider futures are !Send — must stay single-task)
