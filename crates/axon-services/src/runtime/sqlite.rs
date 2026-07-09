@@ -17,6 +17,7 @@ use axon_jobs::store::reclaim_stale_running_jobs_for_table;
 use axon_jobs::unified::SqliteUnifiedJobStore;
 use axon_observe::sink::SqliteObservabilitySink;
 
+mod embed_bridge;
 mod extract_bridge;
 
 pub struct SqliteServiceRuntime {
@@ -112,6 +113,10 @@ impl ServiceJobRuntime for SqliteServiceRuntime {
             let store = self.unified_store();
             return extract_bridge::list(&store, pagination.limit, pagination.offset).await;
         }
+        if kind == JobKind::Embed {
+            let store = self.unified_store();
+            return embed_bridge::list(&store, pagination.limit, pagination.offset).await;
+        }
         Ok(job_query::list_service_jobs(
             self.backend.pool(),
             kind,
@@ -145,6 +150,9 @@ impl ServiceJobRuntime for SqliteServiceRuntime {
         if kind == JobKind::Extract {
             return extract_bridge::status(&self.unified_store(), id).await;
         }
+        if kind == JobKind::Embed {
+            return embed_bridge::status(&self.unified_store(), id).await;
+        }
         Ok(job_query::service_job(self.backend.pool(), kind, id).await?)
     }
 
@@ -155,6 +163,9 @@ impl ServiceJobRuntime for SqliteServiceRuntime {
     ) -> Result<bool, Box<dyn Error + Send + Sync>> {
         if kind == JobKind::Extract {
             return extract_bridge::cancel(&self.unified_store(), id).await;
+        }
+        if kind == JobKind::Embed {
+            return embed_bridge::cancel(&self.unified_store(), id).await;
         }
         Ok(self
             .backend
@@ -167,12 +178,18 @@ impl ServiceJobRuntime for SqliteServiceRuntime {
         if kind == JobKind::Extract {
             return extract_bridge::cleanup(&self.unified_store()).await;
         }
+        if kind == JobKind::Embed {
+            return embed_bridge::cleanup(&self.unified_store()).await;
+        }
         Ok(job_query::cleanup_jobs(self.backend.pool(), kind).await?)
     }
 
     async fn clear_jobs(&self, kind: JobKind) -> Result<u64, Box<dyn Error + Send + Sync>> {
         if kind == JobKind::Extract {
             return extract_bridge::clear(&self.unified_store()).await;
+        }
+        if kind == JobKind::Embed {
+            return embed_bridge::clear(&self.unified_store()).await;
         }
         Ok(job_query::clear_jobs(self.backend.pool(), kind).await?)
     }
@@ -184,6 +201,9 @@ impl ServiceJobRuntime for SqliteServiceRuntime {
     ) -> Result<u64, Box<dyn Error + Send + Sync>> {
         if kind == JobKind::Extract {
             return extract_bridge::recover(&self.unified_store(), stale_threshold_ms).await;
+        }
+        if kind == JobKind::Embed {
+            return embed_bridge::recover(&self.unified_store(), stale_threshold_ms).await;
         }
         Ok(reclaim_stale_running_jobs_for_table(
             self.backend.pool(),

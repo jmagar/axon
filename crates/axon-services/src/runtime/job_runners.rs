@@ -58,6 +58,12 @@ pub fn build_registry(cfg: &Arc<Config>) -> Result<JobRunnerRegistry, ApiError> 
             cfg: Arc::clone(cfg),
         }),
     );
+    registry.register(
+        JobKind::Embed,
+        Arc::new(EmbedRunner {
+            cfg: Arc::clone(cfg),
+        }),
+    );
 
     // Open once and reuse: `SqliteMemoryStore::open` runs a schema migration
     // via a bare `rusqlite::Connection` with no busy-timeout configured. Doing
@@ -244,6 +250,64 @@ fn extract_error(message: impl Into<String>) -> ApiError {
     ApiError::new(
         "job_runner.extract_failed",
         ErrorStage::ParsingContent,
+        message.into(),
+    )
+}
+
+/// Runs a claimed `Embed` unified job via
+/// `axon_vector::ops::embed_path_native_with_progress`.
+///
+/// `claimed.request_json` carries `{"input": "...", "config_json": "..."}`
+/// (see `embed_start_with_context` in `crates/axon-services/src/embed.rs`).
+struct EmbedRunner {
+    cfg: Arc<Config>,
+}
+
+#[async_trait]
+impl UnifiedJobRunner for EmbedRunner {
+    async fn run(
+        &self,
+        claimed: &UnifiedClaimedJob,
+        store: &SqliteUnifiedJobStore,
+        shutdown: &CancellationToken,
+    ) -> Result<(), ApiError> {
+        heartbeat_running(store, claimed, PipelinePhase::Embedding).await;
+        if shutdown.is_cancelled() {
+            return Err(embed_error("embed canceled before running"));
+        }
+        let request = claimed
+            .request_json
+            .as_ref()
+            .ok_or_else(|| embed_error("embed job has no request payload"))?;
+        let input = request
+            .get("input")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| embed_error("embed job request is missing `input`"))?
+            .to_string();
+        let config_json = request
+            .get("config_json")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        let effective_cfg = apply_config_snapshot(&self.cfg, config_json).map_err(|error| {
+            ApiError::new(
+                "job_runner.invalid_config_snapshot",
+                ErrorStage::Planning,
+                error.to_string(),
+            )
+        })?;
+        let embed_fut =
+            axon_vector::ops::embed_path_native_with_progress(&effective_cfg, &input, None, None);
+        tokio::select! {
+            _ = shutdown.cancelled() => Err(embed_error("embed canceled")),
+            result = embed_fut => result.map(|_summary| ()).map_err(|error| embed_error(error.to_string())),
+        }
+    }
+}
+
+fn embed_error(message: impl Into<String>) -> ApiError {
+    ApiError::new(
+        "job_runner.embed_failed",
+        ErrorStage::Embedding,
         message.into(),
     )
 }

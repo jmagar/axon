@@ -247,7 +247,9 @@ pub(crate) async fn dispatch_freshness(
             {
                 return Ok(skipped_active_job(def));
             }
-            let outcome = embed_start_with_context(&cfg, &input, service_context, None, None)
+            // The freshness scheduler is a system-triggered background loop —
+            // no real caller identity is available here.
+            let outcome = embed_start_with_context(&cfg, &input, service_context, None, None, None)
                 .await
                 .map_err(|err| -> FreshnessError { err.to_string().into() })?;
             let job_id = Uuid::parse_str(&outcome.result.job_id).ok();

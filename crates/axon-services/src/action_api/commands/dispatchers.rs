@@ -222,12 +222,16 @@ pub async fn dispatch_embed(
                 collection: req.collection,
                 ..ConfigOverrides::default()
             });
+            // No per-caller auth identity is threaded through the generic
+            // client-action dispatch path today — this is a genuinely
+            // internal call site, made explicit by passing `None`.
             let outcome = embed_svc::embed_start_with_context(
                 &cfg,
                 &input,
                 service_context,
                 None,
                 req.source_type.as_deref(),
+                None,
             )
             .await
             .map_err(internal_error)?;
