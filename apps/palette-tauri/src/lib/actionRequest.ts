@@ -123,7 +123,7 @@ export const githubBrowseBody: BodyBuilder<GitHubBrowseRequestBody> = (ctx) =>
   parseGitHubTarget(first(ctx.words, "owner or owner/repo[/path]"));
 
 export type GitHubBrowseRequestBody = {
-  kind: "repos" | "tree" | "file";
+  kind: "repos" | "tree" | "file" | "feed";
   owner: string;
   repo?: string;
   path?: string;
