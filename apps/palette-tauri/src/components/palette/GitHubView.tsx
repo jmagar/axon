@@ -146,8 +146,7 @@ export const GitHubView = memo(function GitHubView({ payload }: { payload: Recor
     browse({ kind: "tree", owner: repoRoot.owner, repo: repoRoot.repo, branch: repoRoot.branch ?? undefined })
       .then((result) => setTreeState(result.ok ? { kind: "loaded", value: result } : { kind: "error", message: result.error ?? "Unable to load file tree." }))
       .catch((err) => setTreeState({ kind: "error", message: errorMessage(err) }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repoRoot]);
+  }, [repoRoot, treeState.kind]);
 
   // Note: this does NOT reuse `loadFile` — `loadFile` closes over `repoRoot`,
   // which hasn't updated to the newly-opened repo yet at the point this
@@ -466,7 +465,7 @@ function FilePreview({ payload, repo, branch, path }: { payload: unknown; repo: 
   const decoded = decodeFileContent(file);
   const filePath = file.path ?? path ?? "";
   const fileName = filePath.split("/").pop() ?? filePath;
-  const ext = fileName.includes(".") ? fileName.split(".").pop()!.toUpperCase() : "FILE";
+  const ext = fileName.includes(".") ? (fileName.split(".").pop()?.toUpperCase() ?? "FILE") : "FILE";
 
   function showToast(message: string) {
     setToast(message);

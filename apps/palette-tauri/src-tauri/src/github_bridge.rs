@@ -80,43 +80,43 @@ pub(crate) enum GitHubRequestKind {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct GitHubBrowseRequest {
     /// One of "repos", "repo", "tree", "file".
-    kind: String,
-    owner: String,
+    pub(crate) kind: String,
+    pub(crate) owner: String,
     #[serde(default)]
-    repo: Option<String>,
+    pub(crate) repo: Option<String>,
     #[serde(default)]
-    branch: Option<String>,
+    pub(crate) branch: Option<String>,
     #[serde(default)]
-    path: Option<String>,
+    pub(crate) path: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct GitHubBrowseResult {
-    ok: bool,
-    status: u16,
-    kind: String,
+    pub(crate) ok: bool,
+    pub(crate) status: u16,
+    pub(crate) kind: String,
     /// Echoed request identity so the frontend can reconstruct navigation
     /// state (which owner/repo/branch/path this response belongs to) without
     /// re-deriving it from the GitHub JSON shape, which varies by `kind`.
-    owner: String,
-    repo: Option<String>,
-    branch: Option<String>,
-    path: Option<String>,
+    pub(crate) owner: String,
+    pub(crate) repo: Option<String>,
+    pub(crate) branch: Option<String>,
+    pub(crate) path: Option<String>,
     /// Raw GitHub JSON payload (array or object depending on `kind`), present
     /// only when `ok` is true.
-    payload: serde_json::Value,
+    pub(crate) payload: serde_json::Value,
     /// Human-readable error surfaced to the palette UI when `ok` is false —
     /// rate-limit responses get a specific "retry at <time>" message.
-    error: Option<String>,
+    pub(crate) error: Option<String>,
     /// Requests remaining in the current rate-limit window, when GitHub sent
     /// the `x-ratelimit-remaining` header.
-    rate_limit_remaining: Option<u32>,
+    pub(crate) rate_limit_remaining: Option<u32>,
     /// Unix timestamp (seconds) the current rate-limit window resets, when
     /// GitHub sent the `x-ratelimit-reset` header.
-    rate_limit_reset: Option<i64>,
+    pub(crate) rate_limit_reset: Option<i64>,
     /// True when the request carried a `GITHUB_TOKEN` bearer credential.
-    authenticated: bool,
+    pub(crate) authenticated: bool,
 }
 
 fn github_token() -> Option<String> {
@@ -141,7 +141,7 @@ fn parse_kind(raw: &str) -> Result<GitHubRequestKind, String> {
 /// no path traversal, no scheme/host injection, no control characters. This
 /// guards `owner`/`repo`/`branch` — free-form file `path` values are validated
 /// separately by `validate_file_path` since they legitimately contain `/`.
-fn validate_segment<'a>(value: &'a str, field: &str) -> Result<&'a str, String> {
+pub(crate) fn validate_segment<'a>(value: &'a str, field: &str) -> Result<&'a str, String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
         return Err(format!("{field} must not be empty"));
@@ -242,7 +242,13 @@ pub(crate) async fn github_browse(
     let path = request.path.clone();
 
     if kind == GitHubRequestKind::Feed {
-        return github_browse_feed(&client, &request, token.as_deref(), authenticated).await;
+        return crate::github_feed::github_browse_feed(
+            &client,
+            &request,
+            token.as_deref(),
+            authenticated,
+        )
+        .await;
     }
 
     let url = build_request_url(&request, kind)?;
@@ -306,104 +312,6 @@ pub(crate) async fn github_browse(
     })
 }
 
-fn build_feed_payload(fetch_result: crate::github_feed::FeedFetchResult) -> serde_json::Value {
-    serde_json::json!({
-        "items": fetch_result.items,
-        "partial": fetch_result.partial,
-        "errors": fetch_result.errors,
-    })
-}
-
-/// `Feed` branch of `github_browse`: resolves the repo list for `request.owner`
-/// (reusing the `ListRepos` URL/shape) unless the caller already supplied one
-/// via `request.repo` as a comma-separated list (not currently exercised by the
-/// frontend — see Task 7 — but supported here so a future caller can skip the
-/// extra `ListRepos` round trip when it already knows the repos), then fans
-/// events out across up to `MAX_FEED_REPOS` of them via `github_feed::fetch_feed`.
-async fn github_browse_feed(
-    client: &GitHubClient,
-    request: &GitHubBrowseRequest,
-    token: Option<&str>,
-    authenticated: bool,
-) -> Result<GitHubBrowseResult, String> {
-    let owner = validate_segment(&request.owner, "owner")?.to_string();
-
-    let repos: Vec<String> = if let Some(explicit) =
-        request.repo.as_deref().filter(|r| !r.trim().is_empty())
-    {
-        explicit
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect()
-    } else {
-        let list_url = format!("{GITHUB_API_BASE}/users/{owner}/repos?sort=updated&per_page=50");
-        let mut builder = client
-            .client()
-            .get(&list_url)
-            .header(reqwest::header::ACCEPT, "application/vnd.github+json")
-            .header("X-GitHub-Api-Version", "2022-11-28");
-        if let Some(token) = token {
-            builder = builder.bearer_auth(token);
-        }
-        let response = builder.send().await.map_err(|err| err.to_string())?;
-        let status = response.status();
-        if !status.is_success() {
-            let rate_limit_remaining = header_u32(&response, "x-ratelimit-remaining");
-            let rate_limit_reset = header_i64(&response, "x-ratelimit-reset");
-            let text = response.text().await.unwrap_or_default();
-            let payload: serde_json::Value =
-                serde_json::from_str(&text).unwrap_or(serde_json::Value::Null);
-            let error = describe_error(status, rate_limit_remaining, rate_limit_reset, &payload);
-            return Ok(GitHubBrowseResult {
-                ok: false,
-                status: status.as_u16(),
-                kind: "feed".to_string(),
-                owner,
-                repo: None,
-                branch: None,
-                path: None,
-                payload: serde_json::Value::Null,
-                error: Some(error),
-                rate_limit_remaining,
-                rate_limit_reset,
-                authenticated,
-            });
-        }
-        let repos_json: serde_json::Value = response.json().await.map_err(|err| err.to_string())?;
-        repos_json
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|r| r.get("name").and_then(|n| n.as_str()).map(str::to_string))
-                    .collect()
-            })
-            .unwrap_or_default()
-    };
-
-    let capped = crate::github_feed::cap_repos_for_feed(&repos);
-    let fetch_result =
-        crate::github_feed::fetch_feed(client.client(), &owner, &capped, token).await;
-    let rate_limit_remaining = fetch_result.rate_limit_remaining;
-    let rate_limit_reset = fetch_result.rate_limit_reset;
-    let payload = build_feed_payload(fetch_result);
-
-    Ok(GitHubBrowseResult {
-        ok: true,
-        status: 200,
-        kind: "feed".to_string(),
-        owner,
-        repo: None,
-        branch: None,
-        path: None,
-        payload,
-        error: None,
-        rate_limit_remaining,
-        rate_limit_reset,
-        authenticated,
-    })
-}
-
 /// Cap the decoded preview size for large files. GitHub's contents API
 /// base64-encodes `content`, so we bound on the raw field length rather than
 /// decoding — good enough to prevent pathological payloads from reaching the
@@ -422,7 +330,7 @@ fn truncate_file_payload(mut payload: serde_json::Value) -> serde_json::Value {
     payload
 }
 
-fn header_u32(response: &reqwest::Response, name: &str) -> Option<u32> {
+pub(crate) fn header_u32(response: &reqwest::Response, name: &str) -> Option<u32> {
     response
         .headers()
         .get(name)
@@ -430,7 +338,7 @@ fn header_u32(response: &reqwest::Response, name: &str) -> Option<u32> {
         .and_then(|value| value.parse::<u32>().ok())
 }
 
-fn header_i64(response: &reqwest::Response, name: &str) -> Option<i64> {
+pub(crate) fn header_i64(response: &reqwest::Response, name: &str) -> Option<i64> {
     response
         .headers()
         .get(name)
@@ -438,7 +346,7 @@ fn header_i64(response: &reqwest::Response, name: &str) -> Option<i64> {
         .and_then(|value| value.parse::<i64>().ok())
 }
 
-fn describe_error(
+pub(crate) fn describe_error(
     status: reqwest::StatusCode,
     remaining: Option<u32>,
     reset: Option<i64>,

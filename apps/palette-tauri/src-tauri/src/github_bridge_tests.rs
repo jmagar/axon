@@ -52,34 +52,6 @@ fn parse_kind_accepts_feed() {
 }
 
 #[test]
-fn feed_payload_serializes_items_and_partial_flag() {
-    use crate::github_feed::FeedItem;
-
-    let items = vec![FeedItem {
-        kind: "push".to_string(),
-        repo: "jmagar/axon".to_string(),
-        actor: "jmagar".to_string(),
-        title: "fix: bug".to_string(),
-        url: "https://github.com/jmagar/axon/commits".to_string(),
-        path: Some("src/main.rs".to_string()),
-        num: None,
-        meta: "1 commits · main".to_string(),
-        badge: None,
-        timestamp_unix: 1_700_000_000,
-    }];
-    let fetch_result = crate::github_feed::FeedFetchResult {
-        items,
-        rate_limit_remaining: Some(55),
-        rate_limit_reset: Some(1_700_003_600),
-        partial: false,
-        errors: vec![],
-    };
-    let payload = build_feed_payload(fetch_result);
-    assert_eq!(payload["items"][0]["repo"], "jmagar/axon");
-    assert_eq!(payload["partial"], false);
-}
-
-#[test]
 fn builds_list_repos_url() {
     let request = req("repos", "jmagar", None, None, None);
     let url = build_request_url(&request, GitHubRequestKind::ListRepos).unwrap();

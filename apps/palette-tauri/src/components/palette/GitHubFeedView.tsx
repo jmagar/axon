@@ -93,8 +93,12 @@ export function GitHubFeedView({
           <div key={group.label} className="github-feed-day">
             <h3 className="stats-heading">{group.label}</h3>
             <div className="operation-list">
-              {group.items.map((item, index) => (
-                <FeedRow key={`${item.repo}-${item.timestampUnix}-${index}`} item={item} onOpen={() => onOpenItem(item)} />
+              {group.items.map((item) => (
+                <FeedRow
+                  key={`${item.repo}-${item.kind}-${item.timestampUnix}-${item.title}`}
+                  item={item}
+                  onOpen={() => onOpenItem(item)}
+                />
               ))}
             </div>
           </div>
