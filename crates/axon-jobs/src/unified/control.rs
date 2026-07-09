@@ -32,9 +32,18 @@ impl SqliteUnifiedJobStore {
         job_id: JobId,
         cooling: ProviderCooling,
     ) -> Result<()> {
+        // The status check and the cooldown write must be atomic: without a
+        // shared transaction and a status-scoped UPDATE, a concurrent writer
+        // (claim, update_job_status, heartbeat, cancel_job — all of which
+        // clear cooldown_until on leaving Waiting) could move the job off
+        // Waiting between the check and the write, and this function would
+        // still unconditionally re-write cooldown_until afterward, leaving a
+        // non-Waiting job (e.g. Running) with a stale cooldown that later
+        // paths weren't designed to clear on entry.
+        let mut tx = self.pool.begin().await.map_err(sql_error)?;
         let row = sqlx::query("SELECT status FROM jobs WHERE job_id = ?")
             .bind(job_id.0.to_string())
-            .fetch_optional(&self.pool)
+            .fetch_optional(&mut *tx)
             .await
             .map_err(sql_error)?
             .ok_or_else(|| missing_job(job_id))?;
@@ -53,12 +62,25 @@ impl SqliteUnifiedJobStore {
             + chrono::Duration::from_std(MAX_PROVIDER_COOLDOWN_WINDOW)
                 .unwrap_or(chrono::Duration::hours(1));
         let clamped = cooling.cooldown_until.min(max_deadline);
-        sqlx::query("UPDATE jobs SET cooldown_until = ? WHERE job_id = ?")
-            .bind(clamped.to_rfc3339())
-            .bind(job_id.0.to_string())
-            .execute(&self.pool)
-            .await
-            .map_err(sql_error)?;
+        let result = sqlx::query(
+            "UPDATE jobs SET cooldown_until = ? WHERE job_id = ? AND status = 'waiting'",
+        )
+        .bind(clamped.to_rfc3339())
+        .bind(job_id.0.to_string())
+        .execute(&mut *tx)
+        .await
+        .map_err(sql_error)?;
+        if result.rows_affected() == 0 {
+            return Err(ApiError::new(
+                "job_cooling.not_waiting",
+                ErrorStage::Publishing,
+                format!(
+                    "job {} left Waiting before cooling could be applied",
+                    job_id.0
+                ),
+            ));
+        }
+        tx.commit().await.map_err(sql_error)?;
         Ok(())
     }
 

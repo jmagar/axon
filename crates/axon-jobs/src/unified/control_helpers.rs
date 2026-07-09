@@ -24,10 +24,12 @@ pub(super) async fn reset_job_for_retry(
         ));
     }
     let now = now_timestamp();
-    // cooldown_until: a Waiting job can be recycled back to queued here (via
-    // retry), and cooldown is only ever meaningful while a job sits in
-    // Waiting — clear it unconditionally so a retried job never carries a
-    // stale cooldown that silently blocks its next claim.
+    // cooldown_until: cooldown is only ever meaningful while a job sits in
+    // Waiting. The guard above already rejects Waiting, so a stale cooldown
+    // is not expected here (that case belongs to `reset_stale_job_for_recovery`,
+    // whose `WHERE status IN ('running', 'waiting')` genuinely handles it) —
+    // clear it unconditionally anyway, as a defensive guarantee that a
+    // retried job never carries a cooldown that silently blocks its next claim.
     let result = sqlx::query(
         "UPDATE jobs SET
             intent = 'retry',

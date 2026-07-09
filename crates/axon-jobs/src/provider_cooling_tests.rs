@@ -87,9 +87,15 @@
 
 use std::time::Duration;
 
+use super::*;
 use axon_api::source::*;
 use axon_error::cooling::ProviderCooling;
 
+// This sidecar is declared at the crate root (`lib.rs`), not nested under a
+// single module file, so `use super::*` only brings top-level `pub mod`
+// names into scope (e.g. `boundary`, `store`) — it does not flatten their
+// contents. `JobStore`/`open_sqlite_pool`/etc. are re-imported explicitly
+// below because they live in those submodules.
 use crate::boundary::JobStore;
 use crate::store::open_sqlite_pool;
 use crate::unified::SqliteUnifiedJobStore;
@@ -265,6 +271,12 @@ async fn cooling_job_is_claimable_once_cooldown_expires() {
         .expect("claim query")
         .expect("expired cooldown job should be claimable");
     assert_eq!(claimed.job_id, job.job_id);
+
+    let cooldown_after = stored_cooldown_until(&store, job.job_id).await;
+    assert!(
+        cooldown_after.is_none(),
+        "cooldown_until must be cleared by the claim UPDATE"
+    );
 }
 
 #[tokio::test]
