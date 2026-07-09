@@ -4,6 +4,7 @@ use axon_api::source::{
     ApiError, AuthSnapshot, ErrorStage, JobId, JobKind as UnifiedJobKind, LifecycleStatus,
     PipelinePhase, Timestamp,
 };
+use futures::FutureExt;
 use sqlx::{Row, SqlitePool};
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
@@ -60,12 +61,48 @@ const DEFAULT_CONCURRENCY: usize = 8;
 /// Claimed jobs are run concurrently, bounded by a semaphore sized to
 /// `concurrency`, so one slow job (e.g. a long crawl) does not stall every
 /// other queued job behind it the way a fully serial claim loop would.
+///
+/// `crawl_concurrency` is a *second*, independent semaphore that additionally
+/// bounds how many `JobKind::Crawl` jobs may run at once, regardless of how
+/// high `concurrency` is. Crawl jobs share exactly one Chrome instance, so
+/// letting them freely consume up to `concurrency` general worker slots (as
+/// every other job kind does) risks CDP session contention and Chrome
+/// resource exhaustion — see `Config::crawl_job_concurrency_limit`'s doc
+/// comment. The crawl-specific permit is acquired *inside* the spawned task
+/// (not in this claim loop) so a crawl job waiting for its slot never blocks
+/// the claim loop from picking up other, non-crawl work.
 pub(crate) async fn unified_worker_loop_with_concurrency(
     pool: Arc<SqlitePool>,
     notify: Arc<Notify>,
     shutdown: CancellationToken,
     registry: Option<Arc<JobRunnerRegistry>>,
     concurrency: usize,
+) {
+    unified_worker_loop_with_concurrency_limits(
+        pool,
+        notify,
+        shutdown,
+        registry,
+        concurrency,
+        DEFAULT_CRAWL_CONCURRENCY,
+    )
+    .await;
+}
+
+/// Default crawl-job concurrency used by callers that don't thread a
+/// configured value (matches `Config::crawl_job_concurrency_limit`'s
+/// default). Production callers go through
+/// [`crate::workers::spawn_unified::spawn_unified_worker`], which always
+/// passes `cfg.crawl_job_concurrency_limit` explicitly.
+const DEFAULT_CRAWL_CONCURRENCY: usize = 1;
+
+pub(crate) async fn unified_worker_loop_with_concurrency_limits(
+    pool: Arc<SqlitePool>,
+    notify: Arc<Notify>,
+    shutdown: CancellationToken,
+    registry: Option<Arc<JobRunnerRegistry>>,
+    concurrency: usize,
+    crawl_concurrency: usize,
 ) {
     if let Err(error) = ensure_no_incompatible_legacy_jobs(&pool).await {
         tracing::error!(
@@ -76,6 +113,7 @@ pub(crate) async fn unified_worker_loop_with_concurrency(
         return;
     }
     let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency.max(1)));
+    let crawl_semaphore = Arc::new(tokio::sync::Semaphore::new(crawl_concurrency.max(1)));
     let mut in_flight: Vec<tokio::task::JoinHandle<()>> = Vec::new();
     let mut wake_count: u64 = 0;
     loop {
@@ -100,7 +138,24 @@ pub(crate) async fn unified_worker_loop_with_concurrency(
                         let pool = Arc::clone(&pool);
                         let shutdown = shutdown.clone();
                         let registry = registry.clone();
+                        let crawl_semaphore = (claimed.kind == UnifiedJobKind::Crawl)
+                            .then(|| Arc::clone(&crawl_semaphore));
                         in_flight.push(tokio::spawn(async move {
+                            // Acquire the crawl-specific slot only for crawl
+                            // jobs, and only inside the spawned task — this
+                            // blocks that task, not the claim loop above, so
+                            // other job kinds keep being claimed and run
+                            // while a crawl job queues for its Chrome slot.
+                            let _crawl_permit = match crawl_semaphore {
+                                Some(sem) => match sem.acquire_owned().await {
+                                    Ok(permit) => Some(permit),
+                                    Err(_) => {
+                                        drop(permit);
+                                        return; // crawl semaphore closed — shutting down
+                                    }
+                                },
+                                None => None,
+                            };
                             run_unified_claimed(&pool, &claimed, &shutdown, registry.as_deref())
                                 .await;
                             drop(permit);
@@ -294,8 +349,23 @@ pub(crate) async fn run_unified_claimed(
         return;
     };
 
-    match runner.run(claimed, &store, shutdown).await {
-        Ok(()) => {
+    // Panic guard: before this cutover, `panic_guard::run_catching` wrapped
+    // legacy runner execution so a panic inside a runner got caught and the
+    // job marked `failed` immediately. `runner.run(...)` here has no such
+    // guard on its own — a panic would unwind straight past both terminal-
+    // state branches below, leaving the job stuck `running` forever (the
+    // enclosing `tokio::spawn` in `unified_worker_loop_with_concurrency`
+    // isolates the panic from crashing the process, but nothing writes the
+    // terminal state). `AssertUnwindSafe` is safe here because `runner`,
+    // `claimed`, `store`, and `shutdown` are only read, never mutated, across
+    // the unwind boundary — any partial state inside the runner's own future
+    // is discarded along with the future itself.
+    let run_result = std::panic::AssertUnwindSafe(runner.run(claimed, &store, shutdown))
+        .catch_unwind()
+        .await;
+
+    match run_result {
+        Ok(Ok(())) => {
             if let Err(mark_error) = terminal::mark_terminal(
                 pool,
                 claimed,
@@ -312,8 +382,41 @@ pub(crate) async fn run_unified_claimed(
                 );
             }
         }
-        Err(error) => {
+        Ok(Err(error)) => {
+            terminal::fail_unified_claimed(pool, &store, claimed, error).await;
+        }
+        Err(panic_payload) => {
+            let message = panic_message(&panic_payload);
+            tracing::error!(
+                job_id = %claimed.job_id.0,
+                kind = ?claimed.kind,
+                panic = %message,
+                "unified worker: runner panicked; marking job failed"
+            );
+            let error = ApiError::new(
+                "job_runner.panicked",
+                ErrorStage::Planning,
+                format!("job runner panicked: {message}"),
+            );
             terminal::fail_unified_claimed(pool, &store, claimed, error).await;
         }
     }
 }
+
+/// Best-effort extraction of a human-readable message from a caught panic
+/// payload (`Box<dyn Any + Send>`). Panics via `panic!("...")` and
+/// `.unwrap()`/`.expect("...")` carry a `&'static str` or `String` payload;
+/// anything else falls back to a generic marker rather than failing to report.
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "non-string panic payload".to_string()
+    }
+}
+
+#[cfg(test)]
+#[path = "unified_tests.rs"]
+mod tests;

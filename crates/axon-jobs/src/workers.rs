@@ -98,6 +98,7 @@ pub fn spawn_workers(
         shutdown.clone(),
         job_runner_registry,
         cfg.unified_worker_concurrency,
+        cfg.crawl_job_concurrency_limit,
     ));
 
     // Crawl, Embed, and Ingest no longer have legacy in-process worker lanes —
@@ -119,6 +120,7 @@ pub fn spawn_workers(
             embed: Arc::clone(&embed_notify),
             extract: Arc::clone(&extract_notify),
             ingest: Arc::clone(&ingest_notify),
+            unified: Arc::clone(&unified_notify),
         },
         shutdown.clone(),
     )));
@@ -151,6 +153,10 @@ struct WatchdogNotifies {
     embed: Arc<Notify>,
     extract: Arc<Notify>,
     ingest: Arc<Notify>,
+    /// Wakes the unified durable-job worker lane after the watchdog reclaims
+    /// stale `running` rows in the unified `jobs` table (see
+    /// `watchdog::watchdog_loop`'s unified-store reclaim sweep).
+    unified: Arc<Notify>,
 }
 
 impl WatchdogNotifies {
