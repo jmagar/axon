@@ -5925,3 +5925,146 @@ textarea {
     transform: rotate(360deg);
   }
 }
+
+/* GitHubView — structured view for the `github` palette action. */
+.github-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.github-header .operation-hero {
+  flex: 1;
+  min-width: 0;
+}
+
+.github-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  margin-top: 2px;
+  background: var(--aurora-control-surface);
+  border: 1px solid var(--aurora-border-default);
+  border-radius: 8px;
+  color: var(--aurora-text-muted);
+  font-family: var(--aurora-font-sans);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.github-back:hover:not(:disabled) {
+  color: var(--aurora-accent-strong);
+  border-color: var(--aurora-accent-strong);
+}
+
+.github-back:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.github-spin {
+  animation: github-spin 1s linear infinite;
+}
+
+@keyframes github-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.github-repo-list,
+.github-tree-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.github-repo-row,
+.github-tree-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  padding: 9px 11px;
+  background: var(--aurora-control-surface);
+  border: 1px solid var(--aurora-border-default);
+  border-radius: 9px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.github-repo-row:hover,
+.github-tree-row:hover {
+  border-color: var(--aurora-accent-strong);
+}
+
+.github-tree-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.github-repo-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.github-repo-name {
+  color: var(--aurora-text-primary);
+  font-family: var(--aurora-font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.github-repo-badge {
+  padding: 1px 8px;
+  border: 1px solid var(--aurora-border-default);
+  border-radius: 999px;
+  color: var(--aurora-text-muted);
+  font-family: var(--aurora-font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.github-repo-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--aurora-text-muted);
+  font-family: var(--aurora-font-sans);
+  font-size: 11px;
+}
+
+.github-tree-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--aurora-text-primary);
+  font-family: var(--aurora-font-mono);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.github-tree-size {
+  flex: 0 0 auto;
+  color: var(--aurora-text-muted);
+  font-family: var(--aurora-font-mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.github-file-code {
+  max-height: 50vh;
+  overflow: auto;
+}
