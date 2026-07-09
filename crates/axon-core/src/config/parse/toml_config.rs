@@ -374,6 +374,10 @@ pub(super) struct TomlWorkersSection {
     pub embed_lanes: Option<usize>,
     /// Maximum concurrent jobs the unified worker runs at once.
     pub unified_worker_concurrency: Option<usize>,
+    /// Maximum concurrent `JobKind::Crawl` jobs the unified worker runs at
+    /// once, independent of `unified_worker_concurrency` (crawl jobs share
+    /// one Chrome instance).
+    pub crawl_job_concurrency_limit: Option<usize>,
     /// Per-document embed timeout in seconds.
     pub embed_doc_timeout_secs: Option<u64>,
     /// Queue summary interval in seconds.

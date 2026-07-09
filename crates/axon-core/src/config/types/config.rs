@@ -679,6 +679,21 @@ pub struct Config {
     /// Env: `AXON_UNIFIED_WORKER_CONCURRENCY`. TOML: `workers.unified-worker-concurrency`. Clamped 1–64. Default: 8.
     pub unified_worker_concurrency: usize,
 
+    /// Maximum number of `JobKind::Crawl` jobs the unified worker runs
+    /// concurrently, independent of `unified_worker_concurrency`.
+    ///
+    /// Crawl jobs share exactly one Chrome instance (`resolve_cdp_ws_url` in
+    /// `axon-crawl/src/engine/runtime.rs` hits the single `axon-chrome`
+    /// container's `/json/version`); running many crawls at once risks CDP
+    /// session contention and Chrome resource exhaustion. Before the durable
+    /// job-store cutover, the legacy `crawl_worker` was hard-coded to exactly
+    /// 1 concurrent job for this reason — this knob restores that safety
+    /// rail as an explicit, still-conservative-by-default limit rather than
+    /// letting crawl jobs share the general `unified_worker_concurrency`
+    /// semaphore (default 8) with every other job kind.
+    /// Env: `AXON_CRAWL_JOB_CONCURRENCY_LIMIT`. TOML: `workers.crawl-job-concurrency-limit`. Clamped 1–64. Default: 1.
+    pub crawl_job_concurrency_limit: usize,
+
     /// Per-document embed timeout in seconds (used by the embed pipeline).
     /// Env: `AXON_EMBED_DOC_TIMEOUT_SECS`. TOML: `workers.embed-doc-timeout-secs`. Clamped 30–3600. Default: 300.
     pub embed_doc_timeout_secs: u64,

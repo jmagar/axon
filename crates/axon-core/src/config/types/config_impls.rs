@@ -198,6 +198,7 @@ impl Default for Config {
             ingest_lanes: 2,
             embed_lanes: 2,
             unified_worker_concurrency: 8,
+            crawl_job_concurrency_limit: 1,
             embed_doc_timeout_secs: 300,
             queue_summary_secs: 30,
             freshness_tick_secs: 60,
