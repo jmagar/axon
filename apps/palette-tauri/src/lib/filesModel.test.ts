@@ -2,17 +2,23 @@ import { describe, expect, it } from "vitest";
 
 import {
   breadcrumbSegments,
+  type CheckedPaths,
+  checkAllIn,
   childPath,
+  clearChecked,
+  createPane,
   extensionOf,
+  type FileEntry,
   fileKind,
   formatBytes,
   formatModified,
+  isChecked,
   isIngestable,
   isMarkdownLike,
   joinSegments,
   parentPath,
   sortEntries,
-  type FileEntry,
+  toggleChecked,
 } from "./filesModel";
 
 describe("formatBytes", () => {
@@ -136,5 +142,62 @@ describe("sortEntries", () => {
     const copy = [...entries];
     sortEntries(entries);
     expect(entries).toEqual(copy);
+  });
+});
+
+describe("createPane", () => {
+  it("creates an idle pane with the given id and cwd", () => {
+    const pane = createPane("left", "docs");
+    expect(pane).toEqual({
+      id: "left",
+      cwd: "docs",
+      selected: null,
+      file: { kind: "idle" },
+      loadGen: 0,
+      editing: false,
+      draft: "",
+      saving: false,
+    });
+  });
+
+  it("defaults cwd to empty string", () => {
+    const pane = createPane("right");
+    expect(pane.cwd).toBe("");
+  });
+});
+
+describe("checked-path set helpers", () => {
+  it("toggleChecked adds an unchecked path", () => {
+    const empty: CheckedPaths = new Set();
+    const next = toggleChecked(empty, "a.md");
+    expect(isChecked(next, "a.md")).toBe(true);
+    expect(next.size).toBe(1);
+  });
+
+  it("toggleChecked removes an already-checked path", () => {
+    const start: CheckedPaths = new Set(["a.md"]);
+    const next = toggleChecked(start, "a.md");
+    expect(isChecked(next, "a.md")).toBe(false);
+    expect(next.size).toBe(0);
+  });
+
+  it("toggleChecked does not mutate the input set", () => {
+    const start: CheckedPaths = new Set(["a.md"]);
+    toggleChecked(start, "b.md");
+    expect(start.size).toBe(1);
+  });
+
+  it("checkAllIn adds every given path, preserving existing checks", () => {
+    const start: CheckedPaths = new Set(["a.md"]);
+    const next = checkAllIn(start, ["b.md", "c.md"]);
+    expect(next.size).toBe(3);
+    expect(isChecked(next, "a.md")).toBe(true);
+    expect(isChecked(next, "b.md")).toBe(true);
+    expect(isChecked(next, "c.md")).toBe(true);
+  });
+
+  it("clearChecked returns an empty set", () => {
+    const next = clearChecked();
+    expect(next.size).toBe(0);
   });
 });
