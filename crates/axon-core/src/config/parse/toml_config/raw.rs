@@ -194,18 +194,6 @@ pub(in crate::config) struct RawJobsSection {
     pub auto_worker: Option<bool>,
     /// Idle seconds before an auto-started worker exits (0 = run forever).
     pub worker_idle_exit_secs: Option<u64>,
-    #[serde(default)]
-    pub freshness: RawFreshnessSection,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(deny_unknown_fields, rename_all = "kebab-case")]
-pub(in crate::config) struct RawFreshnessSection {
-    pub tick_secs: Option<u64>,
-    pub lease_secs: Option<u64>,
-    pub max_due_per_tick: Option<i64>,
-    pub max_concurrent_runs: Option<usize>,
-    pub run_retention_days: Option<i64>,
 }
 
 #[derive(Deserialize, Default)]
@@ -272,7 +260,6 @@ pub(in crate::config) struct RawVectorSection {
     pub delete_batch_points: Option<usize>,
     pub hybrid_enabled: Option<bool>,
     pub hnsw_ef: Option<usize>,
-    pub hnsw_ef_legacy: Option<usize>,
     pub structured_data_max_bytes: Option<usize>,
     pub bulk_load: Option<bool>,
     pub bulk_indexing_threshold_kb: Option<usize>,
@@ -288,7 +275,6 @@ pub(in crate::config) struct RawVectorSection {
 #[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 pub(in crate::config) struct RawLlmSection {
-    #[allow(dead_code)]
     pub backend: Option<String>,
     pub completion_concurrency: Option<usize>,
     pub completion_timeout_secs: Option<u64>,

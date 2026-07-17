@@ -125,7 +125,7 @@ impl ServiceContext {
     async fn build(
         cfg: Arc<Config>,
         spawn_workers: bool,
-        spawn_freshness_scheduler: bool,
+        hold_drain_lock: bool,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         if spawn_workers {
             axon_core::health::assert_workers_allowed_by_cutover(&cfg)
@@ -134,12 +134,13 @@ impl ServiceContext {
         }
         let jobs = resolve_runtime_with_workers(Arc::clone(&cfg), spawn_workers).await?;
         let target_local_source = Self::build_target_local_source(&cfg, &jobs, spawn_workers).await;
-        // A schedulers context (serve / HTTP mcp) is the process that owns the
-        // queue for its whole lifetime, so it holds the drain lock to advertise
-        // that — otherwise every detached CLI enqueue would auto-spawn a
-        // redundant worker (axon_rust-x4gxr.2). Best-effort: if another worker
-        // already holds it, we start anyway (claiming is transactional).
-        let drain_lock = if spawn_freshness_scheduler {
+        // A long-lived schedulers context (serve / HTTP mcp) owns the queue for
+        // its whole lifetime, so it holds the drain lock to advertise that —
+        // otherwise every detached CLI enqueue would auto-spawn a redundant
+        // worker (axon_rust-x4gxr.2). Short-lived `--wait` worker contexts must
+        // NOT hold it. Best-effort: if another worker already holds it, we start
+        // anyway (claiming is transactional).
+        let drain_lock = if hold_drain_lock {
             Self::acquire_drain_lock(&cfg).await
         } else {
             None
@@ -150,9 +151,6 @@ impl ServiceContext {
             target_local_source,
             drain_lock,
         };
-        if spawn_freshness_scheduler {
-            crate::freshness::spawn_freshness_scheduler(context.clone());
-        }
         if spawn_workers {
             spawn_queue_summary_logger(Arc::clone(&jobs), cfg.queue_summary_secs);
         }
@@ -185,16 +183,16 @@ impl ServiceContext {
     /// Construct the production target local-source runtime, when applicable.
     ///
     /// Only worker-bearing contexts (`spawn_workers`, i.e. `serve`/`mcp` and
-    /// foreground `--wait`) attach it, and only when both `qdrant_url` and
-    /// `tei_url` are configured. Missing endpoints leave it unset rather than
-    /// failing startup; a construction error (e.g. the ledger migrations) is
-    /// logged and treated as absent so the process still comes up.
+    /// foreground `--wait`) attach it. Provider construction is lazy, so
+    /// acquisition-only requests such as `map` remain operational without TEI
+    /// or Qdrant; an embedding request still fails at the provider boundary
+    /// when its configured endpoint is unavailable.
     async fn build_target_local_source(
         cfg: &Config,
         jobs: &Arc<dyn ServiceJobRuntime>,
         spawn_workers: bool,
     ) -> Option<Arc<TargetLocalSourceRuntime>> {
-        if !spawn_workers || cfg.qdrant_url.trim().is_empty() || cfg.tei_url.trim().is_empty() {
+        if !spawn_workers {
             return None;
         }
         let Some(pool) = jobs.sqlite_pool() else {
@@ -239,18 +237,21 @@ impl ServiceContext {
 
     /// Create a ServiceContext with in-process workers (SQLite runtime only).
     ///
-    /// Use for foreground CLI `--wait true`, where jobs should drain but
-    /// unrelated recurring freshness schedules must not be swept.
+    /// Use for foreground CLI `--wait true` and the standalone `axon jobs
+    /// worker` (which owns the drain lock itself). Does NOT hold the drain lock:
+    /// a short-lived `--wait` context must not suppress auto-spawn.
     pub async fn new_with_workers(
         cfg: Arc<Config>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         Self::build(cfg, true, false).await
     }
 
-    /// Create a long-lived ServiceContext with in-process workers and recurring
-    /// freshness scheduling enabled.
+    /// Create a long-lived ServiceContext with in-process workers that holds the
+    /// worker drain lock for its lifetime.
     ///
-    /// Use for `axon serve`, MCP server, and web server runtimes.
+    /// Use for `axon serve`, MCP server, and web server runtimes — the running
+    /// server advertises worker liveness so detached CLI enqueues don't
+    /// auto-spawn a redundant worker (axon_rust-x4gxr.2).
     pub async fn new_with_workers_and_schedulers(
         cfg: Arc<Config>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {

@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [6.3.0] - 2026-07-17
+## [7.1.0] - 2026-07-17
 
 ### Changed
 
@@ -18,15 +18,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `axon jobs worker` — run a standalone worker process for the unified durable
-  queue. It holds a cross-process drain lock (one worker per data dir),
-  recovers stale attempts, drains the queue, and exits after a configurable
-  idle window (`--idle-secs`, `jobs.worker-idle-exit-secs`, default 60s;
-  `0` = run until stopped).
+  queue. It holds a cross-process drain lock (one worker per jobs DB, taken
+  before any runtime is built), recovers stale attempts, drains the queue, and
+  exits after a configurable idle window (`--idle-exit-secs`,
+  `jobs.worker-idle-exit-secs`, default 300s; `0` = run until stopped).
 - Detached CLI enqueues guarantee pickup without a manually started
   `axon serve`: when no worker process holds the drain lock, the CLI
-  auto-spawns a detached `axon jobs worker` (disable with
-  `jobs.auto-worker = false` / `AXON_JOBS_AUTO_WORKER=false`; worker output
-  logs to `<data-dir>/logs/auto-worker.log`).
+  auto-spawns a detached `axon jobs worker`. A running `axon serve`/`mcp` holds
+  the same lock, so it suppresses redundant auto-spawns. Disable with
+  `jobs.auto-worker = false` / `AXON_JOBS_AUTO_WORKER=false`; worker output logs
+  to `<data-dir>/logs/auto-worker.log` (0600, size-rotated).
+
+## [7.0.0] - 2026-07-17
+
+### Changed
+
+- Complete the issue #298 pipeline unification: one `SourceRequest` pipeline
+  owns acquisition, preparation, embedding, publication, graph, and cleanup
+  for every source family, with the unified SQLite job model and canonical
+  CLI/REST/MCP surfaces.
+- **Breaking:** artifact-bearing responses return opaque artifact IDs instead
+  of server filesystem paths across CLI, REST, MCP, web, and Palette.
+- **Breaking:** web source options use the canonical `headers` object plus
+  `respect_robots`, `cache_policy`, and per-extractor
+  `vertical_cache_ttl_secs` keys.
+- Source progress events carry structured source identity, generation, stage
+  counts, current item, warnings, and errors on both web and non-web paths.
+
+### Added
+
+- CLI resource commands: `artifacts`, `uploads`, `collections`, `graph`,
+  `providers`, `capabilities`, and `chat`, with MCP action parity.
 
 ## [6.2.2] - 2026-07-05
 
