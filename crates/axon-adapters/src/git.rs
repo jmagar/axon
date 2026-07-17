@@ -267,16 +267,26 @@ fn git_target(plan: &SourcePlan) -> Result<GitTarget> {
     parse_git_target(&plan.request.source)
 }
 
+/// `GitSourceAdapter` is the single implementation behind every git-family
+/// adapter the router can select — `git`, `github`, `gitea`, `gitlab` — all of
+/// which resolve to `SourceKind::Git`. Validate on the source *kind*, not the
+/// exact adapter name: the resolver picks `github` for `github.com` URLs, and
+/// keying off the literal name `"git"` rejected every real forge URL with
+/// `adapter.git.mismatch` (seen live indexing a GitHub repo).
 fn validate_adapter(plan: &SourcePlan) -> Result<()> {
-    if plan.route.adapter.name == ADAPTER_NAME {
+    if plan.route.source.source_kind == SourceKind::Git {
         return Ok(());
     }
     Err(ApiError::new(
         "adapter.git.mismatch",
         axon_error::ErrorStage::Routing,
-        "route selected a different adapter",
+        "route selected a non-git source kind",
     )
-    .with_context("adapter", plan.route.adapter.name.clone()))
+    .with_context("adapter", plan.route.adapter.name.clone())
+    .with_context(
+        "source_kind",
+        format!("{:?}", plan.route.source.source_kind),
+    ))
 }
 
 fn collect_files(root: &Path) -> Result<Vec<PathBuf>> {
