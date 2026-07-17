@@ -117,12 +117,18 @@ pub struct ParserCapability {
 
 Parser selection order:
 
-1. explicit `ParserHint`
-2. adapter-declared parser support
-3. content kind
-4. MIME type
-5. path/extension
-6. lightweight content sniffing
+1. explicit `requested_parser` — a caller demand. An unregistered id degrades
+   the parse; it never falls through to auto-selection.
+2. a document `ParserHint` naming a registered parser. Hints are advisory
+   metadata stamped by upstream stages: a hint naming an unregistered parser
+   falls through to the signals below (recording an informational warning)
+   instead of degrading the document. Routes must not fabricate hints — a
+   hint is only valid when it names a registered parser id.
+3. adapter-declared parser support
+4. content kind
+5. MIME type
+6. path/extension
+7. lightweight content sniffing
 
 Multiple parsers may run when they emit different fact families. Example:
 `docker-compose.yaml` can use both YAML structure parsing and Docker-specific

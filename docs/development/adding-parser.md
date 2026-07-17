@@ -83,12 +83,16 @@ below.
 
 `ParserRegistry::parse(input)`:
 
-1. If the input requests an explicit parser (`ParseInput.requested_parser`,
-   falling back to the document's first `parser_hints` entry), look it up by
-   `parser_id`. If found, use it. If requested but not found, return a
-   `parse.requested_parser_unavailable` degraded result — never silently fall
-   through to auto-selection.
-2. Otherwise, run `select_best_match`: score every registered parser against
+1. If the caller demands an explicit parser (`ParseInput.requested_parser`),
+   look it up by `parser_id`. If found, it runs alone. If demanded but not
+   found, return a `parse.requested_parser_unavailable` degraded result —
+   never silently fall through to auto-selection.
+2. Otherwise, if the document's first `parser_hints` entry names a registered
+   parser, that parser runs alone. A hint naming an unregistered parser is
+   advisory upstream metadata, not a caller demand: selection falls through
+   to auto-selection below and the result records an informational
+   `parse.parser_hint_unregistered` warning.
+3. Otherwise, run `select_best_match`: score every registered parser against
    the input using `match_score`, which checks (in priority order, taking
    the **maximum** matching score):
 
@@ -101,7 +105,7 @@ below.
 
    Ties on score are broken by lower `priority` value winning. A parser with
    no match on any axis is excluded entirely (`match_score` returns `None`).
-3. If nothing matches, return an `unsupported_result` — a
+4. If nothing matches, return an `unsupported_result` — a
    `CompletedDegraded` result with a `parse.unsupported` warning and empty
    facts/candidates, not an error. **Unsupported content must degrade
    cleanly and never block ingestion.**

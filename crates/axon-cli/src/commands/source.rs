@@ -10,7 +10,7 @@
 
 use axon_api::source::{
     ArtifactKind, ArtifactMode, ContentRef, LifecycleStatus, ResponseMode, SourceIntent,
-    SourceLimits, SourceRequest, SourceResult, SourceScope,
+    SourceLimits, SourceRequest, SourceResult, SourceScope, SourceWarning,
 };
 use axon_core::config::{CommandKind, Config};
 use axon_core::ui::{accent, muted, primary};
@@ -163,9 +163,32 @@ pub(crate) fn render_source_result(cfg: &Config, result: &SourceResult) {
             result.graph.nodes_upserted, result.graph.edges_upserted, result.graph.evidence_records,
         ))
     );
-    for warning in &result.warnings {
-        println!("  {}", muted(&format!("Warning: {}", warning.message)));
+    for (message, count) in grouped_warning_messages(&result.warnings) {
+        let line = if count > 1 {
+            format!("Warning: {message} (x{count})")
+        } else {
+            format!("Warning: {message}")
+        };
+        println!("  {}", muted(&line));
     }
+}
+
+/// Collapse identical warning messages into `(message, count)` pairs,
+/// preserving first-seen order. Per-document warnings repeat once per
+/// document, so a site-scope run can otherwise print hundreds of identical
+/// lines; JSON output keeps the full per-item list.
+fn grouped_warning_messages(warnings: &[SourceWarning]) -> Vec<(&str, usize)> {
+    let mut grouped: Vec<(&str, usize)> = Vec::new();
+    for warning in warnings {
+        match grouped
+            .iter_mut()
+            .find(|(message, _)| *message == warning.message)
+        {
+            Some((_, count)) => *count += 1,
+            None => grouped.push((warning.message.as_str(), 1)),
+        }
+    }
+    grouped
 }
 
 fn render_inline_source_content(result: &SourceResult) -> bool {
@@ -237,3 +260,7 @@ async fn write_scrape_output_if_requested(
         .map_err(|err| -> Box<dyn Error> { err.to_string().into() })?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "source_tests.rs"]
+mod tests;
