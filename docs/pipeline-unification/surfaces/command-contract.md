@@ -568,6 +568,16 @@ Memory is not a source adapter.
 | `axon jobs recover` | none | `--kind`, `--older-than` | recovery summary |
 | `axon jobs cleanup` | none | `--older-than`, `--dry-run` | cleanup summary |
 | `axon jobs clear` | none | `--status`, `--older-than`, `--confirm` | clear summary |
+| `axon jobs worker` | none | `--idle-secs` | worker run summary |
+
+`axon jobs worker` hosts the in-process worker runtime in a standalone
+process: it drains the durable queue, keeps serving while work keeps
+arriving, and exits after the configured idle window (`--idle-secs`, default
+`jobs.worker-idle-exit-secs`, `0` = run until stopped). Exactly one worker
+process per data dir holds the worker drain lock; concurrent invocations exit
+immediately. The source command's detached default auto-starts one when no
+worker process is alive, so detached jobs never require a manually started
+`axon serve`.
 
 ### artifacts and uploads
 

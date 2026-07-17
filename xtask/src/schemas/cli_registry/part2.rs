@@ -119,6 +119,14 @@ fn commands_sources_stats_jobs() -> Vec<CliRegistryCommand> {
             false,
             "admin",
         ),
+        c(
+            &["jobs", "worker"],
+            "Run a standalone worker process for the unified durable queue",
+            None,
+            true,
+            false,
+            "write",
+        ),
     ]
 }
 

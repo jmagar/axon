@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.3.0] - 2026-07-17
+
+### Changed
+
+- `axon <source>` is detached by default again, matching the command contract:
+  it validates and routes synchronously, enqueues a durable `source` job, and
+  returns immediately with a job descriptor plus `axon jobs get/events` poll
+  hints. `--wait true` remains the foreground opt-in; retained `scrape` stays
+  foreground.
+
+### Added
+
+- `axon jobs worker` — run a standalone worker process for the unified durable
+  queue. It holds a cross-process drain lock (one worker per data dir),
+  recovers stale attempts, drains the queue, and exits after a configurable
+  idle window (`--idle-secs`, `jobs.worker-idle-exit-secs`, default 60s;
+  `0` = run until stopped).
+- Detached CLI enqueues guarantee pickup without a manually started
+  `axon serve`: when no worker process holds the drain lock, the CLI
+  auto-spawns a detached `axon jobs worker` (disable with
+  `jobs.auto-worker = false` / `AXON_JOBS_AUTO_WORKER=false`; worker output
+  logs to `<data-dir>/logs/auto-worker.log`).
+
 ## [6.2.2] - 2026-07-05
 
 ### Changed

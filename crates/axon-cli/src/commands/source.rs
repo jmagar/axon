@@ -18,6 +18,8 @@ use axon_services::context::ServiceContext;
 use axon_services::index_source;
 use std::error::Error;
 
+mod detach;
+
 pub async fn run_source(
     cfg: &Config,
     service_context: &ServiceContext,
@@ -29,16 +31,32 @@ pub async fn run_source(
     run_source_request(cfg, service_context, request).await
 }
 
+/// Per the command contract, `axon <source>` is detached by default: it
+/// enqueues a durable job and returns a job descriptor. `--wait true` opts
+/// into blocking foreground execution. Retained `scrape` stays foreground —
+/// its whole purpose is returning the one page inline.
+pub(crate) fn should_detach(cfg: &Config) -> bool {
+    cfg.command == CommandKind::Source && !cfg.wait
+}
+
 pub(crate) async fn run_source_request(
     cfg: &Config,
     service_context: &ServiceContext,
     request: SourceRequest,
 ) -> Result<(), Box<dyn Error>> {
-    let result = index_source(request, service_context)
-        .await
-        .map_err(|e| -> Box<dyn Error> { e.to_string().into() })?;
+    let detached = should_detach(cfg);
+    let result = if detached {
+        detach::enqueue_source_detached(service_context, request).await?
+    } else {
+        index_source(request, service_context)
+            .await
+            .map_err(|e| -> Box<dyn Error> { e.to_string().into() })?
+    };
 
     render_source_result(cfg, &result);
+    if detached && result.job.is_some() {
+        detach::ensure_worker_process(cfg).await;
+    }
 
     // A degraded/failed result (unsupported input, no data plane, …) carries a
     // warning but no error — surface it as a nonzero exit for CLI callers.
@@ -133,6 +151,10 @@ pub(crate) fn render_source_result(cfg: &Config, result: &SourceResult) {
         return;
     }
 
+    if render_queued_source_descriptor(result) {
+        return;
+    }
+
     println!(
         "  {} {}",
         primary("Source Indexed"),
@@ -162,6 +184,34 @@ pub(crate) fn render_source_result(cfg: &Config, result: &SourceResult) {
     for warning in &result.warnings {
         println!("  {}", muted(&format!("Warning: {}", warning.message)));
     }
+}
+
+/// Render the job-descriptor shape for a detached (still queued/running)
+/// source result. Returns false for terminal results so the full indexed
+/// rendering runs instead.
+fn render_queued_source_descriptor(result: &SourceResult) -> bool {
+    if !matches!(
+        result.status,
+        LifecycleStatus::Queued | LifecycleStatus::Pending | LifecycleStatus::Running
+    ) || result.job.is_none()
+    {
+        return false;
+    }
+
+    let job_id = result.job_id.0.to_string();
+    println!("  {} {}", primary("Source Queued"), accent(&job_id));
+    println!("  {}", muted(&format!("Input: {}", result.canonical_uri)));
+    println!(
+        "  {}",
+        muted(&format!(
+            "Poll: axon jobs get {job_id}  ·  Stream: axon jobs events {job_id}"
+        ))
+    );
+    println!("  {}", muted("Foreground instead: re-run with --wait true"));
+    for warning in &result.warnings {
+        println!("  {}", muted(&format!("Warning: {}", warning.message)));
+    }
+    true
 }
 
 fn render_inline_source_content(result: &SourceResult) -> bool {

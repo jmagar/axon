@@ -110,7 +110,8 @@ fn job_command_mode(cfg: &Config) -> Option<JobCommandMode<'_>> {
 
 fn command_needs_workers(cfg: &Config, command_mode: Option<JobCommandMode<'_>>) -> bool {
     cfg.wait
-        || matches!(cfg.command, CommandKind::Source | CommandKind::Scrape)
+        || cfg.command == CommandKind::Scrape
+        || jobs_worker_invocation(cfg)
         || matches!(
             command_mode,
             Some(JobCommandMode::Subcommand {
@@ -118,6 +119,11 @@ fn command_needs_workers(cfg: &Config, command_mode: Option<JobCommandMode<'_>>)
                 ..
             })
         )
+}
+
+/// `axon jobs worker` hosts the in-process worker runtime in this process.
+fn jobs_worker_invocation(cfg: &Config) -> bool {
+    cfg.command == CommandKind::Jobs && cfg.positional.first().map(String::as_str) == Some("worker")
 }
 
 /// Returns true if the process argv is the `setup plugin-hook` (or `setup hook`)
@@ -241,9 +247,11 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
     // intentionally needs in-process workers. Fire-and-forget submits enqueue
     // and exit; operator `worker` subcommands spawn workers in this process.
     let command_mode = job_command_mode(&cfg_arc);
-    // `source` and retained `scrape` index synchronously in the foreground but
-    // need the data-plane runtime (ledger/embedding/vector stores), which is
-    // only attached to a worker-bearing ServiceContext.
+    // Retained `scrape` (and any command under `--wait true`) indexes
+    // synchronously in the foreground and needs the data-plane runtime
+    // (ledger/embedding/vector stores), which is only attached to a
+    // worker-bearing ServiceContext. Detached-default `source` enqueues via
+    // an enqueue-only context; `jobs worker` hosts workers explicitly.
     let needs_workers = command_needs_workers(cfg_arc.as_ref(), command_mode);
     let service_context = if needs_workers {
         ServiceContext::new_with_workers(Arc::clone(&cfg_arc)).await

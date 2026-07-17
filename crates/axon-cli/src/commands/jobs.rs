@@ -10,6 +10,8 @@ use axon_services::context::ServiceContext;
 use std::error::Error;
 use uuid::Uuid;
 
+mod worker;
+
 pub async fn run_jobs(
     cfg: &Config,
     service_context: &ServiceContext,
@@ -23,6 +25,7 @@ pub async fn run_jobs(
         "recover" => recover_jobs(cfg, service_context).await,
         "cleanup" => cleanup_jobs(cfg, service_context).await,
         "clear" => clear_jobs(cfg, service_context).await,
+        "worker" => worker::run_worker(cfg, service_context).await,
         other => Err(format!("unknown jobs subcommand: {other}").into()),
     }
 }

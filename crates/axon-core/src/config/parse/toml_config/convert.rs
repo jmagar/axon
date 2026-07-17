@@ -129,6 +129,8 @@ fn apply_jobs(legacy: &mut TomlConfig, raw: &RawTomlConfig) {
     legacy.workers.jobs_retention_artifact_days = j.artifact_retention_days.map(i64::from);
     legacy.workers.jobs_retention_sweep_secs = j.retention_sweep_secs;
     legacy.workers.jobs_interactive_starvation_slo_secs = j.interactive_starvation_slo_secs;
+    legacy.workers.jobs_auto_worker = j.auto_worker;
+    legacy.workers.jobs_worker_idle_exit_secs = j.worker_idle_exit_secs;
     legacy.freshness.tick_secs = j.freshness.tick_secs;
     legacy.freshness.lease_secs = j.freshness.lease_secs;
     legacy.freshness.max_due_per_tick = j.freshness.max_due_per_tick;

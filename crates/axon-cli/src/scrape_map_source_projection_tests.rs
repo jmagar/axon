@@ -1,5 +1,5 @@
 use super::{JobCommandMode, command_needs_workers, job_command_mode};
-use crate::commands::source::build_source_request;
+use crate::commands::source::{build_source_request, should_detach};
 use axon_core::config::{CommandKind, Config};
 
 fn cfg(command: CommandKind, positional: &[&str], wait: bool) -> Config {
@@ -66,4 +66,48 @@ fn scrape_no_embed_is_only_source_embed_false() {
 
     assert_eq!(request.scope, Some(axon_api::source::SourceScope::Page));
     assert!(!request.embed);
+}
+
+#[test]
+fn source_without_wait_detaches_and_needs_no_workers() {
+    let cfg = cfg(CommandKind::Source, &["https://example.test"], false);
+    let command_mode = job_command_mode(&cfg);
+
+    assert!(should_detach(&cfg));
+    assert!(
+        !command_needs_workers(&cfg, command_mode),
+        "detached source enqueues via an enqueue-only context"
+    );
+}
+
+#[test]
+fn source_with_wait_runs_foreground_with_workers() {
+    let cfg = cfg(CommandKind::Source, &["https://example.test"], true);
+    let command_mode = job_command_mode(&cfg);
+
+    assert!(!should_detach(&cfg));
+    assert!(command_needs_workers(&cfg, command_mode));
+}
+
+#[test]
+fn scrape_stays_foreground_and_never_detaches() {
+    let cfg = cfg(CommandKind::Scrape, &["https://example.test"], false);
+    assert!(!should_detach(&cfg));
+}
+
+#[test]
+fn jobs_worker_subcommand_needs_workers() {
+    let cfg = cfg(CommandKind::Jobs, &["worker"], false);
+    let command_mode = job_command_mode(&cfg);
+
+    assert_eq!(command_mode, None);
+    assert!(command_needs_workers(&cfg, command_mode));
+}
+
+#[test]
+fn jobs_list_does_not_need_workers() {
+    let cfg = cfg(CommandKind::Jobs, &["list"], false);
+    let command_mode = job_command_mode(&cfg);
+
+    assert!(!command_needs_workers(&cfg, command_mode));
 }
