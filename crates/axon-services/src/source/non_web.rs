@@ -450,7 +450,13 @@ fn job_create_request(input: &NonWebPipelineInput<'_>) -> JobCreateRequest {
         priority: input.execution.priority,
         idempotency_key: input.execution.idempotency_key.clone(),
         stage_plan: input.plan.stage_plan.clone(),
-        request: serde_json::to_value(&input.plan.request).ok(),
+        // Wrap as `{"source_request": <..>}` — the shape the source worker
+        // (`run_source_request_with_context`) requires. Writing a raw
+        // SourceRequest here diverges from `enqueue_source`, so if a worker
+        // ever claimed one of these generic non-web jobs (recovery/retry of
+        // an interrupted git/feed/youtube/reddit/session/registry index) it
+        // failed with "source job request is missing `source_request`".
+        request: Some(serde_json::json!({ "source_request": input.plan.request })),
         auth_snapshot: input
             .auth_snapshot
             .cloned()
