@@ -234,7 +234,7 @@ impl Default for Config {
             jobs_retention_sweep_secs: 3600,
             jobs_interactive_starvation_slo_secs: 30,
             jobs_auto_worker: true,
-            jobs_worker_idle_exit_secs: 60,
+            jobs_worker_idle_exit_secs: 300,
             json_output: false,
             reclaimed_status_only: false,
             active_status_only: false,

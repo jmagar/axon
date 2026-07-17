@@ -96,12 +96,16 @@ fn scrape_stays_foreground_and_never_detaches() {
 }
 
 #[test]
-fn jobs_worker_subcommand_needs_workers() {
+fn jobs_worker_is_early_dispatched_not_via_command_needs_workers() {
     let cfg = cfg(CommandKind::Jobs, &["worker"], false);
     let command_mode = job_command_mode(&cfg);
 
+    // `jobs worker` is recognized as the early-dispatch invocation (it takes
+    // the drain lock and builds its own worker context), so it must NOT also
+    // request a worker-bearing context from the normal dispatch path.
+    assert!(super::jobs_worker_invocation(&cfg));
     assert_eq!(command_mode, None);
-    assert!(command_needs_workers(&cfg, command_mode));
+    assert!(!command_needs_workers(&cfg, command_mode));
 }
 
 #[test]

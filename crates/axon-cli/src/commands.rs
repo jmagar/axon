@@ -64,6 +64,7 @@ pub use evaluate::run_evaluate;
 pub use extract::run_extract;
 pub use fresh::run_fresh;
 pub use jobs::run_jobs;
+pub(crate) use jobs::run_worker_process;
 pub use map::run_map;
 pub use mcp::run_mcp;
 pub use memory::run_memory;

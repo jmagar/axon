@@ -34,18 +34,16 @@ pub(crate) async fn enqueue_source_detached(
     // Local CLI invocations are the trusted-local context from the auth
     // contract; the snapshot rides in the job row so the executing worker
     // enforces the same policy (`Local` scope gates local-path sources).
-    let result = enqueue_source(
+    enqueue_source(
         request,
         store.as_ref(),
         Some(AuthSnapshot::trusted_cli(env!("CARGO_PKG_VERSION"))),
     )
     .await
-    .map_err(|err| -> Box<dyn Error> { err.to_string().into() })?;
-
-    if result.job.is_some() {
-        service_context.notify_unified();
-    }
-    Ok(result)
+    .map_err(|err| -> Box<dyn Error> { err.to_string().into() })
+    // No notify here: this is an enqueue-only context with no in-process
+    // worker to wake. Pickup is by the auto-spawned worker (which wakes its own
+    // runtime on start) or an already-running server's poll.
 }
 
 /// Make sure some process will drain the queue. Best-effort by design: a
@@ -61,7 +59,9 @@ pub(crate) async fn ensure_worker_process(cfg: &Config) {
         return;
     }
 
-    let lock_path = drain_lock_path(&axon_core::paths::axon_data_base_dir());
+    // The lock lives beside the jobs DB so the probe follows the same queue the
+    // worker would drain even under AXON_SQLITE_PATH (axon_rust-x4gxr.14).
+    let lock_path = drain_lock_path(&cfg.sqlite_path);
     match WorkerDrainLock::is_held(&lock_path).await {
         Ok(true) => {
             note(cfg, "worker process already active; job will be picked up");
@@ -77,12 +77,11 @@ pub(crate) async fn ensure_worker_process(cfg: &Config) {
     }
 
     match spawn_detached_worker() {
-        Ok(spawned) => note(
+        Ok((pid, log_path)) => note(
             cfg,
             &format!(
-                "started background worker (pid {}); logs: {}",
-                spawned.pid,
-                spawned.log_path.display()
+                "started background worker (pid {pid}); logs: {}",
+                log_path.display()
             ),
         ),
         Err(error) => note(
@@ -94,23 +93,22 @@ pub(crate) async fn ensure_worker_process(cfg: &Config) {
     }
 }
 
-struct SpawnedWorker {
-    pid: u32,
-    log_path: PathBuf,
-}
-
 /// Spawn `axon jobs worker` fully detached from this process: no inherited
-/// stdio (output goes to a log file under the data dir) and its own process
-/// group, so it survives the parent CLI exiting and terminal signals.
-fn spawn_detached_worker() -> Result<SpawnedWorker, Box<dyn Error>> {
+/// stdio (output goes to a private log file under the data dir) and its own
+/// process group, so it survives the parent CLI exiting and terminal signals.
+/// Returns the child pid and the log path.
+fn spawn_detached_worker() -> Result<(u32, PathBuf), Box<dyn Error>> {
     let exe = std::env::current_exe()?;
     let logs_dir = axon_core::paths::axon_data_base_dir().join("logs");
-    std::fs::create_dir_all(&logs_dir)?;
+    // Own the hardening rather than relying on init_tracing having already
+    // created logs/ at 0o700 (which AXON_LOG_PATH or a degraded tracing init
+    // can skip). ensure_private_dir → 0o700 dir; open_private_append → 0o600 +
+    // O_NOFOLLOW so worker output (URLs, local paths) is never world-readable
+    // and a symlink at the path is rejected (axon_rust-x4gxr.9).
+    axon_core::paths::ensure_private_dir(&logs_dir)?;
     let log_path = logs_dir.join("auto-worker.log");
-    let log = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)?;
+    rotate_if_oversized(&log_path);
+    let log = axon_core::paths::open_private_append(&log_path)?;
     let log_err = log.try_clone()?;
 
     let mut command = std::process::Command::new(exe);
@@ -135,10 +133,22 @@ fn spawn_detached_worker() -> Result<SpawnedWorker, Box<dyn Error>> {
     }
 
     let child = command.spawn()?;
-    Ok(SpawnedWorker {
-        pid: child.id(),
-        log_path,
-    })
+    Ok((child.id(), log_path))
+}
+
+/// Cap `auto-worker.log` growth: when it exceeds 5 MiB, rename it to
+/// `auto-worker.log.1` (replacing any previous `.1`) so a fresh worker starts a
+/// new file. Single-generation rotation is enough to keep the data dir bounded
+/// without a full rotating-appender (`axon_rust-x4gxr.13`). Best-effort — a
+/// failure here must not block spawning the worker.
+fn rotate_if_oversized(log_path: &std::path::Path) {
+    const MAX_LOG_BYTES: u64 = 5 * 1024 * 1024;
+    let too_big = std::fs::metadata(log_path)
+        .map(|m| m.len() > MAX_LOG_BYTES)
+        .unwrap_or(false);
+    if too_big {
+        let _ = std::fs::rename(log_path, log_path.with_extension("log.1"));
+    }
 }
 
 /// Route operator notes around stdout JSON: human runs get muted stdout

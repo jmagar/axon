@@ -910,7 +910,8 @@ pub struct Config {
     /// Seconds an auto-started `axon jobs worker` process lingers after the
     /// queue goes quiet before exiting. `0` keeps the worker running until
     /// stopped. Env: `AXON_JOBS_WORKER_IDLE_EXIT_SECS`.
-    /// TOML: `jobs.worker-idle-exit-secs`. Default: 60.
+    /// TOML: `jobs.worker-idle-exit-secs`. Default: 300 (wide enough that
+    /// repeated single enqueues reuse one worker instead of respawning).
     pub jobs_worker_idle_exit_secs: u64,
 
     /// Emit machine-readable JSON output on stdout instead of human-readable text. Flag: `--json`.

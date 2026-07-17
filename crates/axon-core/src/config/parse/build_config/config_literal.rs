@@ -426,7 +426,7 @@ fn populate_misc(
     cfg.jobs_worker_idle_exit_secs = parse_i64_env("AXON_JOBS_WORKER_IDLE_EXIT_SECS")
         .map(|value| value.clamp(0, 86_400) as u64)
         .or(inputs.toml.workers.jobs_worker_idle_exit_secs)
-        .unwrap_or(60)
+        .unwrap_or(300)
         .min(86_400);
     cfg.json_output = g.json;
     cfg.reclaimed_status_only = g.reclaimed;

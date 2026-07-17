@@ -125,7 +125,10 @@ fn commands_sources_stats_jobs() -> Vec<CliRegistryCommand> {
             None,
             true,
             false,
-            "write",
+            // admin: the worker performs the same stale-job reclaim as
+            // `jobs recover` (admin) automatically on a timer, so it is at
+            // least as privileged (axon_rust-x4gxr.13).
+            "admin",
         ),
     ]
 }

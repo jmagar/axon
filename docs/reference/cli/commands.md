@@ -15,13 +15,13 @@ See the family contract for declared output paths.
 | Path | SHA-256 |
 |---|---|
 | `crates/axon-cli/src/schema_registry.rs` | `sha256:0095e14b0004c6a45b1d4d37b3756f6b7ea94527afe780571b7168fc16f2acdb` |
-| `crates/axon-core/src/config/cli.rs` | `sha256:26b55f78035a020ba32386a747570aed4d5ad8ce73a35d63d07d5e2dd88bdecf` |
+| `crates/axon-core/src/config/cli.rs` | `sha256:f9f2508159a6542de80ebbc217f32c161e95838e0953c8c62f7e682b3466ff27` |
 | `crates/axon-core/src/config/cli/config_args.rs` | `sha256:ee3bae44b57a96696213245d225b14d09ac95415d4ca8da10403f7949fabd2e6` |
 | `crates/axon-core/src/config/cli/setup_args.rs` | `sha256:a6e7a314ad7ff6bbb9acbad9bb68cf400fc103d18b0e0971c98bfb15adfcd1c7` |
 | `docs/pipeline-unification/schemas/cli-schema.md` | `sha256:e542f512c3329c4f102fc3b93f57415906a00de3b302d1d836b5d9131e5d1a08` |
 | `xtask/src/schemas/cli_registry.rs` | `sha256:332a55ba1a35f8a45a100130c5495a636dad058f02978b8fd27bfcd3c27db739` |
 | `xtask/src/schemas/cli_registry/part1.rs` | `sha256:870e09e77af6d08c9509e076f8c5b3725d35f7a9481ae0f5071a7c03f92dcaa0` |
-| `xtask/src/schemas/cli_registry/part2.rs` | `sha256:58c0b1483e459ac00ef11af47c66562642091d25024da2710e37f705cf0a3349` |
+| `xtask/src/schemas/cli_registry/part2.rs` | `sha256:f41fe58996419112818179247825758bfbe1a343f98451682ddb0cb1d034d936` |
 | `xtask/src/schemas/cli_registry/part3.rs` | `sha256:9fe3b32d6ca7e8bf75b66a37c87c9da7f874e50617d79e70f69a8d6ea690b088` |
 
 ## Root Shape

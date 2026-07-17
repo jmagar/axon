@@ -19,7 +19,7 @@ pub mod job_runners;
 pub mod sqlite;
 pub mod traits;
 
-pub use drain_lock::{DRAIN_LOCK_FILE, WorkerDrainLock, drain_lock_path};
+pub use drain_lock::{DRAIN_LOCK_SUFFIX, WorkerDrainLock, drain_lock_path};
 pub use sqlite::SqliteServiceRuntime;
 pub use traits::{JobPagination, RuntimeResult, ServiceJobRuntime, WorkerMode};
 

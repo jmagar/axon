@@ -147,7 +147,7 @@
 # auto-worker = true
 # Idle seconds before an auto-started worker exits. 0 = run until stopped.
 # Env: AXON_JOBS_WORKER_IDLE_EXIT_SECS
-# worker-idle-exit-secs = 60
+# worker-idle-exit-secs = 300
 
 [jobs.freshness]
 # CLI-only `--fresh <Nd>` schedules on scrape/crawl/embed/ingest, run from

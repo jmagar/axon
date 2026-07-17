@@ -7,18 +7,23 @@
 //! queue, periodically reclaims stale attempts (so a job orphaned by a killed
 //! worker process is re-run rather than stranded in `running`), and returns
 //! once the queue has been continuously quiet for the configured idle window.
+//!
+//! It watches [`WORKER_JOB_KINDS`] — the exact set of kinds this process's
+//! in-process runtime executes ([`crate::runtime::job_runners::build_registry`])
+//! — so the process never idle-exits while it still owns a running job of any
+//! executable kind.
+//!
+//! Two sibling poll loops share the "poll `has_active_jobs` until quiet" shape
+//! but answer different questions: [`crate::runtime::SqliteServiceRuntime::drain_jobs`]
+//! (behind `start_worker`, used by `--wait true`) blocks until the queue is
+//! empty *once*; this loop runs until the queue has been *continuously* idle
+//! for `idle_exit_secs`. They are intentionally separate.
 
 use std::error::Error;
 use std::time::Duration;
 
-use axon_api::source::JobKind;
-
 use crate::context::ServiceContext;
-
-/// Job kinds a generic worker process watches. Detached rows of these kinds
-/// are what CLI/REST/MCP enqueue paths create today; the in-process worker
-/// runtime itself claims every registered kind regardless of this list.
-pub const WORKER_LOOP_KINDS: &[JobKind] = &[JobKind::Source, JobKind::Extract];
+use crate::runtime::job_runners::WORKER_JOB_KINDS;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
 const RECOVER_SWEEP_SECS: u64 = 60;
@@ -81,12 +86,12 @@ pub async fn run_worker_until_idle(
 
 /// True while any watched kind has pending or running rows.
 async fn queue_active(service_context: &ServiceContext) -> Result<bool, Box<dyn Error>> {
-    for kind in WORKER_LOOP_KINDS {
+    for kind in WORKER_JOB_KINDS {
         if service_context
             .jobs
             .has_active_jobs(*kind)
             .await
-            .map_err(|err| -> Box<dyn Error> { err.to_string().into() })?
+            .map_err(super::downgrade)?
         {
             return Ok(true);
         }
@@ -98,7 +103,7 @@ async fn queue_active(service_context: &ServiceContext) -> Result<bool, Box<dyn 
 /// must not kill the worker loop, so errors are logged and swallowed.
 async fn recover_sweep(service_context: &ServiceContext) -> u64 {
     let mut recovered = 0;
-    for kind in WORKER_LOOP_KINDS {
+    for kind in WORKER_JOB_KINDS {
         match super::recover_jobs(service_context, *kind).await {
             Ok(count) => recovered += count,
             Err(error) => {

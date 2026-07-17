@@ -31,6 +31,18 @@ pub struct ServiceContext {
     pub cfg: Arc<Config>,
     pub jobs: Arc<dyn ServiceJobRuntime>,
     target_local_source: Option<Arc<TargetLocalSourceRuntime>>,
+    /// Held for the lifetime of a long-lived schedulers context (`serve` /
+    /// HTTP `mcp`) to announce worker liveness to detached CLI enqueues, so a
+    /// running server suppresses redundant auto-spawned workers
+    /// (`axon_rust-x4gxr.2`). `None` for enqueue-only contexts and short-lived
+    /// `--wait` contexts, which must not hold it. Best-effort: acquisition
+    /// failure leaves it `None` and never blocks startup — job-claim
+    /// correctness does not depend on the lock.
+    ///
+    /// Held purely for its RAII effect: the lock releases when the last
+    /// `ServiceContext` clone drops (i.e. at server shutdown). Never read.
+    #[allow(dead_code)]
+    drain_lock: Option<Arc<crate::runtime::WorkerDrainLock>>,
 }
 
 #[derive(Clone)]
@@ -122,10 +134,21 @@ impl ServiceContext {
         }
         let jobs = resolve_runtime_with_workers(Arc::clone(&cfg), spawn_workers).await?;
         let target_local_source = Self::build_target_local_source(&cfg, &jobs, spawn_workers).await;
+        // A schedulers context (serve / HTTP mcp) is the process that owns the
+        // queue for its whole lifetime, so it holds the drain lock to advertise
+        // that — otherwise every detached CLI enqueue would auto-spawn a
+        // redundant worker (axon_rust-x4gxr.2). Best-effort: if another worker
+        // already holds it, we start anyway (claiming is transactional).
+        let drain_lock = if spawn_freshness_scheduler {
+            Self::acquire_drain_lock(&cfg).await
+        } else {
+            None
+        };
         let context = Self {
             cfg: Arc::clone(&cfg),
             jobs: Arc::clone(&jobs),
             target_local_source,
+            drain_lock,
         };
         if spawn_freshness_scheduler {
             crate::freshness::spawn_freshness_scheduler(context.clone());
@@ -134,6 +157,29 @@ impl ServiceContext {
             spawn_queue_summary_logger(Arc::clone(&jobs), cfg.queue_summary_secs);
         }
         Ok(context)
+    }
+
+    /// Best-effort acquire the worker drain lock for a long-lived schedulers
+    /// context. Returns `None` (and logs) when another worker process already
+    /// holds it or the lock DB can't be opened — the server still runs, it just
+    /// doesn't advertise liveness, so a detached enqueue may auto-spawn one
+    /// extra worker (correct, only mildly wasteful).
+    async fn acquire_drain_lock(cfg: &Config) -> Option<Arc<crate::runtime::WorkerDrainLock>> {
+        let lock_path = crate::runtime::drain_lock_path(&cfg.sqlite_path);
+        match crate::runtime::WorkerDrainLock::try_hold(&lock_path).await {
+            Ok(Some(lock)) => Some(Arc::new(lock)),
+            Ok(None) => {
+                tracing::info!(
+                    "worker drain lock already held by another process; \
+                     server runs without advertising liveness"
+                );
+                None
+            }
+            Err(error) => {
+                tracing::warn!(%error, "failed to acquire worker drain lock; continuing");
+                None
+            }
+        }
     }
 
     /// Construct the production target local-source runtime, when applicable.
@@ -217,6 +263,7 @@ impl ServiceContext {
             cfg,
             jobs,
             target_local_source: None,
+            drain_lock: None,
         }
     }
 

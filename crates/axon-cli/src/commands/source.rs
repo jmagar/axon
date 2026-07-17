@@ -18,7 +18,7 @@ use axon_services::context::ServiceContext;
 use axon_services::index_source;
 use std::error::Error;
 
-mod detach;
+pub(crate) mod detach;
 
 pub async fn run_source(
     cfg: &Config,
@@ -141,9 +141,47 @@ pub(crate) fn source_result_json(cfg: &Config, result: &SourceResult) -> serde_j
     })
 }
 
+/// True when the result represents a still-running detached job (a job
+/// descriptor is present and the status is non-terminal). Such a result carries
+/// no real counts yet, so it must render as a queued descriptor rather than the
+/// terminal "Source Indexed" summary (`axon_rust-x4gxr.7` / `.10`).
+fn is_queued_descriptor(result: &SourceResult) -> bool {
+    result.job.is_some()
+        && matches!(
+            result.status,
+            LifecycleStatus::Queued
+                | LifecycleStatus::Pending
+                | LifecycleStatus::Running
+                | LifecycleStatus::Waiting
+                | LifecycleStatus::Blocked
+                | LifecycleStatus::Canceling
+        )
+}
+
+/// Lean job-descriptor JSON for a detached, not-yet-run source job — the
+/// contract's queued-descriptor shape, not the zero-filled full `SourceResult`.
+/// Poll/stream hints are CLI commands so `--json` callers get actionable
+/// next-steps too (`axon_rust-x4gxr.10`).
+fn queued_descriptor_json(result: &SourceResult) -> serde_json::Value {
+    let job_id = result.job_id.0.to_string();
+    serde_json::json!({
+        "job_id": job_id,
+        "kind": "source",
+        "status": result.status,
+        "canonical_uri": result.canonical_uri,
+        "poll": { "command": format!("axon jobs get {job_id}") },
+        "events": { "command": format!("axon jobs events {job_id}") },
+        "warnings": result.warnings,
+    })
+}
+
 pub(crate) fn render_source_result(cfg: &Config, result: &SourceResult) {
     if cfg.json_output {
-        println!("{}", source_result_json(cfg, result));
+        if is_queued_descriptor(result) {
+            println!("{}", queued_descriptor_json(result));
+        } else {
+            println!("{}", source_result_json(cfg, result));
+        }
         return;
     }
 
@@ -155,12 +193,16 @@ pub(crate) fn render_source_result(cfg: &Config, result: &SourceResult) {
         return;
     }
 
+    if render_failed_source(result) {
+        return;
+    }
+
     println!(
         "  {} {}",
         primary("Source Indexed"),
         accent(&result.source_id.0)
     );
-    println!("  {}", muted(&format!("Input: {}", result.canonical_uri)));
+    print_input_line(result);
     println!(
         "  {}",
         muted(&format!("Generation: {}", result.ledger.generation.0))
@@ -181,26 +223,30 @@ pub(crate) fn render_source_result(cfg: &Config, result: &SourceResult) {
             result.graph.nodes_upserted, result.graph.edges_upserted, result.graph.evidence_records,
         ))
     );
+    print_warnings(result);
+}
+
+fn print_input_line(result: &SourceResult) {
+    println!("  {}", muted(&format!("Input: {}", result.canonical_uri)));
+}
+
+fn print_warnings(result: &SourceResult) {
     for warning in &result.warnings {
         println!("  {}", muted(&format!("Warning: {}", warning.message)));
     }
 }
 
-/// Render the job-descriptor shape for a detached (still queued/running)
-/// source result. Returns false for terminal results so the full indexed
+/// Render the job-descriptor shape for a detached (still non-terminal) source
+/// result. Returns false for terminal results so the full indexed / failed
 /// rendering runs instead.
 fn render_queued_source_descriptor(result: &SourceResult) -> bool {
-    if !matches!(
-        result.status,
-        LifecycleStatus::Queued | LifecycleStatus::Pending | LifecycleStatus::Running
-    ) || result.job.is_none()
-    {
+    if !is_queued_descriptor(result) {
         return false;
     }
 
     let job_id = result.job_id.0.to_string();
     println!("  {} {}", primary("Source Queued"), accent(&job_id));
-    println!("  {}", muted(&format!("Input: {}", result.canonical_uri)));
+    print_input_line(result);
     println!(
         "  {}",
         muted(&format!(
@@ -208,9 +254,23 @@ fn render_queued_source_descriptor(result: &SourceResult) -> bool {
         ))
     );
     println!("  {}", muted("Foreground instead: re-run with --wait true"));
-    for warning in &result.warnings {
-        println!("  {}", muted(&format!("Warning: {}", warning.message)));
+    print_warnings(result);
+    true
+}
+
+/// Render a failed source result instead of the misleading zero-count "Source
+/// Indexed" banner. `run_source_request` still returns a non-zero exit, so this
+/// is the human context line for that failure (`axon_rust-x4gxr.7`).
+fn render_failed_source(result: &SourceResult) -> bool {
+    if result.status != LifecycleStatus::Failed {
+        return false;
     }
+    println!(
+        "  {} {}",
+        primary("Source Failed"),
+        accent(&result.canonical_uri)
+    );
+    print_warnings(result);
     true
 }
 

@@ -111,7 +111,6 @@ fn job_command_mode(cfg: &Config) -> Option<JobCommandMode<'_>> {
 fn command_needs_workers(cfg: &Config, command_mode: Option<JobCommandMode<'_>>) -> bool {
     cfg.wait
         || cfg.command == CommandKind::Scrape
-        || jobs_worker_invocation(cfg)
         || matches!(
             command_mode,
             Some(JobCommandMode::Subcommand {
@@ -121,7 +120,10 @@ fn command_needs_workers(cfg: &Config, command_mode: Option<JobCommandMode<'_>>)
         )
 }
 
-/// `axon jobs worker` hosts the in-process worker runtime in this process.
+/// `axon jobs worker` hosts the in-process worker runtime in this process. It is
+/// dispatched early (before any `ServiceContext` is built) so it can take the
+/// drain lock before constructing a claim-capable runtime — see
+/// [`commands::run_worker_process`] and `axon_rust-x4gxr.3`.
 fn jobs_worker_invocation(cfg: &Config) -> bool {
     cfg.command == CommandKind::Jobs && cfg.positional.first().map(String::as_str) == Some("worker")
 }
@@ -243,6 +245,18 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
     }
 
     let cfg_arc = Arc::new(cfg);
+
+    // `axon jobs worker` must acquire the drain lock BEFORE any claim-capable
+    // ServiceContext exists, so it owns its runtime construction entirely (like
+    // `reset` above). Dispatch it here, before the shared context is built.
+    if jobs_worker_invocation(&cfg_arc) {
+        let result = commands::run_worker_process(Arc::clone(&cfg_arc)).await;
+        if result.is_ok() {
+            log_done("command=jobs worker complete");
+        }
+        return result;
+    }
+
     // CLI commands use ServiceContext::new() (enqueue-only) unless the command
     // intentionally needs in-process workers. Fire-and-forget submits enqueue
     // and exit; operator `worker` subcommands spawn workers in this process.
