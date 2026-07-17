@@ -7,6 +7,7 @@
 mod acquire;
 mod metadata;
 mod target;
+mod vertical;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -43,6 +44,13 @@ impl GitSourceAdapter {
         mut plan: SourcePlan,
     ) -> Result<crate::acquisition::MaterializedSource> {
         validate_adapter(&plan)?;
+        // GitHub sub-page scopes (issue/PR/release) resolve a single API
+        // document through a vertical extractor; there is no repository to
+        // clone, so materialization is a no-op that keeps the plan flowing into
+        // the shared pipeline without a checkout.
+        if vertical::is_vertical(&plan) {
+            return Ok(crate::acquisition::MaterializedSource::virtual_source(plan));
+        }
         let checkout = clone_git_repo(&plan.request.source).await.map_err(|err| {
             crate::acquisition::materialization_error("adapter.git.clone_failed", err.to_string())
         })?;
@@ -71,6 +79,9 @@ impl SourceAdapter for GitSourceAdapter {
     }
 
     async fn discover(&self, plan: &SourcePlan) -> Result<SourceManifest> {
+        if vertical::is_vertical(plan) {
+            return vertical::discover(plan);
+        }
         let plan = plan.clone();
         tokio::task::spawn_blocking(move || discover_sync(&plan))
             .await
@@ -82,6 +93,9 @@ impl SourceAdapter for GitSourceAdapter {
         plan: &SourcePlan,
         diff: &SourceManifestDiff,
     ) -> Result<SourceAcquisition> {
+        if vertical::is_vertical(plan) {
+            return vertical::acquire(plan, diff).await;
+        }
         let plan = plan.clone();
         let diff = diff.clone();
         tokio::task::spawn_blocking(move || acquire_sync(&plan, &diff))
@@ -95,6 +109,9 @@ impl SourceAdapter for GitSourceAdapter {
         acquisition: SourceAcquisition,
     ) -> Result<StageExecutionResult<Vec<SourceDocument>>> {
         validate_adapter(plan)?;
+        if vertical::is_vertical(plan) {
+            return vertical::normalize(plan, acquisition);
+        }
         let target = git_target(plan)?;
         let documents = acquisition
             .fetched_items
@@ -123,6 +140,12 @@ fn git_capability(version: &str) -> AdapterCapability {
         SourceScope::Repo,
     )
     .with_scope(SourceScope::Directory)
+    // GitHub sub-page scopes are served by vertical extraction (see
+    // `git::vertical`), not a clone. `axon-route`'s `github` adapter declares
+    // the same scopes, so routing already selects this adapter for them.
+    .with_scope(SourceScope::Issue)
+    .with_scope(SourceScope::PullRequest)
+    .with_scope(SourceScope::Release)
 }
 
 fn discover_sync(plan: &SourcePlan) -> Result<SourceManifest> {
