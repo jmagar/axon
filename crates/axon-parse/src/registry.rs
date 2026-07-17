@@ -25,12 +25,13 @@ impl ParserRegistry {
     /// Select the single "primary" parser for `input` — the caller-requested
     /// or hint-named parser when it resolves, else the best-scored specific
     /// match (MIME type, path/extension, or content sniffing), or, failing
-    /// that, the highest-priority content-kind-only match. Used for routing
-    /// decisions (e.g. `DocumentPreparer` chunk-profile selection) that need
-    /// exactly one parser identity, not the full fan-out `parse` may run.
+    /// that, the highest-priority content-kind-only match. This is a
+    /// one-parser probe sharing `parse`'s channel order; production chunk
+    /// routing consumes the parser identity `parse` returns, so this exists
+    /// for tests and tooling that need a selection without running a parse.
     pub fn select(&self, input: &ParseInput) -> Option<Arc<dyn SourceParser>> {
         if let Some(requested) = input.requested_parser.as_deref() {
-            return self.select_by(|parser| parser.capability().parser_id == requested);
+            return self.select_by_id(requested);
         }
         if let Some(hinted) = self.hinted_parser(input) {
             return Some(hinted);
@@ -46,11 +47,13 @@ impl ParserRegistry {
     /// 1. an explicit `requested_parser` runs alone — exclusive. A request for
     ///    an unregistered parser degrades without fallback: the caller demanded
     ///    one specific parser and nothing else may answer for it.
-    /// 2. a document `ParserHint` naming a registered parser also runs alone.
+    /// 2. a document `ParserHint` naming a registered parser also runs alone —
+    ///    exclusive like a request, suppressing the fan-out below. Only the
+    ///    document's first hint is consulted; later entries are ignored.
     ///    Hints are advisory metadata stamped by upstream stages, so a hint
     ///    naming an unregistered parser falls back to content-based selection
-    ///    below (recording an informational warning) instead of degrading
-    ///    every hinted document.
+    ///    below (recording an informational warning, on the unsupported path
+    ///    too) instead of degrading every hinted document.
     /// 3. otherwise every parser that specifically identifies the document
     ///    (MIME type, path/extension, or content sniffing) runs and their
     ///    facts/graph candidates/warnings/errors merge into one result, since
@@ -67,7 +70,7 @@ impl ParserRegistry {
     /// dropped and the result is degraded (see `validate::sanitize_result`).
     pub fn parse(&self, input: &ParseInput) -> ParseResult {
         if let Some(requested) = input.requested_parser.as_deref() {
-            return match self.select_by(|parser| parser.capability().parser_id == requested) {
+            return match self.select_by_id(requested) {
                 Some(parser) => sanitize_result(parser.parse(input)),
                 None => requested_parser_unavailable(input, requested),
             };
@@ -77,30 +80,44 @@ impl ParserRegistry {
             return sanitize_result(parser.parse(input));
         }
 
+        // Reaching this point with a hint present means it named an
+        // unregistered parser (a registered hint returned above). Record that
+        // on every fallback outcome — including the unsupported path — so the
+        // ignored hint stays observable.
+        let stale_hint_warning = input
+            .document
+            .parser_hints
+            .first()
+            .map(|hint| unregistered_hint_warning(input, &hint.parser_id));
+
         let matches = self.ranked_matches(input);
         if matches.is_empty() {
-            return unsupported_result(input);
+            let mut unsupported = unsupported_result(input);
+            unsupported.warnings.extend(stale_hint_warning);
+            return unsupported;
         }
 
         let mut merged = matches[0].1.parse(input);
         for (_, parser) in &matches[1..] {
             merge_result(&mut merged, parser.parse(input));
         }
-        if let Some(hint) = input.document.parser_hints.first() {
-            merged
-                .warnings
-                .push(unregistered_hint_warning(input, &hint.parser_id));
-        }
+        merged.warnings.extend(stale_hint_warning);
         sanitize_result(merged)
     }
 
     /// The parser named by the document's first `ParserHint`, when that hint
-    /// resolves to a registered parser. `None` covers both "no hint" and
-    /// "hint names an unregistered parser"; callers that must distinguish the
-    /// two check `input.document.parser_hints` themselves.
+    /// resolves to a registered parser. Only the first hint is consulted —
+    /// later entries are ignored regardless of registration status. `None`
+    /// covers both "no hint" and "hint names an unregistered parser"; callers
+    /// that must distinguish the two check `input.document.parser_hints`
+    /// themselves.
     fn hinted_parser(&self, input: &ParseInput) -> Option<Arc<dyn SourceParser>> {
         let hinted = input.document.parser_hints.first()?;
-        self.select_by(|parser| parser.capability().parser_id == hinted.parser_id)
+        self.select_by_id(&hinted.parser_id)
+    }
+
+    fn select_by_id(&self, parser_id: &str) -> Option<Arc<dyn SourceParser>> {
+        self.select_by(|parser| parser.capability().parser_id == parser_id)
     }
 
     fn select_by(
@@ -212,9 +229,11 @@ fn unsupported_result(input: &ParseInput) -> ParseResult {
 }
 
 /// Warning attached when a document's advisory `ParserHint` named a parser
-/// this registry does not know. The parse itself succeeded via content-based
+/// this registry does not know. The parse itself proceeded via content-based
 /// selection, so this is informational — unlike an explicit `requested_parser`
-/// miss, which degrades the result (see `requested_parser_unavailable`).
+/// miss, which degrades the result (see `requested_parser_unavailable`). The
+/// code and wording deliberately differ from `parse.requested_parser_unavailable`
+/// so alerts keyed on the strict channel never match advisory-hint fallbacks.
 fn unregistered_hint_warning(input: &ParseInput, parser_id: &str) -> SourceWarning {
     SourceWarning {
         code: "parse.parser_hint_unregistered".to_string(),
