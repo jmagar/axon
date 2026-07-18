@@ -44,3 +44,59 @@ fn legacy_manifest_without_publication_configuration_is_not_reused() {
         &ConfigSnapshotId::new("cfg-original")
     ));
 }
+
+/// Companion to the web-source fix: `record_terminal_status` previously built
+/// its `SourceError` with `message: error.to_string()` (anyhow's top-context
+/// frame only, discarding the chain) and a hardcoded `cause: None` — so any
+/// non-web source (git/local/feed/registry/reddit/youtube) failing deep in
+/// the pipeline surfaced just as unhelpfully as the web path did before this
+/// fix. `terminal_source_error` must carry the full chain in `cause`.
+#[test]
+fn terminal_source_error_cause_preserves_full_chain() {
+    let root = anyhow::anyhow!("qdrant upsert timed out after 30s");
+    let err = root.context("publishing non-web source generation failed");
+
+    let source_error = terminal_source_error(&err);
+
+    let cause = source_error
+        .cause
+        .as_deref()
+        .expect("multi-frame error must produce a cause");
+    assert!(
+        cause.contains("qdrant upsert timed out after 30s"),
+        "expected the root cause to survive in `cause`, got: {cause}"
+    );
+}
+
+#[test]
+fn terminal_source_error_cause_is_none_for_single_frame_error() {
+    let err = anyhow::anyhow!("non-web source indexing failed");
+
+    let source_error = terminal_source_error(&err);
+
+    assert_eq!(source_error.cause, None);
+}
+
+/// Redaction gate: this `SourceError` is persisted straight into
+/// `jobs.last_error_json` (no automatic redaction pass on that column, unlike
+/// the `job_events`/`details_json` path — see the review that found this),
+/// so `terminal_source_error` itself must scrub secret-shaped text before it
+/// ever reaches `message`/`cause`.
+#[test]
+fn terminal_source_error_redacts_secrets_in_message_and_cause() {
+    let root = anyhow::anyhow!("upstream rejected Authorization: Bearer sk-abcdefghijklmnop");
+    let err = root.context("registry source fetch failed");
+
+    let source_error = terminal_source_error(&err);
+
+    assert!(
+        !source_error.message.contains("sk-abcdefghijklmnop"),
+        "expected the secret token to be redacted from message, got: {}",
+        source_error.message
+    );
+    let cause = source_error.cause.as_deref().unwrap_or_default();
+    assert!(
+        !cause.contains("sk-abcdefghijklmnop"),
+        "expected the secret token to be redacted from cause, got: {cause}"
+    );
+}
