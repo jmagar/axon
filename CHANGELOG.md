@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `axon status` no longer renders a source as `[REDACTED]` when its job stored the
+  request in the legacy flat `{scope, source, source_kind}` shape. Those jobs fell
+  through to the job UUID as the label, and the 36-char UUID tripped the
+  high-entropy secret redactor. `request_target_fields` now also reads the flat
+  top-level `source` key, so the real source URL is shown.
 - `axon status` source labels are now redacted with a URL-aware pass: only URL
   userinfo (`user:pass@host`) and the values of secret-bearing query parameters
   are masked, preserving scheme, host, path, and non-sensitive params — instead of
