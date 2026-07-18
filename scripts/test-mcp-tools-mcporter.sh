@@ -442,6 +442,7 @@ run_suite() {
   run_json_case "${prefix}_endpoints" '.ok == true and .action == "endpoints" and .subaction == "endpoints" and ((.data.data.endpoints // .data.inline.endpoints) | type == "array")' call_tool_with_timeout 120000 action:endpoints url:https://api.github.com
   run_json_case "${prefix}_suggest" '.ok == true and .action == "suggest" and .subaction == "suggest" and ((.data.data.suggestions // .data.inline.suggestions) | type == "array")' call_tool action:suggest
   run_json_case "${prefix}_collections_list" '.ok == true and .action == "collections" and .subaction == "list"' call_tool_with_timeout 120000 action:collections subaction:list
+  run_envelope_case "${prefix}_collections_get" '(.ok == true and .action == "collections" and .subaction == "get" and ((.data.data.collection // .data.inline.collection) != null)) or ((.error | type) == "string")' call_tool action:collections subaction:get collection:axon
   run_json_case "${prefix}_providers_get" '.ok == true and .action == "providers" and .subaction == "get" and ((.data.data.id // .data.inline.id) | type == "string")' call_tool action:providers subaction:get provider_id:tei
   run_json_case "${prefix}_reset_plan" '.ok == true and .action == "reset" and .subaction == "plan" and ((.data.data.plan_id // .data.inline.plan_id) | type == "string")' call_tool action:reset subaction:plan
   run_envelope_case "${prefix}_summarize" '(.ok == true and .action == "summarize" and .subaction == "summarize") or ((.error | type) == "string")' call_tool_with_timeout 180000 action:summarize url:"$REAL_PAGE_URL"
@@ -526,6 +527,9 @@ run_suite() {
   # must refuse (missing confirm / plan id) with a structured error.
   run_envelope_case "${prefix}_prune_exec_guard" '(.error | type) == "string"' call_tool action:prune subaction:exec target:collection:axon_mcporter_smoke_never_real
   run_envelope_case "${prefix}_reset_exec_guard" '(.error | type) == "string"' call_tool action:reset subaction:exec
+  # jobs:clear wipes job history — exercise only its confirm/admin guard so the
+  # smoke run never actually clears jobs.
+  run_envelope_case "${prefix}_jobs_clear_guard" '(.error | type) == "string"' call_tool action:jobs subaction:clear
 }
 
 if [[ "$URL_MODE" == "1" ]]; then
