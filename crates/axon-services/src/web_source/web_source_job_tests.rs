@@ -51,19 +51,26 @@ fn terminal_source_error_cause_is_none_for_single_frame_error() {
 /// either field is populated.
 #[test]
 fn terminal_source_error_redacts_secrets_in_message_and_cause() {
-    let root = anyhow::anyhow!("upstream rejected Authorization: Bearer sk-abcdefghijklmnop");
+    // Repeated-character token body (matching the structured-rule shape used
+    // by axon-core's own redact_tests.rs), not a plausible real key, and not
+    // framed as an HTTP `Authorization:` header — avoids tripping third-party
+    // secret scanners (e.g. GitGuardian's generic Bearer-token detector) on
+    // this synthetic fixture while still exercising the same structured
+    // `sk-`-prefix redaction rule.
+    let token = format!("sk-{}", "a".repeat(20));
+    let root = anyhow::anyhow!(format!("upstream rejected credentials: {token}"));
     let err = root.context("web source fetch failed");
 
     let source_error = terminal_source_error(&err);
 
     assert!(
-        !source_error.message.contains("sk-abcdefghijklmnop"),
+        !source_error.message.contains(&token),
         "expected the secret token to be redacted from message, got: {}",
         source_error.message
     );
     let cause = source_error.cause.as_deref().unwrap_or_default();
     assert!(
-        !cause.contains("sk-abcdefghijklmnop"),
+        !cause.contains(&token),
         "expected the secret token to be redacted from cause, got: {cause}"
     );
 }
