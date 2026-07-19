@@ -64,13 +64,9 @@ fn parse_ignore_list(path: &Path) -> Result<Vec<String>> {
         if line.is_empty() {
             continue;
         }
-        for token in line.split(',') {
-            let token = token
-                .trim()
-                .trim_start_matches('[')
-                .trim_end_matches(']')
-                .trim();
-            let id = token.trim_matches('"');
+        // Split by double quotes to cleanly extract quoted string literals
+        for part in line.split('"') {
+            let id = part.trim();
             if id.starts_with("RUSTSEC-") {
                 ids.push(id.to_string());
             }
