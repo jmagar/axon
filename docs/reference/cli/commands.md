@@ -65,4 +65,360 @@ Run `cargo xtask schemas generate --check`.
 
 ## Commands
 
-Generated from the owner crate schema registry.
+Grouped by top-level command family. Each row is a live, dispatchable `CliCommand` variant mirrored from `crates/axon-core/src/config/cli.rs`. Markers: `*` mutates state, `~` runs as a detached job (use `--wait true` for foreground). The JSON artifact (`commands.json`) is authoritative for machine-readable consumers.
+
+### `artifacts`
+
+| Command | Summary |
+|---|---|
+| `axon artifacts list` | List artifacts by kind, source, or job |
+| `axon artifacts get` | Show one artifact record by opaque artifact id |
+| `axon artifacts content` | Read or download artifact content by opaque artifact id |
+
+### `ask`
+
+| Command | Summary |
+|---|---|
+| `axon ask` | RAG: retrieve relevant context, then answer with LLM |
+
+### `brand`
+
+| Command | Summary |
+|---|---|
+| `axon brand` | Analyze a URL's brand identity: colors, fonts, logos, favicon |
+
+### `capabilities`
+
+| Command | Summary |
+|---|---|
+| `axon capabilities` | Print machine-readable runtime capabilities |
+
+### `chat`
+
+| Command | Summary |
+|---|---|
+| `axon chat` | Send a direct prompt to the configured LLM |
+
+### `collections`
+
+| Command | Summary |
+|---|---|
+| `axon collections list` | List configured vector collections |
+| `axon collections get` | Show one vector collection with optional schema and indexes |
+
+### `completions`
+
+| Command | Summary |
+|---|---|
+| `axon completions` | Generate shell completions (bash, zsh, fish) |
+
+### `compose`
+
+| Command | Summary |
+|---|---|
+| `axon compose up `*`` | Pull and start the Docker service stack |
+| `axon compose down `*`` | Stop the Docker service stack |
+| `axon compose restart `*`` | Restart running services |
+| `axon compose rebuild `*`` | Rebuild the Axon image and start the stack |
+
+### `config`
+
+| Command | Summary |
+|---|---|
+| `axon config list` | List every entry from .env and config.toml (secrets redacted) |
+| `axon config get` | Print a single config value (auto-detects file by key shape) |
+| `axon config set `*`` | Write a config value (auto-detects file by key shape) |
+| `axon config unset `*`` | Remove a config value from .env or config.toml |
+| `axon config path` | Print resolved paths to .env and config.toml |
+
+### `debug`
+
+| Command | Summary |
+|---|---|
+| `axon debug` | Run doctor diagnostics plus LLM-assisted troubleshooting |
+
+### `diff`
+
+| Command | Summary |
+|---|---|
+| `axon diff` | Diff two URLs — show what changed between them |
+
+### `doctor`
+
+| Command | Summary |
+|---|---|
+| `axon doctor` | Check connectivity to all required services |
+| `axon doctor diagnose` | Print doctor output plus LLM diagnosis when configured |
+
+### `domains`
+
+| Command | Summary |
+|---|---|
+| `axon domains` | List indexed domains with document statistics |
+
+### `endpoints`
+
+| Command | Summary |
+|---|---|
+| `axon endpoints` | Discover API endpoints from page HTML/JS bundles |
+
+### `evaluate`
+
+| Command | Summary |
+|---|---|
+| `axon evaluate` | RAG vs baseline with independent LLM judge scoring |
+
+### `extract`
+
+| Command | Summary |
+|---|---|
+| `axon extract `*~`` | LLM-powered structured data extraction from URLs |
+| `axon extract status` | Show an extract job's status |
+| `axon extract cancel `*`` | Cancel a running extract job |
+| `axon extract errors` | Show an extract job's errors |
+| `axon extract list` | List extract jobs |
+| `axon extract cleanup `*`` | Remove old terminal extract jobs |
+| `axon extract clear `*`` | Clear all extract job rows |
+| `axon extract worker `*~`` | Run an extract worker inline |
+| `axon extract recover `*`` | Reclaim stale/interrupted extract jobs |
+
+### `graph`
+
+| Command | Summary |
+|---|---|
+| `axon graph kinds` | List SourceGraph node and edge kinds |
+| `axon graph resolve` | Resolve an identifier to SourceGraph nodes |
+| `axon graph query` | Query SourceGraph nodes |
+| `axon graph node` | Show one SourceGraph node with optional edges and evidence |
+| `axon graph edge` | Show one SourceGraph edge with optional evidence |
+| `axon graph source` | Walk the SourceGraph neighborhood of a source |
+
+### `jobs`
+
+| Command | Summary |
+|---|---|
+| `axon jobs list` | List unified durable jobs |
+| `axon jobs get` | Show one unified durable job |
+| `axon jobs events` | Show one job's event page |
+| `axon jobs stream` | Fetch an event page for stream consumers |
+| `axon jobs cancel `*`` | Request cancellation for a unified durable job |
+| `axon jobs retry `*~`` | Retry a unified durable job |
+| `axon jobs recover `*`` | Recover stale unified durable jobs |
+| `axon jobs cleanup `*`` | Remove old terminal unified durable jobs |
+| `axon jobs clear `*`` | Clear all unified durable job rows |
+| `axon jobs worker `*`` | Run a standalone worker process for the unified durable queue |
+
+### `map`
+
+| Command | Summary |
+|---|---|
+| `axon map` | Discover all URLs on a site without scraping |
+
+### `mcp`
+
+| Command | Summary |
+|---|---|
+| `axon mcp` | Start MCP stdio or unified HTTP runtime |
+
+### `memory`
+
+| Command | Summary |
+|---|---|
+| `axon memory remember `*`` | Store a memory in the dedicated memory collection |
+| `axon memory list` | List memory metadata without semantic search |
+| `axon memory search` | Search active memories |
+| `axon memory show` | Show one memory by id |
+| `axon memory link `*`` | Link two memories in the SQLite graph |
+| `axon memory supersede `*`` | Mark an old memory as superseded by a replacement memory |
+| `axon memory context` | Build an inline, defanged context block from memories |
+
+### `migrate`
+
+| Command | Summary |
+|---|---|
+| `axon migrate `*`` | Migrate an unnamed-vector collection to named-mode (enables hybrid RRF search) |
+
+### `monitor`
+
+| Command | Summary |
+|---|---|
+| `axon monitor jobs` | Stream source and extract lifecycle events |
+
+### `palette`
+
+| Command | Summary |
+|---|---|
+| `axon palette` | Resolve, launch, and optionally install the axon-palette desktop binary |
+
+### `preflight`
+
+| Command | Summary |
+|---|---|
+| `axon preflight` | Check host prerequisites and service readiness |
+
+### `providers`
+
+| Command | Summary |
+|---|---|
+| `axon providers list` | List providers by kind or status |
+| `axon providers get` | Show one provider with optional health and limits |
+
+### `prune`
+
+| Command | Summary |
+|---|---|
+| `axon prune plan` | Resolve a prune target into a reviewable dry-run plan |
+| `axon prune exec `*`` | Execute a prune target's plan (destructive; requires --confirm) |
+
+### `query`
+
+| Command | Summary |
+|---|---|
+| `axon query` | Semantic vector search over the Qdrant index |
+
+### `research`
+
+| Command | Summary |
+|---|---|
+| `axon research `*`` | Web research via SearXNG/Tavily with LLM synthesis and auto-indexing |
+
+### `reset`
+
+| Command | Summary |
+|---|---|
+| `axon reset plan` | Create a reviewable clean-slate reset plan without deleting data |
+| `axon reset exec `*`` | Execute a reviewed clean-slate reset plan |
+
+### `retrieve`
+
+| Command | Summary |
+|---|---|
+| `axon retrieve` | Fetch stored document chunks from Qdrant by URL |
+
+### `scrape`
+
+| Command | Summary |
+|---|---|
+| `axon scrape `*`` | Fetch, normalize, and index exactly one web page through SourceRequest |
+
+### `screenshot`
+
+| Command | Summary |
+|---|---|
+| `axon screenshot `*`` | Capture a full-page screenshot of one or more URLs |
+
+### `search`
+
+| Command | Summary |
+|---|---|
+| `axon search `*`` | Web search via SearXNG/Tavily, auto-queues Source jobs for results |
+
+### `serve`
+
+| Command | Summary |
+|---|---|
+| `axon serve` | Start service runtimes |
+| `axon serve mcp` | Start unified web + MCP HTTP runtime |
+
+### `sessions`
+
+| Command | Summary |
+|---|---|
+| `axon sessions `*~`` | Index AI session exports (Claude, Codex, Gemini) into Qdrant |
+
+### `setup`
+
+| Command | Summary |
+|---|---|
+| `axon setup plugin-hook `*`` | Hook-safe preflight/setup entrypoint for Claude Code plugin SessionStart |
+| `axon setup init `*`` | Initialize local Axon config, env, and compose assets |
+| `axon setup check` | Check local prerequisites without mutating files or services |
+| `axon setup targets` | List SSH host aliases discovered from ~/.ssh/config |
+| `axon setup install `*`` | Copy the axon binary into ~/.local/bin for terminal use |
+| `axon setup config rewrite `*`` | Preview or apply clean-break config key rewrites |
+
+### `smoke`
+
+| Command | Summary |
+|---|---|
+| `axon smoke `*`` | Run source/ask smoke checks against the running stack |
+
+### `source`
+
+| Command | Summary |
+|---|---|
+| `axon source `*~`` | Index a source through the unified pipeline |
+
+### `sources`
+
+| Command | Summary |
+|---|---|
+| `axon sources` | List all indexed source URLs with chunk counts |
+
+### `stats`
+
+| Command | Summary |
+|---|---|
+| `axon stats` | Show Qdrant collection and SQLite job statistics |
+
+### `status`
+
+| Command | Summary |
+|---|---|
+| `axon status` | Show unified jobs, watches, cleanup, totals, and service status |
+
+### `suggest`
+
+| Command | Summary |
+|---|---|
+| `axon suggest` | Suggest new documentation URLs to index |
+
+### `summarize`
+
+| Command | Summary |
+|---|---|
+| `axon summarize` | Scrape one or more URLs and summarize them with the configured LLM |
+
+### `sync`
+
+| Command | Summary |
+|---|---|
+| `axon sync pending` | Show local artifacts waiting to be reconciled with the server |
+
+### `train`
+
+| Command | Summary |
+|---|---|
+| `axon train `*`` | Collect human preference votes for retrieved RAG candidates |
+
+### `update`
+
+| Command | Summary |
+|---|---|
+| `axon update `*`` | Download and install the latest GitHub Release binary, then sync the local container |
+
+### `uploads`
+
+| Command | Summary |
+|---|---|
+| `axon uploads list` | List staged uploads |
+| `axon uploads get` | Show one staged upload |
+| `axon uploads create `*`` | Stage a local file as a durable upload |
+| `axon uploads complete `*`` | Finalize a staged upload into a durable source reference |
+| `axon uploads abort `*`` | Abort and discard a staged upload |
+
+### `watch`
+
+| Command | Summary |
+|---|---|
+| `axon watch create `*`` | Create a recurring source watch |
+| `axon watch list` | List source watches |
+| `axon watch get` | Show one source watch |
+| `axon watch status` | Show source watch status |
+| `axon watch update `*`` | Update a source watch |
+| `axon watch exec `*~`` | Run a source watch immediately |
+| `axon watch pause `*`` | Pause a source watch |
+| `axon watch resume `*`` | Resume a paused source watch |
+| `axon watch delete `*`` | Delete a source watch |
+| `axon watch history` | Show watch run history |
+
