@@ -37,7 +37,7 @@
         {
           "path": "docs/pipeline-unification/sources/adapter-scopes.md",
           "kind": "markdown_contract",
-          "checksum": "sha256:b156c244dc58a5f2d3e60897967b4c7c36fa9e4df85b9ece1f3be3a27794dcf8"
+          "checksum": "sha256:ce6da64921329f24a4bea1a726c12d4b55420b98be99b3c257212b1d977571cd"
         },
         {
           "path": "docs/pipeline-unification/sources/new-source-contract.md",
@@ -45,7 +45,7 @@
           "checksum": "sha256:ee8c4580ce0787b176dd84b77e260adae4c0a02b607dc67f9fa7a3ac2f874fdd"
         }
       ],
-      "manifest_checksum": "44f408b726e62e55d21f4bdc1be6b9042a36a2ce9e69dea2558142c1db24e09f"
+      "manifest_checksum": "b1a1d685adaf35da2cd3a26eb4ad77449d9afc14a030dfe005ebad74f6572ecc"
     },
     {
       "family": "api",
@@ -181,7 +181,7 @@
         {
           "path": "crates/axon-core/src/config/cli.rs",
           "kind": "rust_module",
-          "checksum": "sha256:269b2a966c87b9d8bba32dcd492be6171a647de027d7402fdb95cdc83d2fde43"
+          "checksum": "sha256:f56f35b0f9ed0060565962aabbf311bf0393283b3f493ac212bc2803cf2aa47c"
         },
         {
           "path": "crates/axon-core/src/config/cli/config_args.rs",
@@ -216,7 +216,7 @@
         {
           "path": "xtask/src/schemas/cli_registry/part2.rs",
           "kind": "rust_module",
-          "checksum": "sha256:f02fc12d30fb18e2b3fd2ca52a8fc35d798c8300255e2924c09124dc131456e0"
+          "checksum": "sha256:ff5d1b6ff19ba79d4e81b4b0439558ae89457795656af0dfee9b9050f51e7ab1"
         },
         {
           "path": "xtask/src/schemas/cli_registry/part3.rs",
@@ -229,7 +229,7 @@
           "checksum": "sha256:c58a8a803ac40c73a7d76e3840bbf9e0b1ff516cc522e534afdcde2f808759f7"
         }
       ],
-      "manifest_checksum": "d7528350091ec525d7d2cf43f6d860c323df2f4a3f38fe004a705d67307486bd"
+      "manifest_checksum": "12b3edd7cf37d5d6c2709b43051a02e558ff1ec0e8b1dac6a028b38f3336e74a"
     },
     {
       "family": "config",
@@ -574,12 +574,12 @@
         {
           "path": "crates/axon-vectors/src/payload_families.rs",
           "kind": "rust_module",
-          "checksum": "sha256:e6313e43941f06b361ec034e7d42868fdfae4609f2bd881e826015a045eeddb5"
+          "checksum": "sha256:2c012adb7f4d07f449ffb7399a41ebfea44a4fb15e9895e995740a41edc0ae7e"
         },
         {
           "path": "crates/axon-vectors/src/point.rs",
           "kind": "rust_module",
-          "checksum": "sha256:5888f298ef6deb59b3a932cca604ff0749147dee1f2486fe84bd44ba8ebc9cc7"
+          "checksum": "sha256:f54a5d4bfb55b42073fae50303585633f843178698d224d8b56726d8423aaa87"
         },
         {
           "path": "crates/axon-vectors/src/schema_registry.rs",
@@ -607,7 +607,7 @@
           "checksum": "sha256:51f270178b9f6f66877c10a6321241a95236d5f7e86c6fa401ab200ac3c61c54"
         }
       ],
-      "manifest_checksum": "3d3386b5454735862404fa9f7055a48c0881a4d550e810745c7d13ff52e36c4e"
+      "manifest_checksum": "06e0dc6ddf6922c7a062de5d9eecb61454b580b754feee21a6272443f46aeaa8"
     }
   ]
 }

@@ -26,6 +26,13 @@ pub const VECTOR_SOURCE_FAMILY_FIELDS: &[(&str, &[&str])] = &[
             "git_repo",
             "git_owner",
             "git_web_url",
+            // GitHub sub-page vertical documents (issue/PR/release) re-enter on
+            // the `code` family but carry the same vertical-extractor metadata
+            // the web family declares — see `axon-adapters::git::vertical`.
+            "extractor_name",
+            "extractor_version",
+            "git_fetch_method",
+            "git_title",
         ],
     ),
     (
@@ -142,6 +149,15 @@ pub const VECTOR_SOURCE_FAMILY_FIELDS: &[(&str, &[&str])] = &[
             "memory_scope_value",
             "memory_confidence",
             "memory_salience",
+            // Also emitted by the memory adapter (`axon-adapters/src/memory.rs`
+            // `memory_metadata`); the fail-closed family allowlist rejected the
+            // whole memory point without these. Surfaced once the non-web FK
+            // ordering fix let memory publication reach payload validation.
+            "memory_acquire",
+            "memory_decay_profile",
+            "memory_embedding_ref_count",
+            "memory_link_count",
+            "memory_normalize",
         ],
     ),
     (

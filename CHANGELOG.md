@@ -5,6 +5,95 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.1.5] - 2026-07-19
+
+### Fixed
+- `web_source` publish invariant (`mark_vectors_for_completed_generation` /
+  `ensure_full_write`) compared a preparation-stage count
+  (`chunks_prepared`) against a publish-stage count (`points_written`).
+  Whenever a chunk's payload tripped the secret-redaction `ForbiddenValue`
+  check and was skipped (do-not-index-secrets), `expected != wrote` and the
+  entire web-source job failed. The invariant now compares two publish-stage
+  numbers (`points_attempted` vs `points_written`), per the stage-result and
+  observability contracts' separation of `axon_chunks_prepared_total`
+  (preparation) from `axon_vector_points_written_total` (publish). Affects
+  CLI, MCP, and REST equally — all three route web-URL sources through the
+  shared `web_source` pipeline.
+- Secret-redaction chunk skips are now observable, not silent. Previously
+  the only signal was a `tracing::warn!` line. Web and non-web (git, feed,
+  youtube, reddit, session, registry) sources now surface the skip count as
+  a `SourceWarning` (`*.vectorize.redaction_skipped_chunks`) on job events
+  and the source result; local sources emit an aggregated `tracing::warn!`.
+  Added via a new `VectorPointBatchBuilder::build_with_skipped_count()` that
+  returns `(VectorPointBatch, skipped_count)`; `build()` is unchanged.
+
+## [7.1.4] - 2026-07-18
+
+### Fixed
+
+- `axon status` no longer renders a source as `[REDACTED]` when its job stored the
+  request in the legacy flat `{scope, source, source_kind}` shape. Those jobs fell
+  through to the job UUID as the label, and the 36-char UUID tripped the
+  high-entropy secret redactor. `request_target_fields` now also reads the flat
+  top-level `source` key, so the real source URL is shown.
+- `axon status` source labels are now redacted with a URL-aware pass: only URL
+  userinfo (`user:pass@host`) and the values of secret-bearing query parameters
+  are masked, preserving scheme, host, path, and non-sensitive params — instead of
+  the blunt whole-string scrubber that would collapse any URL merely containing a
+  `token=`/`secret=` substring. Non-URL labels still use the full secret scrubber.
+- Pipeline failures across the web, local, and generic non-web source pipelines
+  were surfacing as an undiagnosable generic message (e.g. "web source indexing
+  failed") on every operator-visible surface (`axon status`, `axon jobs get`),
+  even when the real failure happened deep in generation-commit finalization
+  after every document had already been embedded and published. Three separate
+  call sites were converting an `anyhow::Error` to a string via `.to_string()`,
+  which only prints the outermost `.context()` frame and silently discards the
+  rest of the chain. `SourceError.cause`/the terminal `ApiError` now carry the
+  full chain (`{error:#}`), redacted via `redact_secrets` before being persisted
+  to `jobs.last_error_json`/`job_stages.error_json` (columns with no automatic
+  redaction pass, unlike `job_events`).
+
+## [7.1.3] - 2026-07-17
+
+## [7.1.2] - 2026-07-17
+
+## [7.1.1] - 2026-07-17
+
+### Fixed
+
+- Post-cutover live-smoke fixes across the source pipeline: document
+  preparation survives secret-bearing content (span-level redaction before
+  self-parse), chunker-internal metadata no longer leaks into vector payloads,
+  baseline graph nodes carry canonical URIs, `graph query`/`resolve` accept a
+  URI, git- and registry-family adapter routes are accepted, the generic
+  non-web pipeline upserts the source row before its first job-status update
+  and persists a worker-parseable request, and CLI/`main` error output shows
+  the full (redacted) cause chain.
+
+## [7.1.0] - 2026-07-17
+
+### Changed
+
+- `axon <source>` is detached by default again, matching the command contract:
+  it validates and routes synchronously, enqueues a durable `source` job, and
+  returns immediately with a job descriptor plus `axon jobs get/events` poll
+  hints. `--wait true` remains the foreground opt-in; retained `scrape` stays
+  foreground.
+
+### Added
+
+- `axon jobs worker` — run a standalone worker process for the unified durable
+  queue. It holds a cross-process drain lock (one worker per jobs DB, taken
+  before any runtime is built), recovers stale attempts, drains the queue, and
+  exits after a configurable idle window (`--idle-exit-secs`,
+  `jobs.worker-idle-exit-secs`, default 300s; `0` = run until stopped).
+- Detached CLI enqueues guarantee pickup without a manually started
+  `axon serve`: when no worker process holds the drain lock, the CLI
+  auto-spawns a detached `axon jobs worker`. A running `axon serve`/`mcp` holds
+  the same lock, so it suppresses redundant auto-spawns. Disable with
+  `jobs.auto-worker = false` / `AXON_JOBS_AUTO_WORKER=false`; worker output logs
+  to `<data-dir>/logs/auto-worker.log` (0600, size-rotated).
+
 ## [7.0.0] - 2026-07-17
 
 ### Changed
