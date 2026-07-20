@@ -29,7 +29,7 @@ env:
 jobs:
   axon-linux:
     name: build axon (linux)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     # The `secrets` context is NOT allowed in step-level `if:` conditionals, so
     # the optional signing secret is promoted to job-level env here (where
     # referencing `secrets` IS allowed) and the signing steps gate on
@@ -150,7 +150,7 @@ jobs:
   publish:
     name: publish github release
     needs: [axon-linux, axon-windows]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     # Attach artifacts only when release-please dispatches this workflow on an
     # existing v* release tag.
     if: >-

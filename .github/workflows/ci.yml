@@ -38,7 +38,7 @@ env:
 jobs:
   changes:
     name: changes
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     outputs:
       all: ${{ steps.classify.outputs.all }}
       docs: ${{ steps.classify.outputs.docs }}
@@ -100,7 +100,7 @@ jobs:
 
   mcp-transport-modes:
     name: mcp-transport-modes
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.mcp == 'true' }}
     steps:
@@ -140,7 +140,7 @@ jobs:
 
   aurora-primitive-inventory:
     name: aurora-primitive-inventory
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.android == 'true' || needs.changes.outputs.palette == 'true' || needs.changes.outputs.docs == 'true' }}
     steps:
@@ -156,7 +156,7 @@ jobs:
 
   android:
     name: android
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.android == 'true' }}
     steps:
@@ -234,7 +234,7 @@ jobs:
 
   android-openapi-client:
     name: android-openapi-client
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.android == 'true' || needs.changes.outputs.openapi == 'true' }}
     steps:
@@ -273,7 +273,7 @@ jobs:
 
   no-mod-rs:
     name: no-mod-rs
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
@@ -320,7 +320,7 @@ jobs:
 
   sqlite-migrations:
     name: sqlite-migrations
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true' }}
     steps:
@@ -359,7 +359,7 @@ jobs:
 
   toml-fmt:
     name: toml-fmt
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true' || needs.changes.outputs.release == 'true' }}
     steps:
@@ -409,7 +409,7 @@ jobs:
 
   lefthook-pre-commit-speed:
     name: lefthook pre-commit speed guard
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.workflow == 'true' || needs.changes.outputs.rust == 'true' }}
     steps:
@@ -419,7 +419,7 @@ jobs:
 
   palette-tauri:
     name: palette-tauri
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.palette == 'true' }}
     steps:
@@ -572,7 +572,7 @@ jobs:
     # lib-test recompile roughly doubles the job time). The test still lives in
     # src/core/paths_tests.rs and was confirmed passing on Windows 11 against
     # this cross-compiled binary.
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.web == 'true' }}
     env:
@@ -634,7 +634,7 @@ jobs:
 
   shell-completions-smoke:
     name: shell-completions-smoke
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
@@ -671,7 +671,7 @@ jobs:
 
   web-panel:
     name: web-panel
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.web == 'true' }}
     steps:
@@ -693,7 +693,7 @@ jobs:
 
   chrome-extension:
     name: chrome-extension
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.chrome == 'true' }}
     steps:
@@ -709,7 +709,7 @@ jobs:
 
   mcp-schema-doc-sync:
     name: mcp-schema-doc-sync
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.mcp == 'true' }}
     steps:
@@ -721,7 +721,7 @@ jobs:
 
   schema-contract-sync:
     name: schema-contract-sync
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.docs == 'true' || needs.changes.outputs.mcp == 'true' || needs.changes.outputs.openapi == 'true' || needs.changes.outputs.workflow == 'true' }}
     steps:
@@ -738,7 +738,7 @@ jobs:
 
   version-sync:
     name: version-sync
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.android == 'true' || needs.changes.outputs.palette == 'true' || needs.changes.outputs.version_files == 'true' }}
     steps:
@@ -781,7 +781,7 @@ jobs:
 
   rest-api-parity:
     name: rest-api-parity
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.openapi == 'true' || needs.changes.outputs.web == 'true' || needs.changes.outputs.android == 'true' || needs.changes.outputs.palette == 'true' }}
     steps:
@@ -838,7 +838,7 @@ jobs:
 
   mcp-oauth-smoke:
     name: mcp-oauth-smoke
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.mcp == 'true' }}
     env:
@@ -878,7 +878,7 @@ jobs:
 
   advisory-lock-policy:
     name: advisory-lock-policy
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
@@ -923,7 +923,7 @@ jobs:
 
   ban-skip-validation:
     name: ban-skip-validation
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
@@ -957,7 +957,7 @@ jobs:
 
   monolith:
     name: monolith
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
@@ -1023,7 +1023,7 @@ jobs:
 
   fmt:
     name: fmt
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
@@ -1058,7 +1058,7 @@ jobs:
   # `cargo check -D warnings`, so the `clippy` job below covers them.
   clippy:
     name: clippy
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
@@ -1105,7 +1105,7 @@ jobs:
 
   test:
     name: test
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.rust == 'true' }}
     env:
@@ -1176,7 +1176,7 @@ jobs:
   test-infra:
     name: test-infra
     if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_infra_tests) }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     steps:
       - uses: actions/checkout@v5
         with:
@@ -1204,7 +1204,7 @@ jobs:
   live-qdrant:
     name: live-qdrant
     if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_live_qdrant_tests) }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     services:
       qdrant:
         image: qdrant/qdrant:v1.13.1
@@ -1242,7 +1242,7 @@ jobs:
   # `rag` boolean output consumed by `live-rag-pr`.
   rag-changes:
     name: rag-changes
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     if: ${{ github.event_name == 'pull_request' }}
     outputs:
       rag: ${{ steps.filter.outputs.rag }}
@@ -1280,7 +1280,7 @@ jobs:
   # retrieval/RRF/rerank regression could merge and auto-release unverified.
   live-rag-pr:
     name: live-rag-pr
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [rag-changes]
     if: ${{ github.event_name == 'pull_request' && needs.rag-changes.outputs.rag == 'true' }}
     timeout-minutes: 30
@@ -1370,7 +1370,7 @@ jobs:
 
   security:
     name: security
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.security == 'true' }}
     steps:
@@ -1413,7 +1413,7 @@ jobs:
 
   mcp-smoke:
     name: mcp-smoke
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes, release]
     if: ${{ needs.release.result == 'success' && (needs.changes.outputs.mcp == 'true' || needs.changes.outputs.rust == 'true') }}
     timeout-minutes: 35
@@ -1603,7 +1603,7 @@ jobs:
 
   release:
     name: release
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.release == 'true' }}
     steps:
@@ -1638,7 +1638,7 @@ jobs:
 
   release-smoke:
     name: release-smoke
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes, release]
     if: ${{ needs.release.result == 'success' }}
     steps:
@@ -1653,7 +1653,7 @@ jobs:
 
   ci-gate:
     name: ci-gate
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     if: always()
     needs:
       - changes

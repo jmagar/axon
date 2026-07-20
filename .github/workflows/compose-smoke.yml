@@ -15,7 +15,7 @@ concurrency:
 jobs:
   changes:
     name: changes
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     outputs:
       compose: ${{ steps.classify.outputs.compose }}
       docker: ${{ steps.classify.outputs.docker }}
@@ -63,7 +63,7 @@ jobs:
 
   compose-config:
     name: compose-config
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.compose == 'true' }}
     steps:
@@ -100,7 +100,7 @@ jobs:
 
   image-build-smoke:
     name: image-build-smoke
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     needs: [changes]
     if: ${{ needs.changes.outputs.docker == 'true' }}
     steps:
@@ -121,7 +121,7 @@ jobs:
 
   compose-smoke-gate:
     name: compose-smoke-gate
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     if: always()
     needs:
       - changes

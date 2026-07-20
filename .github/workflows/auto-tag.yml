@@ -52,7 +52,7 @@ jobs:
   plan:
     permissions:
       contents: read
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
     steps:
@@ -81,7 +81,7 @@ jobs:
     needs: plan
     if: ${{ needs.plan.outputs.matrix != '{"include":[]}' }}
     name: ${{ matrix.id }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, unraid]
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
