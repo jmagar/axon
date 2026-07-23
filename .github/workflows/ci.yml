@@ -234,7 +234,9 @@ jobs:
 
   android-openapi-client:
     name: android-openapi-client
-    runs-on: [self-hosted, unraid]
+    # Kept on ubuntu-latest: the self-hosted unraid runner has no Android SDK
+    # (ANDROID_HOME unset), so :app:verifyOpenApiGeneratedClient fails there.
+    runs-on: ubuntu-latest
     needs: [changes]
     if: ${{ needs.changes.outputs.android == 'true' || needs.changes.outputs.openapi == 'true' }}
     steps:
@@ -572,7 +574,11 @@ jobs:
     # lib-test recompile roughly doubles the job time). The test still lives in
     # src/core/paths_tests.rs and was confirmed passing on Windows 11 against
     # this cross-compiled binary.
-    runs-on: [self-hosted, unraid]
+    #
+    # Kept on ubuntu-latest: on the self-hosted unraid runner rustc failed to
+    # execute (os error 2) with missing target .d files — a runner env/workspace
+    # issue. This cross-compile is proven on ubuntu-latest, so pin it here.
+    runs-on: ubuntu-latest
     needs: [changes]
     if: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.web == 'true' }}
     env:
