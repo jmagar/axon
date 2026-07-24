@@ -326,15 +326,6 @@ jobs:
     if: ${{ needs.changes.outputs.palette == 'true' }}
     steps:
       - uses: actions/checkout@v5
-        with:
-          # Cone mode (default) so root-level files — notably the tracked
-          # `.gitignore` — are checked out. Under non-cone sparse checkout the
-          # root `.gitignore` is left out of the working tree, and with
-          # actions/checkout's blobless partial clone cargo's gix file-walker
-          # fails to build its excludes stack while fingerprinting the build
-          # script ("Failed to update the excludes stack"), breaking
-          # `cargo check`. The green check/clippy jobs use cone mode for the
-          # same reason.
       - uses: pnpm/action-setup@v4
         with:
           version: 11.3.0
@@ -412,10 +403,6 @@ jobs:
     if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
       - uses: actions/checkout@v5
-        with:
-          # Cone mode keeps root-level files such as `.gitignore` available.
-          # Non-cone sparse checkouts can make older Cargo/gix fail while
-          # fingerprinting the root build script.
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -464,10 +451,6 @@ jobs:
       AR_x86_64_pc_windows_gnu: x86_64-w64-mingw32-ar
     steps:
       - uses: actions/checkout@v5
-        with:
-          # Cone mode keeps root-level files such as `.gitignore` available.
-          # Non-cone sparse checkouts can make older Cargo/gix fail while
-          # fingerprinting the root build script.
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Match rust-toolchain.toml so the Windows target is installed on
