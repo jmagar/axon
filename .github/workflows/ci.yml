@@ -151,6 +151,7 @@ jobs:
             apps/palette-tauri
             docs/reference/aurora-primitive-inventory.json
             scripts/check_aurora_primitive_inventory.py
+          sparse-checkout-cone-mode: false
       - name: Check Aurora primitive inventory guard
         run: python3 scripts/check_aurora_primitive_inventory.py
 
@@ -779,6 +780,7 @@ jobs:
             README.md
             CHANGELOG.md
             .release-please-manifest.json
+          sparse-checkout-cone-mode: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
@@ -813,6 +815,7 @@ jobs:
             Cargo.toml
             Cargo.lock
             rust-toolchain.toml
+          sparse-checkout-cone-mode: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
@@ -1151,6 +1154,7 @@ jobs:
             vendor
             .cargo
             .config/nextest.toml
+          sparse-checkout-cone-mode: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
