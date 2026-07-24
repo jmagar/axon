@@ -25,6 +25,11 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # Self-hosted Rust jobs build through soldr/zccache (setup-rust-soldr).
+  # Incremental must be off under a compile wrapper; the zccache store persists
+  # per-runner on local disk.
+  CARGO_INCREMENTAL: "0"
+  SOLDR_CACHE_DIR: ${{ github.workspace }}/../.soldr-cache
 
 jobs:
   axon-linux:
@@ -42,12 +47,9 @@ jobs:
       # Cargo.toml/Cargo.lock, which broke every build. LFS blobs come down as
       # pointers (lfs: false default) and are not needed to build.
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust-soldr
         with:
           toolchain: 1.94.0
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: release-axon-linux
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: lts/*

@@ -31,7 +31,14 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTC_WRAPPER: ""
+  # Self-hosted Rust jobs build through the soldr front door (cargo shims
+  # installed by ./.github/actions/setup-rust-soldr); soldr sets RUSTC_WRAPPER
+  # for its zccache compile cache. Incremental must be off under a compile
+  # wrapper. The zccache store persists on the runner's local disk, per-runner
+  # (SOLDR_CACHE_DIR resolves under the bind-mounted /_work), so there is no
+  # shared cross-runner cache mount and no GitHub-cache network round-trip.
+  CARGO_INCREMENTAL: "0"
+  SOLDR_CACHE_DIR: ${{ github.workspace }}/../.soldr-cache
   AURORA_REPO: ${{ vars.AURORA_REPO || 'jmagar/aurora-design-system' }}
   AURORA_REF: ${{ vars.AURORA_REF || '8748eb6434b3bbe4c75f25bfff71950b7efc051b' }}
 
@@ -107,10 +114,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: xtask
+      - uses: ./.github/actions/setup-rust-soldr
       - name: create web assets placeholder
         run: |
           mkdir -p apps/web/out
@@ -250,10 +254,7 @@ jobs:
     if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: xtask
+      - uses: ./.github/actions/setup-rust-soldr
       - name: create web assets placeholder
         run: |
           mkdir -p apps/web/out
@@ -276,10 +277,7 @@ jobs:
     if: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true' }}
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: xtask
+      - uses: ./.github/actions/setup-rust-soldr
       - name: create web assets placeholder
         run: |
           mkdir -p apps/web/out
@@ -334,14 +332,10 @@ jobs:
           node-version: 24
           cache: pnpm
           cache-dependency-path: apps/palette-tauri/pnpm-lock.yaml
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust-soldr
         with:
           toolchain: 1.94.0
           components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: apps/palette-tauri/src-tauri
-          shared-key: palette-tauri
       - name: Install Tauri Linux system deps
         run: |
           sudo apt-get update
@@ -489,10 +483,9 @@ jobs:
     if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust-soldr
         with:
           toolchain: 1.94.0
-      - uses: Swatinem/rust-cache@v2
       - name: create web assets placeholder
         run: |
           mkdir -p apps/web/out
@@ -553,7 +546,7 @@ jobs:
     if: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.docs == 'true' || needs.changes.outputs.mcp == 'true' || needs.changes.outputs.openapi == 'true' || needs.changes.outputs.workflow == 'true' }}
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust-soldr
         with:
           toolchain: 1.94.0
       - name: Enforce generated pipeline schema artifacts are in sync
@@ -572,7 +565,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust-soldr
         with:
           toolchain: 1.94.0
       - name: Enforce per-component release version parity
@@ -585,12 +578,9 @@ jobs:
     if: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.openapi == 'true' || needs.changes.outputs.web == 'true' || needs.changes.outputs.android == 'true' || needs.changes.outputs.palette == 'true' }}
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust-soldr
         with:
           toolchain: 1.94.0
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: rest-api-parity
       - uses: actions/setup-node@v5
         with:
           node-version: 24
@@ -626,10 +616,9 @@ jobs:
       QDRANT_URL: http://127.0.0.1:53333
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust-soldr
         with:
           toolchain: 1.94.0
-      - uses: Swatinem/rust-cache@v2
       - name: create web assets placeholder
         run: |
           mkdir -p apps/web/out
@@ -747,11 +736,10 @@ jobs:
     if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust-soldr
         with:
           toolchain: 1.94.0
           components: rustfmt
-      - uses: Swatinem/rust-cache@v2
       - name: cargo fmt check
         run: cargo fmt --all -- --check
 
@@ -767,18 +755,10 @@ jobs:
     if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust-soldr
         with:
           toolchain: 1.94.0
           components: clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          # Shared with `test` (same toolchain + features, no RUSTFLAGS) and
-          # warmed from main, so PRs restore a hot dep cache instead of each job
-          # recompiling the workspace. `clippy -D warnings` also denies rustc
-          # warnings, so this job subsumes the removed `check`/`msrv` jobs.
-          shared-key: rust
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: create web assets placeholder
         run: |
           mkdir -p apps/web/out
@@ -799,18 +779,12 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust-soldr
         with:
           toolchain: 1.94.0
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest@0.9.140
-      - uses: Swatinem/rust-cache@v2
-        with:
-          # Shared with `clippy` (same toolchain + features, no RUSTFLAGS);
-          # warmed from main.
-          shared-key: rust
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: create web assets placeholder
         run: |
           mkdir -p apps/web/out
@@ -833,10 +807,9 @@ jobs:
     runs-on: [self-hosted, unraid]
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust-soldr
         with:
           toolchain: 1.94.0
-      - uses: Swatinem/rust-cache@v2
       - name: run ignored SQLite/in-process worker tests
         run: cargo test --locked worker_e2e --features test-helpers -- --ignored
 
@@ -853,10 +826,9 @@ jobs:
       AXON_TEST_QDRANT_URL: http://127.0.0.1:6333
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust-soldr
         with:
           toolchain: 1.94.0
-      - uses: Swatinem/rust-cache@v2
       - name: live Qdrant vector tests
         run: cargo test --locked --features live-qdrant qdrant -- --ignored
 
@@ -920,12 +892,9 @@ jobs:
       AXON_TEST_TEI_URL: http://127.0.0.1:52000
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust-soldr
         with:
           toolchain: 1.94.0
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: live-rag-pr
 
       - name: Restore Hugging Face model cache
         uses: actions/cache@v5
@@ -984,10 +953,9 @@ jobs:
     if: ${{ needs.changes.outputs.security == 'true' }}
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust-soldr
         with:
           toolchain: 1.94.0
-      - uses: Swatinem/rust-cache@v2
 
       - uses: taiki-e/install-action@v2
         with:
@@ -1187,16 +1155,9 @@ jobs:
     if: ${{ needs.changes.outputs.release == 'true' }}
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust-soldr
         with:
           toolchain: 1.94.0
-      - uses: Swatinem/rust-cache@v2
-        with:
-          # Release-profile artifacts (distinct from the debug `rust` cache);
-          # warmed from main so the PR release build + serialized mcp-smoke start
-          # sooner.
-          shared-key: release
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: actions/setup-node@v5
         with:
           node-version: 22
