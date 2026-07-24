@@ -374,7 +374,12 @@ jobs:
       - name: Tauri cargo check
         run: cargo check --locked --manifest-path apps/palette-tauri/src-tauri/Cargo.toml
       - name: Tauri cargo test
-        run: cargo test --locked --manifest-path apps/palette-tauri/src-tauri/Cargo.toml
+        # --test-threads=1: terminal_tests mutate the process-global SHELL env
+        # (set_var("SHELL","/bin/zsh")); run in parallel that leaks into the
+        # real-shell-spawn tests, which then try to spawn /bin/zsh. The
+        # self-hosted runner image has no zsh (GitHub's ubuntu-latest does, which
+        # masked this), so the spawn fails NotFound. Serialize to kill the race.
+        run: cargo test --locked --manifest-path apps/palette-tauri/src-tauri/Cargo.toml -- --test-threads=1
       # CI-H1: build the actual desktop binary in CI (no installer bundle) so a
       # non-building Tauri app is caught here, before any release tag is cut.
       # Without this the first real desktop build happens only in
