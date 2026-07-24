@@ -107,26 +107,6 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          sparse-checkout: |
-            src
-            crates
-            xtask
-            benches
-            apps/web
-            apps/palette-tauri
-            apps/android
-            apps/chrome-extension
-            assets
-            plugins
-            docs
-            migrations
-            .github
-            tests
-            scripts
-            config
-            release
-            vendor
-            .cargo
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -145,13 +125,6 @@ jobs:
     if: ${{ needs.changes.outputs.android == 'true' || needs.changes.outputs.palette == 'true' || needs.changes.outputs.docs == 'true' }}
     steps:
       - uses: actions/checkout@v5
-        with:
-          sparse-checkout: |
-            apps/android
-            apps/palette-tauri
-            docs/reference/aurora-primitive-inventory.json
-            scripts/check_aurora_primitive_inventory.py
-          sparse-checkout-cone-mode: false
       - name: Check Aurora primitive inventory guard
         run: python3 scripts/check_aurora_primitive_inventory.py
 
@@ -242,10 +215,6 @@ jobs:
     if: ${{ needs.changes.outputs.android == 'true' || needs.changes.outputs.openapi == 'true' }}
     steps:
       - uses: actions/checkout@v5
-        with:
-          sparse-checkout: |
-            apps/web/openapi
-            apps/android
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
@@ -281,27 +250,6 @@ jobs:
     if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
       - uses: actions/checkout@v5
-        with:
-          sparse-checkout: |
-            src
-            crates
-            xtask
-            benches
-            apps/web
-            apps/palette-tauri
-            apps/android
-            apps/chrome-extension
-            assets
-            plugins
-            docs
-            migrations
-            .github
-            tests
-            scripts
-            config
-            release
-            vendor
-            .cargo
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -328,27 +276,6 @@ jobs:
     if: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true' }}
     steps:
       - uses: actions/checkout@v5
-        with:
-          sparse-checkout: |
-            src
-            crates
-            xtask
-            benches
-            apps/web
-            apps/palette-tauri
-            apps/android
-            apps/chrome-extension
-            assets
-            plugins
-            docs
-            migrations
-            .github
-            tests
-            scripts
-            config
-            release
-            vendor
-            .cargo
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -367,34 +294,6 @@ jobs:
     if: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true' || needs.changes.outputs.release == 'true' }}
     steps:
       - uses: actions/checkout@v5
-        with:
-          sparse-checkout-cone-mode: false
-          sparse-checkout: |
-            .cargo/config.toml
-            .config/nextest.toml
-            .taplo.toml
-            Cargo.toml
-            Cargo.lock
-            build.rs
-            config.example.toml
-            deny.toml
-            release/components.toml
-            rust-toolchain.toml
-            docs/reference/env-matrix.toml
-            src
-            crates
-            xtask
-            benches
-            apps/web
-            apps/palette-tauri
-            plugins
-            docs
-            .github
-            tests
-            scripts
-            config
-            release
-            vendor
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d
         with:
           install_args: cargo:taplo-cli
@@ -436,9 +335,6 @@ jobs:
           # script ("Failed to update the excludes stack"), breaking
           # `cargo check`. The green check/clippy jobs use cone mode for the
           # same reason.
-          sparse-checkout: |
-            apps/palette-tauri
-            apps/web/openapi
       - uses: pnpm/action-setup@v4
         with:
           version: 11.3.0
@@ -520,26 +416,6 @@ jobs:
           # Cone mode keeps root-level files such as `.gitignore` available.
           # Non-cone sparse checkouts can make older Cargo/gix fail while
           # fingerprinting the root build script.
-          sparse-checkout: |
-            src
-            crates
-            xtask
-            benches
-            apps/web
-            apps/palette-tauri
-            apps/android
-            apps/chrome-extension
-            assets
-            plugins
-            docs
-            migrations
-            .github
-            tests
-            scripts
-            config
-            release
-            vendor
-            .cargo
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -592,22 +468,6 @@ jobs:
           # Cone mode keeps root-level files such as `.gitignore` available.
           # Non-cone sparse checkouts can make older Cargo/gix fail while
           # fingerprinting the root build script.
-          sparse-checkout: |
-            src
-            crates
-            xtask
-            benches
-            assets
-            apps/web
-            plugins
-            docs
-            .github
-            tests
-            scripts
-            config
-            vendor
-            .cargo
-            release
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Match rust-toolchain.toml so the Windows target is installed on
@@ -646,23 +506,6 @@ jobs:
     if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
       - uses: actions/checkout@v5
-        with:
-          sparse-checkout: |
-            src
-            crates
-            xtask
-            benches
-            apps/web
-            apps/palette-tauri
-            plugins
-            docs
-            .github
-            tests
-            scripts
-            config
-            vendor
-            .cargo
-            release
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
@@ -683,9 +526,6 @@ jobs:
     if: ${{ needs.changes.outputs.web == 'true' }}
     steps:
       - uses: actions/checkout@v5
-        with:
-          sparse-checkout: |
-            apps/web
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -705,9 +545,6 @@ jobs:
     if: ${{ needs.changes.outputs.chrome == 'true' }}
     steps:
       - uses: actions/checkout@v5
-        with:
-          sparse-checkout: |
-            apps/chrome-extension
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -752,35 +589,6 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          sparse-checkout: |
-            Cargo.toml
-            Cargo.lock
-            src
-            crates
-            xtask
-            .cargo
-            release/components.toml
-            apps/android
-            apps/chrome-extension
-            apps/palette-tauri
-            apps/web/openapi/axon.json
-            plugins/axon/references/rag-synthesize/SKILL.md
-            # check-version-sync asserts this manifest carries no version key.
-            plugins/axon/.claude-plugin
-            # axon-services include_str!s these at compile time; a sparse
-            # checkout without them cannot build xtask's dependency graph.
-            config
-            config.example.toml
-            docker-compose.prod.yaml
-            # check-release-versions verifies each component's
-            # release_workflow file exists on disk.
-            .github/workflows
-            migrations
-            vendor
-            README.md
-            CHANGELOG.md
-            .release-please-manifest.json
-          sparse-checkout-cone-mode: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
@@ -794,28 +602,6 @@ jobs:
     if: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.openapi == 'true' || needs.changes.outputs.web == 'true' || needs.changes.outputs.android == 'true' || needs.changes.outputs.palette == 'true' }}
     steps:
       - uses: actions/checkout@v5
-        with:
-          sparse-checkout: |
-            src
-            crates
-            xtask
-            benches
-            apps/web
-            apps/palette-tauri
-            apps/android
-            plugins
-            docs
-            .github
-            tests
-            scripts
-            config
-            vendor
-            .cargo
-            release
-            Cargo.toml
-            Cargo.lock
-            rust-toolchain.toml
-          sparse-checkout-cone-mode: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
@@ -857,21 +643,6 @@ jobs:
       QDRANT_URL: http://127.0.0.1:53333
     steps:
       - uses: actions/checkout@v5
-        with:
-          sparse-checkout: |
-            src
-            crates
-            xtask
-            benches
-            apps/web
-            plugins
-            docs
-            .github
-            tests
-            scripts
-            config
-            vendor
-            .cargo
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
@@ -892,21 +663,6 @@ jobs:
     if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
       - uses: actions/checkout@v5
-        with:
-          sparse-checkout: |
-            src
-            crates
-            xtask
-            benches
-            apps/web
-            plugins
-            docs
-            .github
-            tests
-            scripts
-            config
-            vendor
-            .cargo
       - name: Ban session-scoped advisory lock APIs
         run: |
           set -euo pipefail
@@ -937,21 +693,6 @@ jobs:
     if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
       - uses: actions/checkout@v5
-        with:
-          sparse-checkout: |
-            src
-            crates
-            xtask
-            benches
-            apps/web
-            plugins
-            docs
-            .github
-            tests
-            scripts
-            config
-            vendor
-            .cargo
       - name: Ban spawn_adapter_skip_validation outside tests/
         run: |
           set -euo pipefail
@@ -973,20 +714,6 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          sparse-checkout: |
-            src
-            crates
-            xtask
-            benches
-            apps/web
-            plugins
-            docs
-            .github
-            tests
-            scripts
-            config
-            vendor
-            .cargo
       - name: Enforce monolith policy (changed Rust files only)
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -1037,21 +764,6 @@ jobs:
     if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
       - uses: actions/checkout@v5
-        with:
-          sparse-checkout: |
-            src
-            crates
-            xtask
-            benches
-            apps/web
-            plugins
-            docs
-            .github
-            tests
-            scripts
-            config
-            vendor
-            .cargo
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
@@ -1072,27 +784,6 @@ jobs:
     if: ${{ needs.changes.outputs.rust == 'true' }}
     steps:
       - uses: actions/checkout@v5
-        with:
-          sparse-checkout: |
-            src
-            crates
-            xtask
-            benches
-            apps/web
-            apps/palette-tauri
-            apps/android
-            apps/chrome-extension
-            assets
-            migrations
-            plugins
-            docs
-            .github
-            tests
-            scripts
-            config
-            vendor
-            .cargo
-            release
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
@@ -1125,36 +816,6 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v5
-        with:
-          sparse-checkout: |
-            .env.example
-            Cargo.toml
-            CHANGELOG.md
-            Justfile
-            README.md
-            docker-compose.prod.yaml
-            docker-compose.yaml
-            src
-            crates
-            xtask
-            benches
-            apps/web
-            apps/palette-tauri
-            apps/android
-            apps/chrome-extension
-            assets
-            plugins
-            docs
-            migrations
-            .github
-            tests
-            scripts
-            config
-            release
-            vendor
-            .cargo
-            .config/nextest.toml
-          sparse-checkout-cone-mode: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
@@ -1189,21 +850,6 @@ jobs:
     runs-on: [self-hosted, unraid]
     steps:
       - uses: actions/checkout@v5
-        with:
-          sparse-checkout: |
-            src
-            crates
-            xtask
-            benches
-            apps/web
-            plugins
-            docs
-            .github
-            tests
-            scripts
-            config
-            vendor
-            .cargo
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
@@ -1224,21 +870,6 @@ jobs:
       AXON_TEST_QDRANT_URL: http://127.0.0.1:6333
     steps:
       - uses: actions/checkout@v5
-        with:
-          sparse-checkout: |
-            src
-            crates
-            xtask
-            benches
-            apps/web
-            plugins
-            docs
-            .github
-            tests
-            scripts
-            config
-            vendor
-            .cargo
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
@@ -1306,21 +937,6 @@ jobs:
       AXON_TEST_TEI_URL: http://127.0.0.1:52000
     steps:
       - uses: actions/checkout@v5
-        with:
-          sparse-checkout: |
-            src
-            crates
-            xtask
-            benches
-            apps/web
-            plugins
-            docs
-            .github
-            tests
-            scripts
-            config
-            vendor
-            .cargo
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
@@ -1385,21 +1001,6 @@ jobs:
     if: ${{ needs.changes.outputs.security == 'true' }}
     steps:
       - uses: actions/checkout@v5
-        with:
-          sparse-checkout: |
-            src
-            crates
-            xtask
-            benches
-            apps/web
-            plugins
-            docs
-            .github
-            tests
-            scripts
-            config
-            vendor
-            .cargo
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
@@ -1429,21 +1030,6 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v5
-        with:
-          sparse-checkout: |
-            src
-            crates
-            xtask
-            benches
-            apps/web
-            plugins
-            docs
-            .github
-            tests
-            scripts
-            config
-            vendor
-            .cargo
       - name: Fetch MCP doc fixture for smoke test
         run: mkdir -p docs && git show HEAD:docs/reference/mcp/overview.md > docs/reference/mcp/overview.md
 
